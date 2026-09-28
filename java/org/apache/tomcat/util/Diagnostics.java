@@ -63,7 +63,17 @@ import org.apache.juli.logging.Log;
 import org.apache.juli.logging.LogFactory;
 import org.apache.tomcat.util.res.StringManager;
 
+/**
+ * Utility class for JVM diagnostics, including thread dumps and VM information retrieval.
+ */
 public class Diagnostics {
+
+    /**
+     * Default constructor.
+     */
+    public Diagnostics() {
+        super();
+    }
 
     private static final String PACKAGE = "org.apache.tomcat.util";
     private static final StringManager sm = StringManager.getManager(PACKAGE);
@@ -106,7 +116,7 @@ public class Diagnostics {
     }
 
     /**
-     * Enable or disable thread contention monitoring via the ThreadMxMXBean.
+     * Enable or disable thread contention monitoring via the ThreadMXBean.
      *
      * @param enable whether to enable thread contention monitoring
      */
@@ -129,7 +139,7 @@ public class Diagnostics {
     }
 
     /**
-     * Enable or disable thread cpu time measurement via the ThreadMxMXBean.
+     * Enable or disable thread cpu time measurement via the ThreadMXBean.
      *
      * @param enable whether to enable thread cpu time measurement
      */

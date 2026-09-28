@@ -40,6 +40,12 @@ import org.apache.tools.ant.types.RedirectorElement;
  */
 public abstract class BaseRedirectorHelperTask extends Task {
 
+    /**
+     * Default constructor.
+     */
+    public BaseRedirectorHelperTask() {
+    }
+
     /** Redirector helper */
     protected final Redirector redirector = new Redirector(this);
 
@@ -95,7 +101,7 @@ public abstract class BaseRedirectorHelperTask extends Task {
     /**
      * Returns the value of the failOnError property.
      *
-     * @return <code>true</code> if the task should will if an error occurs, otherwise <code>false</code>
+     * @return <code>true</code> if the task should fail if an error occurs, otherwise <code>false</code>
      */
     public boolean isFailOnError() {
         return failOnError;
@@ -293,7 +299,9 @@ public abstract class BaseRedirectorHelperTask extends Task {
     @Override
     protected void handleFlush(String output) {
         handleOutput(output);
-        redirectOutPrintStream.flush();
+        if (redirectOutput) {
+            redirectOutPrintStream.flush();
+        }
     }
 
 
@@ -326,7 +334,9 @@ public abstract class BaseRedirectorHelperTask extends Task {
     @Override
     protected void handleErrorFlush(String output) {
         handleErrorOutput(output);
-        redirectErrPrintStream.flush();
+        if (redirectOutput) {
+            redirectErrPrintStream.flush();
+        }
     }
 
 

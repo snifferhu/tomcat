@@ -31,7 +31,7 @@ import jakarta.servlet.http.HttpServletResponse;
 import org.apache.tomcat.util.res.StringManager;
 
 /**
- * Facade class that wraps a Coyote response object. All methods are delegated to the wrapped response.
+ * Facade class that wraps a {@link Response} object. All methods are delegated to the wrapped response.
  */
 public class ResponseFacade implements HttpServletResponse {
 
@@ -75,23 +75,36 @@ public class ResponseFacade implements HttpServletResponse {
      * Prevent cloning the facade.
      */
     @Override
-    protected Object clone() throws CloneNotSupportedException {
+    public Object clone() throws CloneNotSupportedException {
         throw new CloneNotSupportedException();
     }
 
 
+    /**
+     * Finish the response.
+     */
     public void finish() {
         checkFacade();
         response.setSuspended(true);
     }
 
 
+    /**
+     * Check if the response is finished.
+     *
+     * @return {@code true} if the response is finished
+     */
     public boolean isFinished() {
         checkFacade();
         return response.isSuspended();
     }
 
 
+    /**
+     * Get the number of bytes written.
+     *
+     * @return The number of bytes written
+     */
     public long getContentWritten() {
         checkFacade();
         return response.getContentWritten();
@@ -109,18 +122,14 @@ public class ResponseFacade implements HttpServletResponse {
 
     @Override
     public ServletOutputStream getOutputStream() throws IOException {
-        if (isFinished()) {
-            response.setSuspended(true);
-        }
+        checkFacade();
         return response.getOutputStream();
     }
 
 
     @Override
     public PrintWriter getWriter() throws IOException {
-        if (isFinished()) {
-            response.setSuspended(true);
-        }
+        checkFacade();
         return response.getWriter();
     }
 
@@ -245,6 +254,7 @@ public class ResponseFacade implements HttpServletResponse {
 
     @Override
     public void sendEarlyHints() {
+        checkFacade();
         response.sendEarlyHints();
     }
 

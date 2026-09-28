@@ -30,6 +30,12 @@ public class TimeBucketCounter extends TimeBucketCounterBase {
     private final double ratio;
 
 
+    /**
+     * Constructs a new TimeBucketCounter.
+     *
+     * @param bucketDuration the bucket duration in seconds
+     * @param executorService the executor service for maintenance tasks
+     */
     public TimeBucketCounter(int bucketDuration, ScheduledExecutorService executorService) {
         super(getActualDuration(bucketDuration), executorService);
         this.numBits = determineShiftBitsOfDuration(bucketDuration);
@@ -49,6 +55,11 @@ public class TimeBucketCounter extends TimeBucketCounterBase {
     }
 
 
+    /**
+     * Returns the number of bits used for bucket index calculation.
+     *
+     * @return the number of shift bits
+     */
     public int getNumBits() {
         return numBits;
     }
@@ -115,7 +126,7 @@ public class TimeBucketCounter extends TimeBucketCounterBase {
     /**
      * Returns the ratio to the next power of 2 so that we can adjust the value.
      *
-     * @param value of target duration in seconds
+     * @param value of target duration in milliseconds
      *
      * @return the ratio to the next power of 2 so that we can adjust the value
      */

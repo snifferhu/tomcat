@@ -24,6 +24,7 @@ import java.nio.charset.Charset;
 import java.nio.charset.CharsetDecoder;
 import java.nio.charset.CoderResult;
 import java.nio.charset.CodingErrorAction;
+import java.nio.charset.MalformedInputException;
 import java.util.Locale;
 
 import org.apache.juli.logging.Log;
@@ -43,6 +44,7 @@ public class B2CConverter {
 
 
     // Protected so unit tests can use it
+    /** Maximum size for leftover bytes used for incomplete characters during decoding. */
     protected static final int LEFTOVER_SIZE = 9;
 
     /**
@@ -78,22 +80,17 @@ public class B2CConverter {
      */
     private final ByteBuffer leftovers;
 
+    /**
+     * Constructs a B2CConverter for the given charset, reporting errors on malformed input.
+     *
+     * @param charset the charset to use for decoding
+     */
     public B2CConverter(Charset charset) {
-        this(charset, false);
-    }
-
-    public B2CConverter(Charset charset, boolean replaceOnError) {
         byte[] left = new byte[LEFTOVER_SIZE];
         leftovers = ByteBuffer.wrap(left);
-        CodingErrorAction action;
-        if (replaceOnError) {
-            action = CodingErrorAction.REPLACE;
-        } else {
-            action = CodingErrorAction.REPORT;
-        }
         decoder = charset.newDecoder();
-        decoder.onMalformedInput(action);
-        decoder.onUnmappableCharacter(action);
+        decoder.onMalformedInput(CodingErrorAction.REPORT);
+        decoder.onUnmappableCharacter(CodingErrorAction.REPORT);
     }
 
     /**
@@ -138,25 +135,42 @@ public class B2CConverter {
         CoderResult result;
         // Parse leftover if any are present
         if (leftovers.position() > 0) {
-            int pos = cb.position();
-            // Loop until one char is decoded or there is a decoder error
             do {
-                leftovers.put(bc.subtractB());
+                // Previous call may have triggered overflow in cb so try conversion first
                 leftovers.flip();
-                result = decoder.decode(leftovers, cb, endOfInput);
-                leftovers.position(leftovers.limit());
-                leftovers.limit(leftovers.array().length);
-            } while (result.isUnderflow() && (cb.position() == pos));
-            if (result.isError() || result.isMalformed()) {
-                result.throwException();
-            }
-            bb.position(bc.getStart());
-            leftovers.position(0);
+                result = decoder.decode(leftovers, cb, false);
+                if (result.isOverflow()) {
+                    leftovers.position(leftovers.limit());
+                    leftovers.limit(leftovers.array().length);
+                    return;
+                } else if (result.isError()) {
+                    result.throwException();
+                } else if (leftovers.remaining() == 0) {
+                    // leftovers have been converted
+                    leftovers.clear();
+                    bb.position(bc.getStart());
+                    break;
+                } else {
+                    // leftovers is incomplete
+                    leftovers.position(leftovers.limit());
+                    leftovers.limit(leftovers.array().length);
+                }
+                // Try
+                int b = bc.subtract();
+                if (b < 0) {
+                    if (endOfInput) {
+                        throw new MalformedInputException(leftovers.position());
+                    }
+                    // Underflow - need more bytes to complete the leftover character
+                    return;
+                }
+                leftovers.put((byte) b);
+            } while (true);
         }
         // Do the decoding and get the results into the byte chunk and the char
         // chunk
         result = decoder.decode(bb, cb, endOfInput);
-        if (result.isError() || result.isMalformed()) {
+        if (result.isError()) {
             result.throwException();
         } else if (result.isOverflow()) {
             // Propagate current positions to the byte chunk and char chunk, if
@@ -207,32 +221,50 @@ public class B2CConverter {
         CoderResult result;
         // Parse leftover if any are present
         if (leftovers.position() > 0) {
-            int pos = cb.position();
-            // Loop until one char is decoded or there is a decoder error
             do {
-                byte chr;
+                // Previous call may have triggered overflow in cb so try conversion first
+                leftovers.flip();
+                result = decoder.decode(leftovers, cb, false);
+                if (result.isOverflow()) {
+                    leftovers.position(leftovers.limit());
+                    leftovers.limit(leftovers.array().length);
+                    return;
+                } else if (result.isError()) {
+                    result.throwException();
+                } else if (leftovers.remaining() == 0) {
+                    // leftovers have been converted
+                    leftovers.clear();
+                    bb.limit(bc.limit());
+                    bb.position(bc.position());
+                    break;
+                } else {
+                    // leftovers is incomplete
+                    leftovers.position(leftovers.limit());
+                    leftovers.limit(leftovers.array().length);
+                }
+                // Try
                 if (bc.remaining() == 0) {
                     int n = ic.realReadBytes();
-                    chr = n < 0 ? -1 : bc.get();
-                } else {
-                    chr = bc.get();
+                    if (ic.getByteBuffer() != bc) {
+                        // realReadBytes changed the ByteBuffer used by the caller
+                        bc = ic.getByteBuffer();
+                        bb = ByteBuffer.wrap(bc.array(), bc.arrayOffset() + bc.position(), bc.remaining());
+                    }
+                    if (n < 0) {
+                        if (endOfInput) {
+                            throw new MalformedInputException(leftovers.position());
+                        }
+                        // Underflow - need more bytes to complete the leftover character
+                        return;
+                    }
                 }
-                leftovers.put(chr);
-                leftovers.flip();
-                result = decoder.decode(leftovers, cb, endOfInput);
-                leftovers.position(leftovers.limit());
-                leftovers.limit(leftovers.array().length);
-            } while (result.isUnderflow() && (cb.position() == pos));
-            if (result.isError() || result.isMalformed()) {
-                result.throwException();
-            }
-            bb.position(bc.position());
-            leftovers.position(0);
+                leftovers.put(bc.get());
+            } while (true);
         }
         // Do the decoding and get the results into the byte chunk and the char
         // chunk
         result = decoder.decode(bb, cb, endOfInput);
-        if (result.isError() || result.isMalformed()) {
+        if (result.isError()) {
             result.throwException();
         } else if (result.isOverflow()) {
             // Propagate current positions to the byte chunk and char chunk, if
@@ -253,6 +285,11 @@ public class B2CConverter {
     }
 
 
+    /**
+     * Returns the charset used by this converter.
+     *
+     * @return the charset
+     */
     public Charset getCharset() {
         return decoder.charset();
     }

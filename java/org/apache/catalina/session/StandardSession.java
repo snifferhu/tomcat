@@ -660,12 +660,17 @@ public class StandardSession implements HttpSession, Session, Serializable {
                 }
             }
 
-            // We have completed expire of this session
-            setValid(false);
-            expiring = false;
+            String[] keys;
+            synchronized (attributes) {
+                // We have completed expire of this session
+                setValid(false);
+                expiring = false;
+
+                // Snapshot the attributes before permitting any racing setAttribute() call to observe the invalid state
+                keys = keys();
+            }
 
             // Unbind any objects associated with this session
-            String[] keys = keys();
             ClassLoader oldContextClassLoader = null;
             try {
                 oldContextClassLoader = context.bind(null);
@@ -759,6 +764,7 @@ public class StandardSession implements HttpSession, Session, Serializable {
 
         // Reset the instance variables associated with this Session
         attributes.clear();
+        listeners.clear();
         setAuthType(null);
         creationTime = 0L;
         expiring = false;
@@ -964,7 +970,7 @@ public class StandardSession implements HttpSession, Session, Serializable {
      * calls <code>valueBound()</code> on the object.
      *
      * @param name   Name to which the object is bound, cannot be null
-     * @param value  Object to be bound, cannot be null
+     * @param value  Object to be bound, or null to remove the attribute (equivalent to removeAttribute)
      * @param notify whether to notify session listeners
      *
      * @exception IllegalArgumentException if an attempt is made to add a non-serializable object in an environment
@@ -998,11 +1004,13 @@ public class StandardSession implements HttpSession, Session, Serializable {
         HttpSessionBindingEvent event = null;
 
         // Call the valueBound() method if necessary
+        boolean valueBoundHasBeenCalled = false;
         if (notify && value instanceof HttpSessionBindingListener) {
             // Don't call any notification if replacing with the same value
             // unless configured to do so
             Object oldValue = attributes.get(name);
             if (value != oldValue || manager.getNotifyBindingListenerOnUnchangedValue()) {
+                valueBoundHasBeenCalled = true;
                 event = new HttpSessionBindingEvent(getSession(), name, value);
                 try {
                     ((HttpSessionBindingListener) value).valueBound(event);
@@ -1013,20 +1021,35 @@ public class StandardSession implements HttpSession, Session, Serializable {
         }
 
         // Replace or add this attribute
-        Object unbound = attributes.put(name, value);
+        Object unbound = null;
+        boolean valid;
+        synchronized (attributes) {
+            valid = isValidInternal();
+            if (valid) {
+                unbound = attributes.put(name, value);
+            }
+        }
+
+        if (!valid) {
+            if (notify && value instanceof HttpSessionBindingListener) {
+                /*
+                 * The session has expired since setAttribute() started. Although the attribute never made it as far as
+                 * being added to the session, call valueUnbound() if valueBound() was called.
+                 */
+                if (valueBoundHasBeenCalled) {
+                    notifyAttributeUnbound(name, value);
+                }
+                return;
+            }
+            throw new IllegalStateException(sm.getString("standardSession.setAttribute.ise", getIdInternal()));
+        }
 
         // Call the valueUnbound() method if necessary
         if (notify && unbound instanceof HttpSessionBindingListener) {
             // Don't call any notification if replacing with the same value
             // unless configured to do so
             if (unbound != value || manager.getNotifyBindingListenerOnUnchangedValue()) {
-                try {
-                    ((HttpSessionBindingListener) unbound)
-                            .valueUnbound(new HttpSessionBindingEvent(getSession(), name));
-                } catch (Throwable t) {
-                    ExceptionUtils.handleThrowable(t);
-                    manager.getContext().getLogger().error(sm.getString("standardSession.bindingEvent"), t);
-                }
+                notifyAttributeUnbound(name, unbound);
             }
         }
 
@@ -1080,10 +1103,22 @@ public class StandardSession implements HttpSession, Session, Serializable {
     }
 
 
+    private void notifyAttributeUnbound(String name, Object value) {
+        try {
+            ((HttpSessionBindingListener) value).valueUnbound(new HttpSessionBindingEvent(getSession(), name));
+        } catch (Throwable t) {
+            ExceptionUtils.handleThrowable(t);
+            manager.getContext().getLogger().error(sm.getString("standardSession.bindingEvent"), t);
+        }
+    }
+
+
     // ------------------------------------------ HttpSession Protected Methods
 
     /**
-     * @return the <code>isValid</code> flag for this session without any expiration check.
+     * Returns the valid flag for this session without any expiration check.
+     *
+     * @return the <code>isValid</code> flag for this session without any expiration check
      */
     protected boolean isValidInternal() {
         return this.isValid;
@@ -1379,8 +1414,11 @@ public class StandardSession implements HttpSession, Session, Serializable {
 
 
     /**
+     * Returns the names of all currently defined session attributes as an array of Strings. If there are no defined
+     * attributes, a zero-length array is returned.
+     *
      * @return the names of all currently defined session attributes as an array of Strings. If there are no defined
-     *             attributes, a zero-length array is returned.
+     *             attributes, a zero-length array is returned
      */
     protected String[] keys() {
 

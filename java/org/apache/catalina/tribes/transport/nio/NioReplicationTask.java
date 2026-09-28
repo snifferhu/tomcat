@@ -42,22 +42,45 @@ import org.apache.juli.logging.Log;
 import org.apache.juli.logging.LogFactory;
 
 /**
- * A worker thread class which can drain channels and echo-back the input. Each instance is constructed with a reference
- * to the owning thread pool object. When started, the thread loops forever waiting to be awakened to service the
- * channel associated with a SelectionKey object. The worker is tasked by calling its serviceChannel() method with a
- * SelectionKey object. The serviceChannel() method stores the key reference in the thread object then calls notify() to
- * wake it up. When the channel has been drained, the worker thread returns itself to its parent pool.
+ * A worker thread class which drains a channel and processes received messages.
+ * Each instance services a single SelectionKey per invocation. After completion,
+ * the worker returns itself to its parent pool for reuse, unless the key is null
+ * in which case it returns early without doing so.
  */
 public class NioReplicationTask extends AbstractRxTask {
 
     private static final Log log = LogFactory.getLog(NioReplicationTask.class);
+    /**
+     * String manager for this class.
+     */
     protected static final StringManager sm = StringManager.getManager(NioReplicationTask.class);
 
+    /**
+     * Buffer for reading data from the channel.
+     */
     private ByteBuffer buffer = null;
+
+    /**
+     * Selection key for the channel being serviced.
+     */
     private SelectionKey key;
+
+    /**
+     * Size of the receive buffer.
+     */
     private int rxBufSize;
+
+    /**
+     * Reference to the owning NIO receiver.
+     */
     private final NioReceiver receiver;
 
+    /**
+     * Creates a new NIO replication task.
+     *
+     * @param callback The listen callback
+     * @param receiver The owning NIO receiver
+     */
     public NioReplicationTask(ListenCallback callback, NioReceiver receiver) {
         super(callback);
         this.receiver = receiver;
@@ -258,6 +281,12 @@ public class NioReplicationTask extends AbstractRxTask {
         cancelKey(key);
     }
 
+    /**
+     * Registers a selection key for read interest.
+     *
+     * @param key The selection key
+     * @param reader The object reader
+     */
     protected void registerForRead(final SelectionKey key, ObjectReader reader) {
         if (log.isTraceEnabled()) {
             log.trace("Adding key for read event:" + key);
@@ -347,10 +376,20 @@ public class NioReplicationTask extends AbstractRxTask {
         }
     }
 
+    /**
+     * Sets the receive buffer size.
+     *
+     * @param rxBufSize the receive buffer size in bytes
+     */
     public void setRxBufSize(int rxBufSize) {
         this.rxBufSize = rxBufSize;
     }
 
+    /**
+     * Returns the receive buffer size.
+     *
+     * @return the receive buffer size in bytes
+     */
     public int getRxBufSize() {
         return rxBufSize;
     }

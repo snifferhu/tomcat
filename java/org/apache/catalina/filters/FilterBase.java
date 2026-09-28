@@ -31,8 +31,23 @@ import org.apache.tomcat.util.res.StringManager;
  */
 public abstract class FilterBase implements Filter {
 
+    /**
+     * Default constructor for FilterBase.
+     */
+    public FilterBase() {
+        // Default constructor
+    }
+
+    /**
+     * StringManager for internationalized strings.
+     */
     protected static final StringManager sm = StringManager.getManager(FilterBase.class);
 
+    /**
+     * Returns the logger for this filter.
+     *
+     * @return the logger
+     */
     protected abstract Log getLogger();
 
 

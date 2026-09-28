@@ -57,11 +57,9 @@ public interface ClusterManager extends Manager {
     String[] getInvalidatedSessions();
 
     /**
-     * Return the name of the manager, at host /context name and at engine hostname+/context.
+     * Return the name of the manager.
      *
-     * @return String
-     *
-     * @since 5.5.10
+     * @return the name of the manager
      */
     String getName();
 
@@ -69,12 +67,12 @@ public interface ClusterManager extends Manager {
      * Set the name of the manager, at host /context name and at engine hostname+/context
      *
      * @param name The manager name
-     *
-     * @since 5.5.10
      */
     void setName(String name);
 
     /**
+     * Returns the cluster associated with this manager.
+     *
      * @return the cluster associated with this manager
      */
     CatalinaCluster getCluster();
@@ -111,11 +109,15 @@ public interface ClusterManager extends Manager {
     ReplicationStream getReplicationStream(byte[] data, int offset, int length) throws IOException;
 
     /**
+     * Returns whether listeners are notified on replication.
+     *
      * @return {@code true} if listeners are notified on replication
      */
     boolean isNotifyListenersOnReplication();
 
     /**
+     * Creates a clone of this manager from a template configuration.
+     *
      * @return a clone of a template manager configuration
      */
     ClusterManager cloneFromTemplate();

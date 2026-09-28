@@ -24,13 +24,19 @@ import java.util.Map;
 
 
 /**
- * Representation of an application resource reference, as represented in an <code>&lt;res-env-ref&gt;</code> element in
- * the deployment descriptor.
+ * Representation of a <code>&lt;Transaction&gt;</code> element in a context configuration file. The configured
+ * properties are applied to the <code>java:comp/UserTransaction</code> JNDI binding.
  */
 public class ContextTransaction implements Serializable {
 
     @Serial
     private static final long serialVersionUID = 1L;
+
+    /**
+     * Default constructor.
+     */
+    public ContextTransaction() {
+    }
 
     // ------------------------------------------------------------- Properties
 
@@ -41,9 +47,11 @@ public class ContextTransaction implements Serializable {
     private final Map<String,Object> properties = new HashMap<>();
 
     /**
+     * Get a configured property.
+     *
      * @param name The property name
      *
-     * @return a configured property.
+     * @return The configured property value
      */
     public Object getProperty(String name) {
         return properties.get(name);

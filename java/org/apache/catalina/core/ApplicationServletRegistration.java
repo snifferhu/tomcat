@@ -16,7 +16,6 @@
  */
 package org.apache.catalina.core;
 
-import java.nio.charset.StandardCharsets;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashSet;
@@ -31,9 +30,11 @@ import org.apache.catalina.Context;
 import org.apache.catalina.LifecycleState;
 import org.apache.catalina.Wrapper;
 import org.apache.catalina.util.ParameterMap;
-import org.apache.tomcat.util.buf.UDecoder;
 import org.apache.tomcat.util.res.StringManager;
 
+/**
+ * Dynamic servlet registration implementation.
+ */
 public class ApplicationServletRegistration implements ServletRegistration.Dynamic {
 
     /**
@@ -45,6 +46,12 @@ public class ApplicationServletRegistration implements ServletRegistration.Dynam
     private final Context context;
     private ServletSecurityElement constraint;
 
+    /**
+     * Constructs a new ApplicationServletRegistration.
+     *
+     * @param wrapper the servlet wrapper
+     * @param context the servlet context
+     */
     public ApplicationServletRegistration(Wrapper wrapper, Context context) {
         this.wrapper = wrapper;
         this.context = context;
@@ -84,7 +91,7 @@ public class ApplicationServletRegistration implements ServletRegistration.Dynam
     public boolean setInitParameter(String name, String value) {
         if (name == null || value == null) {
             throw new IllegalArgumentException(
-                    sm.getString("applicationFilterRegistration.nullInitParam", name, value));
+                    sm.getString("applicationServletRegistration.nullInitParam", name, value));
         }
         if (getInitParameter(name) != null) {
             return false;
@@ -103,7 +110,7 @@ public class ApplicationServletRegistration implements ServletRegistration.Dynam
         for (Map.Entry<String,String> entry : initParameters.entrySet()) {
             if (entry.getKey() == null || entry.getValue() == null) {
                 throw new IllegalArgumentException(
-                        sm.getString("applicationFilterRegistration.nullInitParams", entry.getKey(), entry.getValue()));
+                        sm.getString("applicationServletRegistration.nullInitParams", entry.getKey(), entry.getValue()));
             }
             if (getInitParameter(entry.getKey()) != null) {
                 conflicts.add(entry.getKey());
@@ -165,17 +172,24 @@ public class ApplicationServletRegistration implements ServletRegistration.Dynam
         }
 
         Set<String> conflicts = new HashSet<>();
+        Set<String> overrides = new HashSet<>();
 
-        for (String urlPattern : urlPatterns) {
-            String wrapperName = context.findServletMapping(urlPattern);
+        for (int i = 0; i < urlPatterns.length; i++) {
+            if (urlPatterns[i] == null) {
+                throw new IllegalArgumentException(sm.getString("applicationServletRegistration.nullUrlPattern"));
+            }
+            String wrapperName = context.findServletMapping(urlPatterns[i]);
             if (wrapperName != null) {
                 Wrapper wrapper = (Wrapper) context.findChild(wrapperName);
                 if (wrapper.isOverridable()) {
-                    // Some Wrappers (from global and host web.xml) may be
-                    // overridden rather than generating a conflict
-                    context.removeServletMapping(urlPattern);
+                    /*
+                     * Some Wrappers (from global and host web.xml) may be overridden rather than generating a conflict.
+                     * Changes as a result of this method should be all or nothing so note the overrides until the check
+                     * for conflicts has completed.
+                     */
+                    overrides.add(urlPatterns[i]);
                 } else {
-                    conflicts.add(urlPattern);
+                    conflicts.add(urlPatterns[i]);
                 }
             }
         }
@@ -184,8 +198,11 @@ public class ApplicationServletRegistration implements ServletRegistration.Dynam
             return conflicts;
         }
 
+        // No conflicts, remove the mappings that are about to be overridden
+        overrides.forEach(p -> context.removeServletMapping(p));
+
         for (String urlPattern : urlPatterns) {
-            context.addServletMappingDecoded(UDecoder.URLDecode(urlPattern, StandardCharsets.UTF_8), wrapper.getName());
+            context.addServletMapping(urlPattern, wrapper.getName());
         }
 
         if (constraint != null) {

@@ -18,18 +18,29 @@ package org.apache.catalina.storeconfig;
 
 import java.io.File;
 import java.io.FileReader;
+import java.io.PrintWriter;
 import java.io.StringReader;
 import java.io.StringWriter;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 
 import javax.xml.parsers.SAXParserFactory;
 
 import org.junit.Assert;
 import org.junit.Test;
 
+import org.apache.catalina.Context;
+import org.apache.catalina.Host;
+import org.apache.catalina.connector.Connector;
+import org.apache.catalina.core.StandardContext;
+import org.apache.catalina.realm.LockOutRealm;
 import org.apache.catalina.startup.Catalina;
+import org.apache.catalina.startup.CatalinaBaseConfigurationSource;
 import org.apache.catalina.startup.Tomcat;
 import org.apache.catalina.startup.TomcatBaseTest;
 import org.apache.catalina.util.IOTools;
+import org.apache.catalina.valves.AccessLogValve;
+import org.apache.tomcat.util.net.SSLHostConfigPreSharedKey;
 import org.xml.sax.InputSource;
 
 public class TestStoreConfig extends TomcatBaseTest {
@@ -79,6 +90,13 @@ public class TestStoreConfig extends TomcatBaseTest {
         tc_SSLHostConfigCertificate_23.setCertificateKeystoreFile("conf/localhost-rsa.jks");
         tc_SSLHostConfigCertificate_23.setCertificateKeystorePassword("mypassword");
         tc_SSLHostConfig_22.addCertificate(tc_SSLHostConfigCertificate_23);
+        SSLHostConfigPreSharedKey preSharedKey = new SSLHostConfigPreSharedKey(tc_SSLHostConfig_22);
+        preSharedKey.setIdentity("test");
+        preSharedKey.setKey("000102030405060708090a0b0c0d0e0f");
+        // A non-default digest: storeconfig omits attributes that equal
+        // their default value, and SHA256 is the default digest.
+        preSharedKey.setDigest("SHA384");
+        tc_SSLHostConfig_22.addPreSharedKey(preSharedKey);
         tomcat.getConnector().addSslHostConfig(tc_SSLHostConfig_22);
 
         org.apache.catalina.ha.tcp.SimpleTcpCluster tc_SimpleTcpCluster_51 = new org.apache.catalina.ha.tcp.SimpleTcpCluster();
@@ -129,7 +147,7 @@ public class TestStoreConfig extends TomcatBaseTest {
         File serverXml = new File(tomcat.getServer().getCatalinaBase(), Catalina.SERVER_XML);
         Assert.assertTrue(serverXml.canRead());
         addDeleteOnTearDown(serverXml);
-        String serverXmlDump = "";
+        String serverXmlDump;
         try (FileReader reader = new FileReader(serverXml);
                 StringWriter writer = new StringWriter()) {
             IOTools.flow(reader, writer);
@@ -139,10 +157,418 @@ public class TestStoreConfig extends TomcatBaseTest {
         Assert.assertTrue(serverXmlDump.contains("UserDatabaseRealm"));
         Assert.assertTrue(serverXmlDump.contains("SecretKeyCredentialHandler"));
         Assert.assertTrue(serverXmlDump.contains("certificateKeystorePassword="));
+        // The attributes of a stored element wrap at 60 columns, so check
+        // the element and its attributes individually rather than the
+        // whole tag.
+        Assert.assertTrue(serverXmlDump.contains("<PreSharedKey"));
+        Assert.assertTrue(serverXmlDump.contains("digest=\"SHA384\""));
+        Assert.assertTrue(serverXmlDump.contains("identity=\"test\""));
+        Assert.assertTrue(serverXmlDump.contains("key=\"000102030405060708090a0b0c0d0e0f\""));
         Assert.assertTrue(serverXmlDump.contains("+TLSv1.1"));
         SAXParserFactory.newInstance().newSAXParser().getXMLReader().parse(new InputSource(new StringReader(serverXmlDump)));
 
         tomcat.stop();
+
+        tomcat.init(new CatalinaBaseConfigurationSource(getTemporaryDirectory(), Catalina.SERVER_XML));
+        // If the persisted server.xml is malformed, start() will fail
+        tomcat.start();
+        Connector[] connectors = tomcat.getService().findConnectors();
+        boolean foundSsl = false;
+        for (Connector c : connectors) {
+            if (c.getSecure()) {
+                foundSsl = true;
+                break;
+            }
+        }
+        Assert.assertTrue("SSL connector not found after round-trip", foundSsl);
+        tomcat.stop();
+    }
+
+    /**
+     * Verify that StoreConfig preserves the comments of the existing server.xml when it rewrites the file.
+     *
+     * @throws Exception if the test experiences an unexpected error
+     */
+    @Test
+    public void testStorePreservesComments() throws Exception {
+        Tomcat tomcat = getTomcatInstance();
+        StoreConfigLifecycleListener storeConfigListener = new StoreConfigLifecycleListener();
+        tomcat.getServer().addLifecycleListener(storeConfigListener);
+
+        // Use a storable realm. The default embedded realm (Tomcat.SimpleRealm) is an inner class that the store
+        // path cannot instantiate a default instance of.
+        tomcat.getEngine().setRealm(new LockOutRealm());
+
+        // Add a component so that the stored configuration differs from the original file
+        AccessLogValve accessLogValve = new AccessLogValve();
+        accessLogValve.setDirectory("logs");
+        accessLogValve.setPrefix("localhost_access_log");
+        accessLogValve.setSuffix(".txt");
+        accessLogValve.setPattern("%h %l %u %t \"%r\" %s %b");
+        tomcat.getHost().getPipeline().addValve(accessLogValve);
+
+        // Write a server.xml with comments that StoreConfig must preserve
+        File conf = new File(getTemporaryDirectory(), "conf");
+        if (!conf.mkdirs()) {
+            Assert.fail("Unable to create conf directory");
+        }
+        // Delete the whole conf directory (including any timestamped backup) after the test
+        addDeleteOnTearDown(conf);
+        File serverXml = new File(conf, "server.xml");
+        Files.write(serverXml.toPath(), String.join("\n",
+                "<?xml version=\"1.0\" encoding=\"UTF-8\"?>",
+                "<!--",
+                "  Header comment line",
+                "-->",
+                "<Server port=\"8005\" shutdown=\"SHUTDOWN\">",
+                "    <!-- Service comment -->",
+                "    <Service name=\"Catalina\">",
+                "        <!-- Commented out connector",
+                "        <Connector port=\"8009\"/>",
+                "        -->",
+                "    </Service>",
+                "</Server>",
+                "").getBytes(StandardCharsets.UTF_8));
+
+        tomcat.start();
+
+        // Save configuration
+        storeConfigListener.getStoreConfig().storeConfig();
+
+        // Read written configuration
+        String serverXmlDump;
+        try (FileReader reader = new FileReader(serverXml);
+                StringWriter writer = new StringWriter()) {
+            IOTools.flow(reader, writer);
+            serverXmlDump = writer.toString();
+        }
+        Assert.assertTrue(serverXmlDump.contains("Header comment line"));
+        Assert.assertTrue(serverXmlDump.contains("Service comment"));
+        Assert.assertTrue(serverXmlDump.contains("Commented out connector"));
+        Assert.assertTrue(serverXmlDump.contains("AccessLogValve"));
+        // The stored configuration must remain well-formed
+        SAXParserFactory.newInstance().newSAXParser().getXMLReader()
+                .parse(new InputSource(new StringReader(serverXmlDump)));
+    }
+
+    /**
+     * Verify that StoreConfig preserves the comments of the existing context.xml when the context is stored to its
+     * configuration file without a backup. The output stream must not truncate the file before XMLFormatPreserver
+     * has read the layout of the previous version from it.
+     *
+     * @throws Exception if the test experiences an unexpected error
+     */
+    @Test
+    public void testStoreContextSeparatePreservesComments() throws Exception {
+        Tomcat tomcat = getTomcatInstance();
+        StoreConfigLifecycleListener storeConfigListener = new StoreConfigLifecycleListener();
+        tomcat.getServer().addLifecycleListener(storeConfigListener);
+
+        // Use a storable realm. The default embedded realm (Tomcat.SimpleRealm) is an inner class that the store
+        // path cannot instantiate a default instance of.
+        tomcat.getEngine().setRealm(new LockOutRealm());
+
+        File appDir = new File(getTemporaryDirectory(), "webapps/test");
+        if (!appDir.mkdirs()) {
+            Assert.fail("Unable to create the webapp directory");
+        }
+        Context context = tomcat.addContext("/test", appDir.getAbsolutePath());
+        // WatchedResource values pointing at WEB-INF/web.xml are filtered out when storing, so use a resource that
+        // survives the filtering
+        ((StandardContext) context).addWatchedResource("conf/test.txt");
+
+        // Write a context.xml with comments that StoreConfig must preserve
+        File conf = new File(getTemporaryDirectory(), "conf");
+        if (!conf.mkdirs()) {
+            Assert.fail("Unable to create conf directory");
+        }
+        addDeleteOnTearDown(conf);
+        File contextXml = new File(conf, "test.xml");
+        Files.write(contextXml.toPath(), String.join("\n",
+                "<?xml version=\"1.0\" encoding=\"UTF-8\"?>",
+                "<!-- Context comment -->",
+                "<Context reloadable=\"true\">",
+                "    <!-- watched resources -->",
+                "    <WatchedResource>conf/test.txt</WatchedResource>",
+                "</Context>",
+                "").getBytes(StandardCharsets.UTF_8));
+
+        tomcat.start();
+
+        context.setConfigFile(contextXml.toURI().toURL());
+
+        // Store the context to its configuration file without a backup (the storeContextSeparate path)
+        IStoreConfig storeConfig = storeConfigListener.getStoreConfig();
+        StoreDescription desc = storeConfig.getRegistry().findDescription(StandardContext.class);
+        Assert.assertNotNull(desc);
+        boolean oldSeparate = desc.isStoreSeparate();
+        boolean oldBackup = desc.isBackup();
+        boolean oldExternalAllowed = desc.isExternalAllowed();
+        try {
+            desc.setStoreSeparate(true);
+            desc.setBackup(false);
+            desc.setExternalAllowed(true);
+            desc.getStoreFactory().store(null, -2, context);
+        } finally {
+            desc.setStoreSeparate(oldSeparate);
+            desc.setBackup(oldBackup);
+            desc.setExternalAllowed(oldExternalAllowed);
+        }
+
+        // Read written configuration
+        String contextXmlDump;
+        try (FileReader reader = new FileReader(contextXml);
+                StringWriter writer = new StringWriter()) {
+            IOTools.flow(reader, writer);
+            contextXmlDump = writer.toString();
+        }
+        Assert.assertTrue(contextXmlDump, contextXmlDump.contains("Context comment"));
+        Assert.assertTrue(contextXmlDump, contextXmlDump.contains("watched resources"));
+        Assert.assertTrue(contextXmlDump, contextXmlDump.contains("conf/test.txt"));
+        // The stored configuration must remain well-formed
+        SAXParserFactory.newInstance().newSAXParser().getXMLReader()
+                .parse(new InputSource(new StringReader(contextXmlDump)));
+    }
+
+    /**
+     * Verify that a Context parsed from a Context element in server.xml is flagged as deployed from server.xml, so
+     * storeconfig can detect it. The flag must also be set when server.xml is processed through the generated code
+     * path, so the generated code is checked as well.
+     *
+     * @throws Exception if the test experiences an unexpected error
+     */
+    @Test
+    public void testContextFromServerXmlIsFlagged() throws Exception {
+        File appDir = new File(getTemporaryDirectory(), "webapps/inline");
+        if (!appDir.mkdirs()) {
+            Assert.fail("Unable to create the webapp directory");
+        }
+
+        File conf = new File(getTemporaryDirectory(), "conf");
+        if (!conf.mkdirs()) {
+            Assert.fail("Unable to create conf directory");
+        }
+        addDeleteOnTearDown(conf);
+
+        File serverXml = new File(conf, "server.xml");
+        Files.write(serverXml.toPath(), String.join("\n",
+                "<?xml version=\"1.0\" encoding=\"UTF-8\"?>",
+                "<Server port=\"-1\" shutdown=\"SHUTDOWN\">",
+                "    <Service name=\"Catalina\">",
+                "        <Engine name=\"Catalina\" defaultHost=\"localhost\">",
+                "            <Host name=\"localhost\" appBase=\"webapps\"",
+                "                  deployOnStartup=\"false\" autoDeploy=\"false\">",
+                "                <Context path=\"/inline\" docBase=\"inline\"/>",
+                "            </Host>",
+                "        </Engine>",
+                "    </Service>",
+                "</Server>",
+                "").getBytes(StandardCharsets.UTF_8));
+
+        // Parse server.xml (with code generation enabled) without starting the server
+        File generatedCodeLocation = new File(getTemporaryDirectory(), "generated");
+        Catalina catalina = new Catalina();
+        catalina.load(new String[] { "start", "-generateCode", generatedCodeLocation.getAbsolutePath() });
+
+        Context inline = (Context) catalina.getServer().findServices()[0].getContainer().findChildren()[0]
+                .findChild("/inline");
+        Assert.assertNotNull("Context element from server.xml not found", inline);
+        Assert.assertTrue("Context from server.xml must be flagged as deployed from server.xml",
+                ((StandardContext) inline).getDeployedFromServerXml());
+
+        // The generated code must set the flag as well, so that contexts parsed through the generated code path are
+        // also flagged
+        File generatedClass = new File(generatedCodeLocation, "catalinaembedded/ServerXml.java");
+        Assert.assertTrue("Generated code was not created: " + generatedClass, generatedClass.exists());
+        String generatedCode;
+        try (FileReader reader = new FileReader(generatedClass);
+                StringWriter writer = new StringWriter()) {
+            IOTools.flow(reader, writer);
+            generatedCode = writer.toString();
+        }
+        Assert.assertTrue(generatedCode, generatedCode.contains(".setDeployedFromServerXml(true);"));
+    }
+
+    /**
+     * Verify that a context flagged as deployed from server.xml is stored back inline to the server.xml writer (and
+     * not moved to a new context configuration file) when inline storage is allowed (externalOnly is false).
+     *
+     * @throws Exception if the test experiences an unexpected error
+     */
+    @Test
+    public void testContextFromServerXmlStoredInline() throws Exception {
+        Tomcat tomcat = getTomcatInstance();
+        StoreConfigLifecycleListener storeConfigListener = new StoreConfigLifecycleListener();
+        tomcat.getServer().addLifecycleListener(storeConfigListener);
+
+        // Use a storable realm. The default embedded realm (Tomcat.SimpleRealm) is an inner class that the store
+        // path cannot instantiate a default instance of.
+        tomcat.getEngine().setRealm(new LockOutRealm());
+
+        File appDir = new File(getTemporaryDirectory(), "webapps/inline");
+        if (!appDir.mkdirs()) {
+            Assert.fail("Unable to create the webapp directory");
+        }
+        Context context = tomcat.addContext("/inline", appDir.getAbsolutePath());
+        ((StandardContext) context).setDeployedFromServerXml(true);
+
+        File conf = new File(getTemporaryDirectory(), "conf");
+        if (!conf.mkdirs()) {
+            Assert.fail("Unable to create conf directory");
+        }
+        addDeleteOnTearDown(conf);
+
+        tomcat.start();
+
+        IStoreConfig storeConfig = storeConfigListener.getStoreConfig();
+        StoreDescription desc = storeConfig.getRegistry().findDescription(StandardContext.class);
+        Assert.assertNotNull(desc);
+        boolean oldSeparate = desc.isStoreSeparate();
+        boolean oldExternalAllowed = desc.isExternalAllowed();
+        boolean oldExternalOnly = desc.isExternalOnly();
+        String serverXmlDump;
+        try {
+            desc.setStoreSeparate(true);
+            desc.setExternalAllowed(true);
+            desc.setExternalOnly(false);
+            StringWriter buffer = new StringWriter();
+            storeConfig.store(new PrintWriter(buffer), -2, tomcat.getServer());
+            serverXmlDump = buffer.toString();
+        } finally {
+            desc.setStoreSeparate(oldSeparate);
+            desc.setExternalAllowed(oldExternalAllowed);
+            desc.setExternalOnly(oldExternalOnly);
+        }
+
+        // The context must be stored inline in server.xml, without the internal flag attribute
+        Assert.assertTrue(serverXmlDump, serverXmlDump.contains("<Context"));
+        Assert.assertTrue(serverXmlDump, serverXmlDump.contains("path=\"/inline\""));
+        Assert.assertFalse(serverXmlDump, serverXmlDump.contains("deployedFromServerXml"));
+        // The stored configuration must remain well-formed
+        SAXParserFactory.newInstance().newSAXParser().getXMLReader()
+                .parse(new InputSource(new StringReader(serverXmlDump)));
+
+        // No new context configuration file must have been created
+        Host host = tomcat.getHost();
+        Assert.assertFalse(new File(host.getConfigBaseFile(), "inline.xml").exists());
+    }
+
+    /**
+     * Verify that a context that was not deployed from server.xml and that has no configuration file is stored to a
+     * new context configuration file even when inline storage is allowed (externalOnly is false).
+     *
+     * @throws Exception if the test experiences an unexpected error
+     */
+    @Test
+    public void testContextNotFromServerXmlStoredToNewFile() throws Exception {
+        Tomcat tomcat = getTomcatInstance();
+        StoreConfigLifecycleListener storeConfigListener = new StoreConfigLifecycleListener();
+        tomcat.getServer().addLifecycleListener(storeConfigListener);
+
+        // Use a storable realm. The default embedded realm (Tomcat.SimpleRealm) is an inner class that the store
+        // path cannot instantiate a default instance of.
+        tomcat.getEngine().setRealm(new LockOutRealm());
+
+        File appDir = new File(getTemporaryDirectory(), "webapps/standalone");
+        if (!appDir.mkdirs()) {
+            Assert.fail("Unable to create the webapp directory");
+        }
+        Context context = tomcat.addContext("/standalone", appDir.getAbsolutePath());
+        Assert.assertFalse("Programmatic context must not be flagged as deployed from server.xml",
+                ((StandardContext) context).getDeployedFromServerXml());
+
+        File conf = new File(getTemporaryDirectory(), "conf");
+        if (!conf.mkdirs()) {
+            Assert.fail("Unable to create conf directory");
+        }
+        addDeleteOnTearDown(conf);
+
+        tomcat.start();
+
+        IStoreConfig storeConfig = storeConfigListener.getStoreConfig();
+        StoreDescription desc = storeConfig.getRegistry().findDescription(StandardContext.class);
+        Assert.assertNotNull(desc);
+        boolean oldSeparate = desc.isStoreSeparate();
+        boolean oldExternalAllowed = desc.isExternalAllowed();
+        boolean oldExternalOnly = desc.isExternalOnly();
+        String serverXmlDump;
+        try {
+            desc.setStoreSeparate(true);
+            desc.setExternalAllowed(true);
+            desc.setExternalOnly(false);
+            StringWriter buffer = new StringWriter();
+            storeConfig.store(new PrintWriter(buffer), -2, tomcat.getServer());
+            serverXmlDump = buffer.toString();
+        } finally {
+            desc.setStoreSeparate(oldSeparate);
+            desc.setExternalAllowed(oldExternalAllowed);
+            desc.setExternalOnly(oldExternalOnly);
+        }
+
+        // The context must not be stored inline in server.xml
+        Assert.assertFalse(serverXmlDump, serverXmlDump.contains("standalone"));
+
+        // A new context configuration file must have been created instead
+        File contextXml = new File(tomcat.getHost().getConfigBaseFile(), "standalone.xml");
+        Assert.assertTrue("Context file was not created: " + contextXml, contextXml.exists());
+        String contextXmlDump;
+        try (FileReader reader = new FileReader(contextXml);
+                StringWriter writer = new StringWriter()) {
+            IOTools.flow(reader, writer);
+            contextXmlDump = writer.toString();
+        }
+        Assert.assertTrue(contextXmlDump, contextXmlDump.contains("<Context"));
+        // The stored configuration must remain well-formed
+        SAXParserFactory.newInstance().newSAXParser().getXMLReader()
+                .parse(new InputSource(new StringReader(contextXmlDump)));
+    }
+
+    /**
+     * Verify that storing a context flagged as deployed from server.xml with no writer for server.xml is skipped
+     * gracefully (no error, no new context configuration file).
+     *
+     * @throws Exception if the test experiences an unexpected error
+     */
+    @Test
+    public void testContextFromServerXmlStoreWithoutWriterSkipped() throws Exception {
+        Tomcat tomcat = getTomcatInstance();
+        StoreConfigLifecycleListener storeConfigListener = new StoreConfigLifecycleListener();
+        tomcat.getServer().addLifecycleListener(storeConfigListener);
+
+        File appDir = new File(getTemporaryDirectory(), "webapps/skipped");
+        if (!appDir.mkdirs()) {
+            Assert.fail("Unable to create the webapp directory");
+        }
+        Context context = tomcat.addContext("/skipped", appDir.getAbsolutePath());
+        ((StandardContext) context).setDeployedFromServerXml(true);
+
+        File conf = new File(getTemporaryDirectory(), "conf");
+        if (!conf.mkdirs()) {
+            Assert.fail("Unable to create conf directory");
+        }
+        addDeleteOnTearDown(conf);
+
+        tomcat.start();
+
+        IStoreConfig storeConfig = storeConfigListener.getStoreConfig();
+        StoreDescription desc = storeConfig.getRegistry().findDescription(StandardContext.class);
+        Assert.assertNotNull(desc);
+        boolean oldSeparate = desc.isStoreSeparate();
+        boolean oldExternalAllowed = desc.isExternalAllowed();
+        boolean oldExternalOnly = desc.isExternalOnly();
+        try {
+            desc.setStoreSeparate(true);
+            desc.setExternalAllowed(true);
+            desc.setExternalOnly(false);
+            // No writer available for server.xml and no config file: storing must be skipped without an error
+            desc.getStoreFactory().store(null, -2, context);
+        } finally {
+            desc.setStoreSeparate(oldSeparate);
+            desc.setExternalAllowed(oldExternalAllowed);
+            desc.setExternalOnly(oldExternalOnly);
+        }
+
+        Assert.assertFalse(new File(tomcat.getHost().getConfigBaseFile(), "skipped.xml").exists());
     }
 
 }

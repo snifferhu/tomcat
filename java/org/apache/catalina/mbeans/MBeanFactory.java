@@ -48,10 +48,25 @@ import org.apache.juli.logging.Log;
 import org.apache.juli.logging.LogFactory;
 import org.apache.tomcat.util.res.StringManager;
 
+/**
+ * Factory for creating MBeans.
+ */
 public class MBeanFactory {
 
+    /**
+     * Default constructor.
+     */
+    public MBeanFactory() {
+    }
+
+    /**
+     * The log instance for this class.
+     */
     private static final Log log = LogFactory.getLog(MBeanFactory.class);
 
+    /**
+     * The string manager for this class.
+     */
     protected static final StringManager sm = StringManager.getManager(MBeanFactory.class);
 
     /**
@@ -286,7 +301,6 @@ public class MBeanFactory {
         retobj.setSecure(isSSL);
         retobj.setScheme(isSSL ? "https" : "http");
         // Add the new instance to its parent component
-        // FIX ME - addConnector will fail
         ObjectName pname = new ObjectName(parent);
         Service service = getService(pname);
         service.addConnector(retobj);
@@ -426,6 +440,9 @@ public class MBeanFactory {
             Service service = getService(pname);
             Engine engine = service.getContainer();
             Host host = (Host) engine.findChild(pname.getKeyProperty("host"));
+            if (host == null) {
+                throw new IllegalArgumentException(sm.getString("mBeanFactory.noHost", pname.getKeyProperty("host")));
+            }
             host.addChild(context);
         }
 
@@ -482,7 +499,7 @@ public class MBeanFactory {
      *
      * @param domain      Domain name for the container instance
      * @param defaultHost Name of the default host to be used in the Engine
-     * @param baseDir     Base directory value for Engine
+     * @param baseDir     Base directory value for Engine, not used anymore
      *
      * @return the object name of the created service
      *
@@ -704,6 +721,9 @@ public class MBeanFactory {
         } else {
             log.warn(sm.getString("mBeanFactory.noDeployer", hostName));
             Host host = (Host) engine.findChild(hostName);
+            if (host == null) {
+                throw new IllegalArgumentException(sm.getString("mBeanFactory.noHost", hostName));
+            }
             Context context = (Context) host.findChild(pathStr);
             // Remove this component from its parent component
             host.removeChild(context);
@@ -790,7 +810,9 @@ public class MBeanFactory {
         ObjectName oname = new ObjectName(name);
         // Acquire a reference to the component to be removed
         Container container = getParentContainerFromChild(oname);
-        container.setRealm(null);
+        if (container != null) {
+            container.setRealm(null);
+        }
     }
 
 
@@ -826,11 +848,16 @@ public class MBeanFactory {
         // Acquire a reference to the component to be removed
         ObjectName oname = new ObjectName(name);
         Container container = getParentContainerFromChild(oname);
+        if (container == null) {
+            return;
+        }
         Valve[] valves = container.getPipeline().getValves();
         for (Valve valve : valves) {
-            ObjectName voname = ((JmxEnabled) valve).getObjectName();
-            if (voname.equals(oname)) {
-                container.getPipeline().removeValve(valve);
+            if (valve instanceof JmxEnabled) {
+                ObjectName voname = ((JmxEnabled) valve).getObjectName();
+                if (voname.equals(oname)) {
+                    container.getPipeline().removeValve(valve);
+                }
             }
         }
     }

@@ -56,6 +56,8 @@ public interface Manager {
 
 
     /**
+     * Returns the session id generator for this manager.
+     *
      * @return the session id generator
      */
     SessionIdGenerator getSessionIdGenerator();
@@ -218,8 +220,7 @@ public interface Manager {
 
     /**
      * Construct and return a new session object, based on the default settings specified by this Manager's properties.
-     * The session id specified will be used as the session id. If a new session cannot be created for any reason,
-     * return <code>null</code>.
+     * The session id specified will be used as the session id.
      *
      * @param sessionId The session id which should be used to create the new session; if <code>null</code>, the session
      *                      id will be assigned by this method, and available via the getId() method of the returned
@@ -238,8 +239,7 @@ public interface Manager {
      *
      * @param id The session id for the session to be returned
      *
-     * @exception IllegalStateException if a new session cannot be instantiated for any reason
-     * @exception IOException           if an input/output error occurs while processing this request
+     * @exception IOException if an input/output error occurs while processing this request
      *
      * @return the request session or {@code null} if a session with the requested ID could not be found
      */

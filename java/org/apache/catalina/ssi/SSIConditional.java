@@ -24,6 +24,16 @@ import java.text.ParseException;
  * SSI command that handles all conditional directives.
  */
 public class SSIConditional implements SSICommand {
+
+
+    /**
+     * Default constructor.
+     */
+    public SSIConditional() {
+    }
+    /**
+     * Processes if/elif/else/endif conditional directives.
+     */
     @Override
     public long process(SSIMediator ssiMediator, String commandName, String[] paramNames, String[] paramValues,
             PrintWriter writer) throws SSIStopProcessingException {
@@ -124,6 +134,9 @@ public class SSIConditional implements SSICommand {
      * Returns the "expr" if the arg name is appropriate, otherwise returns null.
      */
     private String getExpression(String[] paramNames, String[] paramValues) {
+        if (paramNames.length == 0 || paramValues.length == 0) {
+            return null;
+        }
         if ("expr".equalsIgnoreCase(paramNames[0])) {
             return paramValues[0];
         }

@@ -40,21 +40,36 @@ public class TagPluginManager {
     private static final String TAG_PLUGINS_XML = "/WEB-INF/tagPlugins.xml";
     private final ServletContext ctxt;
     private HashMap<String,TagPlugin> tagPlugins;
-    private boolean initialized = false;
+    private volatile boolean initialized = false;
 
+    /**
+     * Creates a new TagPluginManager for the given servlet context.
+     *
+     * @param ctxt the servlet context
+     */
     public TagPluginManager(ServletContext ctxt) {
         this.ctxt = ctxt;
     }
 
+    /**
+     * Applies tag plugin optimizations to the given page.
+     *
+     * @param page the page node tree
+     * @param err the error dispatcher
+     * @param pageInfo page information
+     * @throws JasperException if an error occurs during optimization
+     */
     public void apply(Node.Nodes page, ErrorDispatcher err, PageInfo pageInfo) throws JasperException {
 
-        init(err);
+        if (!initialized) {
+            init(err);
+        }
         if (!tagPlugins.isEmpty()) {
             page.visit(new NodeVisitor(this, pageInfo));
         }
     }
 
-    private void init(ErrorDispatcher err) throws JasperException {
+    private synchronized void init(ErrorDispatcher err) throws JasperException {
         if (initialized) {
             return;
         }

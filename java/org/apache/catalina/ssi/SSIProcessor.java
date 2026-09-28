@@ -23,7 +23,6 @@ import java.io.Reader;
 import java.io.StringWriter;
 import java.util.HashMap;
 import java.util.Locale;
-import java.util.StringTokenizer;
 
 import org.apache.catalina.util.IOTools;
 
@@ -36,12 +35,31 @@ public class SSIProcessor {
     protected static final String COMMAND_START = "<!--#";
     /** The end pattern */
     protected static final String COMMAND_END = "-->";
+    /**
+     * External resolver for file and variable access.
+     */
     protected final SSIExternalResolver ssiExternalResolver;
+    /**
+     * Map of registered SSI command names to their handlers.
+     */
     protected final HashMap<String,SSICommand> commands = new HashMap<>();
+    /**
+     * Debug level for SSI processing.
+     */
     protected final int debug;
+    /**
+     * Whether exec commands are allowed.
+     */
     protected final boolean allowExec;
 
 
+    /**
+     * Creates a new SSI processor with the given configuration.
+     *
+     * @param ssiExternalResolver the external resolver for file/variable access
+     * @param debug               the debug level
+     * @param allowExec           whether exec commands are allowed
+     */
     public SSIProcessor(SSIExternalResolver ssiExternalResolver, int debug, boolean allowExec) {
         this.ssiExternalResolver = ssiExternalResolver;
         this.debug = debug;
@@ -50,6 +68,9 @@ public class SSIProcessor {
     }
 
 
+    /**
+     * Registers all built-in SSI commands.
+     */
     protected void addBuiltinCommands() {
         addCommand("config", new SSIConfig());
         addCommand("echo", new SSIEcho());
@@ -69,6 +90,12 @@ public class SSIProcessor {
     }
 
 
+    /**
+     * Registers a custom SSI command handler.
+     *
+     * @param name     the command name
+     * @param command  the command handler
+     */
     public void addCommand(String name, SSICommand command) {
         commands.put(name, command);
     }
@@ -169,47 +196,65 @@ public class SSIProcessor {
      * @return an array with the parameter names
      */
     protected String[] parseParamNames(StringBuilder cmd, int start) {
+        // Count parameters first
+        int count = 0;
         int bIdx = start;
-        int i = 0;
-        int quotes;
-        boolean inside = false;
-        StringBuilder retBuf = new StringBuilder();
+        // Tracks the quote character that will close any currently quoted text. 0 means not currently quoted.
+        char endQuote = 0;
+        boolean escaped = false;
         while (bIdx < cmd.length()) {
-            if (!inside) {
-                while (bIdx < cmd.length() && isSpace(cmd.charAt(bIdx))) {
-                    bIdx++;
-                }
-                if (bIdx >= cmd.length()) {
-                    break;
-                }
-                inside = true;
-            } else {
-                while (bIdx < cmd.length() && cmd.charAt(bIdx) != '=') {
-                    retBuf.append(cmd.charAt(bIdx));
-                    bIdx++;
-                }
-                retBuf.append('=');
-                inside = false;
-                quotes = 0;
-                boolean escaped = false;
-                for (; bIdx < cmd.length() && quotes != 2; bIdx++) {
-                    char c = cmd.charAt(bIdx);
-                    // Need to skip escaped characters
-                    if (c == '\\' && !escaped) {
-                        escaped = true;
-                        continue;
-                    }
-                    if (c == '"' && !escaped) {
-                        quotes++;
-                    }
-                    escaped = false;
-                }
+            char c = cmd.charAt(bIdx);
+            if (escaped) {
+                escaped = false;
+            } else if (c == '\\') {
+                escaped = true;
+            } else if (endQuote == 0 && (c == '"' || c == '\'' || c == '`')) {
+                endQuote = c;
+            } else if (endQuote == c) {
+                endQuote = 0;
+            } else if (c == '=' && endQuote == 0) {
+                count++;
             }
+            bIdx++;
         }
-        StringTokenizer str = new StringTokenizer(retBuf.toString(), "=");
-        String[] retString = new String[str.countTokens()];
-        while (str.hasMoreTokens()) {
-            retString[i++] = str.nextToken().trim();
+        String[] retString = new String[count];
+        // Extract parameter names (characters between spaces and the first unquoted '=')
+        bIdx = start;
+        int idx = 0;
+        StringBuilder nameBuf = new StringBuilder();
+        boolean collectingName = false;
+        endQuote = 0;
+        escaped = false;
+        while (bIdx < cmd.length() && idx < count) {
+            char c = cmd.charAt(bIdx);
+            if (escaped) {
+                escaped = false;
+                if (collectingName && endQuote == 0) {
+                    nameBuf.append(c);
+                }
+            } else if (c == '\\') {
+                escaped = true;
+                if (collectingName && endQuote == 0) {
+                    nameBuf.append(c);
+                }
+            } else if (endQuote == 0 && (c == '"' || c == '\'' || c == '`')) {
+                endQuote = c;
+            } else if (endQuote == c) {
+                endQuote = 0;
+            } else if (endQuote == 0 && isSpace(c)) {
+                if (collectingName) {
+                    nameBuf.setLength(0);
+                    collectingName = false;
+                }
+            } else if (endQuote == 0 && c == '=') {
+                retString[idx++] = nameBuf.toString().trim();
+                nameBuf.setLength(0);
+                collectingName = false;
+            } else if (endQuote == 0) {
+                collectingName = true;
+                nameBuf.append(c);
+            }
+            bIdx++;
         }
         return retString;
     }
@@ -309,15 +354,35 @@ public class SSIProcessor {
     }
 
 
+    /**
+     * Compares a substring of the buffer with the given command string.
+     *
+     * @param buf      the buffer to search
+     * @param index    the starting index
+     * @param command  the command string to match
+     * @return true if the substring matches the command
+     */
     protected boolean charCmp(String buf, int index, String command) {
         return buf.regionMatches(index, command, 0, command.length());
     }
 
 
+    /**
+     * Checks if the given character is a whitespace character.
+     *
+     * @param c the character to check
+     * @return true if the character is a space, tab, newline, or carriage return
+     */
     protected boolean isSpace(char c) {
         return c == ' ' || c == '\n' || c == '\t' || c == '\r';
     }
 
+    /**
+     * Checks if the given character is a quote character.
+     *
+     * @param c the character to check
+     * @return true if the character is a single, double, or backtick quote
+     */
     protected boolean isQuote(char c) {
         return c == '\'' || c == '\"' || c == '`';
     }

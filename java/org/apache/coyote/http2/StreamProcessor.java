@@ -261,6 +261,18 @@ class StreamProcessor extends AbstractProcessor implements NonPipeliningProcesso
                 // server always overrides anything the app might set
                 headers.setValue("Server").setString(server);
             }
+
+            // Announce the configured alternative service so clients can
+            // discover it without any pre-configuration. The alternative
+            // service is assumed to listen on the same port as this
+            // request. An Alt-Svc header set by the application takes
+            // precedence.
+            String altService = protocol.getHttp11Protocol().getAltService();
+            if (altService != null &&
+                    headers.getValue(org.apache.coyote.http11.Constants.ALT_SVC_HEADER_NAME) == null) {
+                headers.addValue(org.apache.coyote.http11.Constants.ALT_SVC_HEADER_NAME)
+                        .setString(altService + "=\":" + coyoteRequest.getServerPort() + "\"");
+            }
         }
     }
 
@@ -314,7 +326,7 @@ class StreamProcessor extends AbstractProcessor implements NonPipeliningProcesso
         stream.getInputBuffer().insertReplayedBody(body);
         try {
             stream.receivedEndOfStream();
-        } catch (ConnectionException ignore) {
+        } catch (Http2Exception ignore) {
             // Exception will not be thrown in this case
         }
     }
@@ -383,7 +395,7 @@ class StreamProcessor extends AbstractProcessor implements NonPipeliningProcesso
             /*
              * Dispatch on new thread. Firstly, this avoids a deadlock on the SocketWrapper as Streams being processed
              * by container threads lock the SocketProcessor before they lock the SocketWrapper which is the opposite
-             * order to container threads processing via Http2UpgrageHandler. Secondly, this code executes after a
+             * order to container threads processing via Http2UpgradeHandler. Secondly, this code executes after a
              * Window update has released one or more Streams. By dispatching each Stream to a dedicated thread, those
              * Streams may progress concurrently.
              */
@@ -414,7 +426,7 @@ class StreamProcessor extends AbstractProcessor implements NonPipeliningProcesso
     public final void recycle() {
         // StreamProcessor instances are not re-used.
 
-        // Calling removeRequestProcessor even though the RequestProcesser was
+        // Calling removeRequestProcessor even though the RequestProcessor was
         // never added will add the values from the RequestProcessor to the
         // running total for the GlobalRequestProcessor
         RequestGroupInfo global = handler.getProtocol().getGlobal();
@@ -502,18 +514,25 @@ class StreamProcessor extends AbstractProcessor implements NonPipeliningProcesso
      * The checks performed below are based on the checks in Http11InputBuffer.
      */
     private boolean validateRequest() {
-        HttpParser httpParser = handler.getProtocol().getHttp11Protocol().getHttpParser();
+        // Check for issues during header processing. Include:
+        // - invalid (incorrectly formatted) :authority header
+        // - invalid (incorrectly formatted) host header
+        if (request.getNote(Request.NOTE_BAD_REQUEST) != null) {
+            return false;
+        }
 
         // Method name must be a token
         if (!HttpParser.isToken(request.getMethod())) {
             return false;
         }
 
-        // Scheme must adhere to RFC 3986
+        // Scheme must adhere to RFC 3986 - null scheme possible with CONNECT
         String scheme = request.scheme().toString();
-        if (!HttpParser.isScheme(scheme)) {
+        if (scheme != null && !HttpParser.isScheme(scheme)) {
             return false;
         }
+
+        HttpParser httpParser = handler.getProtocol().getHttp11Protocol().getHttpParser();
 
         // Invalid character in request target
         // (other checks such as valid %nn happen later)

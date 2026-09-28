@@ -48,6 +48,7 @@ import org.apache.catalina.Session;
 import org.apache.catalina.manager.util.SessionUtils;
 import org.apache.catalina.util.ContextName;
 import org.apache.catalina.util.ServerInfo;
+import org.apache.catalina.util.SessionComparators;
 import org.apache.catalina.util.URLEncoder;
 import org.apache.tomcat.util.res.StringManager;
 import org.apache.tomcat.util.security.Escape;
@@ -61,11 +62,17 @@ import org.apache.tomcat.util.security.Escape;
  * interface which makes it easier to administrate.
  * <p>
  * However if you use a software that parses the output of <code>ManagerServlet</code> you won't be able to upgrade to
- * this Servlet since the output are not in the same format ar from <code>ManagerServlet</code>
+ * this Servlet since the output is not in the same format as <code>ManagerServlet</code>
  *
  * @see ManagerServlet
  */
 public class HTMLManagerServlet extends ManagerServlet {
+
+    /**
+     * Constructs a new HTMLManagerServlet.
+     */
+    public HTMLManagerServlet() {
+    }
 
     @Serial
     private static final long serialVersionUID = 1L;
@@ -79,7 +86,9 @@ public class HTMLManagerServlet extends ManagerServlet {
     static final String connectorCertsJspPath = "/WEB-INF/jsp/connectorCerts.jsp";
     static final String connectorTrustedCertsJspPath = "/WEB-INF/jsp/connectorTrustedCerts.jsp";
 
+    /** Whether to show proxy sessions in the output. */
     private boolean showProxySessions = false;
+    /** The HTML subtitle for the manager pages. */
     private String htmlSubTitle = null;
 
     // --------------------------------------------------------- Public Methods
@@ -202,6 +211,14 @@ public class HTMLManagerServlet extends ManagerServlet {
     }
 
 
+    /**
+     * Upload a WAR file for deployment.
+     *
+     * @param request the HTTP servlet request
+     * @param smClient internationalized strings
+     *
+     * @return message string describing the result of the upload
+     */
     protected String upload(HttpServletRequest request, StringManager smClient) {
         String message = "";
 
@@ -234,6 +251,12 @@ public class HTMLManagerServlet extends ManagerServlet {
                 }
 
                 ContextName cn = new ContextName(filename, true);
+                StringWriter stringWriter = new StringWriter();
+                PrintWriter printWriter = new PrintWriter(stringWriter);
+                if (!validateContextName(cn, printWriter, smClient)) {
+                    return stringWriter.toString();
+                }
+
                 String name = cn.getName();
 
                 if (host.findChild(name) != null && !isDeployed(name)) {
@@ -305,7 +328,7 @@ public class HTMLManagerServlet extends ManagerServlet {
         args[0] = getServletContext().getContextPath();
         args[1] = smClient.getString("htmlManagerServlet.title");
         if (htmlSubTitle != null) {
-            args[1] += "</font><br/><font size=\"+1\">" + htmlSubTitle;
+            args[1] += "</font><br/><font size=\"+1\">" + Escape.htmlElementContent(htmlSubTitle);
         }
 
         // HTML Header Section
@@ -697,6 +720,14 @@ public class HTMLManagerServlet extends ManagerServlet {
     }
 
 
+    /**
+     * Reload SSL configuration for the specified host.
+     *
+     * @param tlsHostName the TLS host name
+     * @param smClient internationalized strings
+     *
+     * @return message string describing the result
+     */
     protected String sslReload(String tlsHostName, StringManager smClient) {
         StringWriter stringWriter = new StringWriter();
         PrintWriter printWriter = new PrintWriter(stringWriter);
@@ -707,6 +738,16 @@ public class HTMLManagerServlet extends ManagerServlet {
     }
 
 
+    /**
+     * Display SSL connector cipher information.
+     *
+     * @param request the HTTP servlet request
+     * @param response the HTTP servlet response
+     * @param smClient internationalized strings
+     *
+     * @throws ServletException a servlet error occurred
+     * @throws IOException an I/O error occurred
+     */
     protected void sslConnectorCiphers(HttpServletRequest request, HttpServletResponse response, StringManager smClient)
             throws ServletException, IOException {
         request.setAttribute("cipherList", getConnectorCiphers(smClient));
@@ -714,6 +755,16 @@ public class HTMLManagerServlet extends ManagerServlet {
     }
 
 
+    /**
+     * Display SSL connector certificate information.
+     *
+     * @param request the HTTP servlet request
+     * @param response the HTTP servlet response
+     * @param smClient internationalized strings
+     *
+     * @throws ServletException a servlet error occurred
+     * @throws IOException an I/O error occurred
+     */
     protected void sslConnectorCerts(HttpServletRequest request, HttpServletResponse response, StringManager smClient)
             throws ServletException, IOException {
         request.setAttribute("certList", getConnectorCerts(smClient));
@@ -721,6 +772,16 @@ public class HTMLManagerServlet extends ManagerServlet {
     }
 
 
+    /**
+     * Display SSL connector trusted certificate information.
+     *
+     * @param request the HTTP servlet request
+     * @param response the HTTP servlet response
+     * @param smClient internationalized strings
+     *
+     * @throws ServletException a servlet error occurred
+     * @throws IOException an I/O error occurred
+     */
     protected void sslConnectorTrustedCerts(HttpServletRequest request, HttpServletResponse response,
             StringManager smClient) throws ServletException, IOException {
         request.setAttribute("trustedCertList", getConnectorTrustedCerts(smClient));
@@ -808,6 +869,14 @@ public class HTMLManagerServlet extends ManagerServlet {
         displaySessionsListPage(cn, req, resp, smClient);
     }
 
+    /**
+     * Get all sessions for the specified context.
+     *
+     * @param cn the context name
+     * @param smClient internationalized strings
+     *
+     * @return list of sessions for the context
+     */
     protected List<Session> getSessionsForName(ContextName cn, StringManager smClient) {
         if (cn == null || !(cn.getPath().startsWith("/") || cn.getPath().isEmpty())) {
             String path = null;
@@ -824,7 +893,12 @@ public class HTMLManagerServlet extends ManagerServlet {
                     smClient.getString("managerServlet.noContext", Escape.htmlElementContent(cn.getDisplayName())));
         }
         Manager manager = ctxt.getManager();
-        List<Session> sessions = new ArrayList<>(Arrays.asList(manager.findSessions()));
+        List<Session> sessions;
+        if (manager == null) {
+            sessions = Collections.emptyList();
+        } else {
+            sessions = new ArrayList<>(Arrays.asList(manager.findSessions()));
+        }
         if (manager instanceof DistributedManager && showProxySessions) {
             // Add dummy proxy sessions
             Set<String> sessionIds = ((DistributedManager) manager).getSessionIdsFull();
@@ -840,6 +914,15 @@ public class HTMLManagerServlet extends ManagerServlet {
         return sessions;
     }
 
+    /**
+     * Get a specific session by ID for the specified context.
+     *
+     * @param cn the context name
+     * @param id the session ID
+     * @param smClient internationalized strings
+     *
+     * @return the session, or {@code null} if not found
+     */
     protected Session getSessionForNameAndId(ContextName cn, String id, StringManager smClient) {
 
         List<Session> sessions = getSessionsForName(cn, smClient);
@@ -894,7 +977,7 @@ public class HTMLManagerServlet extends ManagerServlet {
         req.setAttribute("sort", sortBy);
         req.setAttribute("order", orderBy);
         req.setAttribute("activeSessions", sessions);
-        // strong>NOTE</strong> - This header will be overridden
+        // <strong>NOTE</strong> - This header will be overridden
         // automatically if a <code>RequestDispatcher.forward()</code> call is
         // ultimately invoked.
         resp.setHeader("Pragma", "No-cache"); // HTTP 1.0
@@ -918,7 +1001,10 @@ public class HTMLManagerServlet extends ManagerServlet {
     protected void displaySessionDetailPage(HttpServletRequest req, HttpServletResponse resp, ContextName cn,
             String sessionId, StringManager smClient) throws ServletException, IOException {
         Session session = getSessionForNameAndId(cn, sessionId, smClient);
-        // strong>NOTE</strong> - This header will be overridden
+        if (session == null) {
+            req.setAttribute(APPLICATION_ERROR, smClient.getString("htmlManagerServlet.sessionNotFound", sessionId));
+        }
+        // <strong>NOTE</strong> - This header will be overridden
         // automatically if a <code>RequestDispatcher.forward()</code> call is
         // ultimately invoked.
         resp.setHeader("Pragma", "No-cache"); // HTTP 1.0
@@ -944,7 +1030,7 @@ public class HTMLManagerServlet extends ManagerServlet {
         int nbAffectedSessions = 0;
         for (String sessionId : sessionIds) {
             Session session = getSessionForNameAndId(cn, sessionId, smClient);
-            if (null == session) {
+            if (null == session || session.getSession() == null) {
                 // Shouldn't happen, but let's play nice...
                 if (debug >= 1) {
                     log("Cannot invalidate null session " + sessionId);
@@ -987,38 +1073,51 @@ public class HTMLManagerServlet extends ManagerServlet {
             return false;
         }
         HttpSession httpSession = session.getSession();
+        if (httpSession == null) {
+            if (debug >= 1) {
+                log("Cannot remove attribute '" + attributeName + "' for null session " + sessionId);
+            }
+            return false;
+        }
         boolean wasPresent = null != httpSession.getAttribute(attributeName);
         try {
             httpSession.removeAttribute(attributeName);
         } catch (IllegalStateException ise) {
             if (debug >= 1) {
-                log("Cannot remote attribute '" + attributeName + "' for invalidated session id " + sessionId);
+                log("Cannot remove attribute '" + attributeName + "' for invalidated session id " + sessionId);
             }
         }
         return wasPresent;
     }
 
+    /**
+     * Get a comparator for sessions based on the specified sort criteria.
+     *
+     * @param sortBy the sort criteria
+     *
+     * @return the comparator, or {@code null} if the sort criteria is not recognized
+     */
     protected Comparator<Session> getComparator(String sortBy) {
         if ("CreationTime".equalsIgnoreCase(sortBy)) {
             return Comparator.comparingLong(Session::getCreationTime);
         } else if ("id".equalsIgnoreCase(sortBy)) {
             return comparingNullable(Session::getId);
         } else if ("LastAccessedTime".equalsIgnoreCase(sortBy)) {
-            return Comparator.comparingLong(Session::getLastAccessedTime);
+            return SessionComparators.comparingLongSnapshot(Session::getLastAccessedTime);
         } else if ("MaxInactiveInterval".equalsIgnoreCase(sortBy)) {
             return Comparator.comparingInt(Session::getMaxInactiveInterval);
         } else if ("new".equalsIgnoreCase(sortBy)) {
-            return Comparator.comparing(s -> Boolean.valueOf(s.getSession().isNew()));
+            return Comparator.comparing(s -> (s.getSession() != null) ? Boolean.valueOf(s.getSession().isNew()) : Boolean.FALSE);
         } else if ("locale".equalsIgnoreCase(sortBy)) {
             return Comparator.comparing(JspHelper::guessDisplayLocaleFromSession);
         } else if ("user".equalsIgnoreCase(sortBy)) {
             return comparingNullable(JspHelper::guessDisplayUserFromSession);
         } else if ("UsedTime".equalsIgnoreCase(sortBy)) {
-            return Comparator.comparingLong(SessionUtils::getUsedTimeForSession);
+            return SessionComparators.comparingLongSnapshot(SessionUtils::getUsedTimeForSession);
         } else if ("InactiveTime".equalsIgnoreCase(sortBy)) {
-            return Comparator.comparingLong(SessionUtils::getInactiveTimeForSession);
+            return SessionComparators.comparingLongSnapshot(SessionUtils::getInactiveTimeForSession);
         } else if ("TTL".equalsIgnoreCase(sortBy)) {
-            return Comparator.comparingLong(SessionUtils::getTTLForSession);
+            return SessionComparators.comparingLongSnapshot(SessionUtils::getTTLForSession);
         } else {
             return null;
         }
@@ -1172,34 +1271,34 @@ public class HTMLManagerServlet extends ManagerServlet {
             "<table cellspacing=\"0\" cellpadding=\"3\">\n" +
             "<tr>\n" +
             " <td class=\"row-right\">\n" +
-            "  <small>{3}</small>\n" +
+            "  <label for=\"deployPath\"><small>{3}</small></label>\n" +
             " </td>\n" +
             " <td class=\"row-left\">\n" +
-            "  <input type=\"text\" name=\"deployPath\" size=\"20\">\n" +
+            "  <input type=\"text\" name=\"deployPath\" id=\"deployPath\" size=\"20\">\n" +
             " </td>\n" +
             "</tr>\n" +
             "<tr>\n" +
             " <td class=\"row-right\">\n" +
-            "  <small>{4}</small>\n" +
+            "  <label for=\"deployVersion\"><small>{4}</small></label>\n" +
             " </td>\n" +
             " <td class=\"row-left\">\n" +
-            "  <input type=\"text\" name=\"deployVersion\" size=\"20\">\n" +
+            "  <input type=\"text\" name=\"deployVersion\" id=\"deployVersion\" size=\"20\">\n" +
             " </td>\n" +
             "</tr>\n" +
             "<tr>\n" +
             " <td class=\"row-right\">\n" +
-            "  <small>{5}</small>\n" +
+            "  <label for=\"deployConfig\"><small>{5}</small></label>\n" +
             " </td>\n" +
             " <td class=\"row-left\">\n" +
-            "  <input type=\"text\" name=\"deployConfig\" size=\"20\">\n" +
+            "  <input type=\"text\" name=\"deployConfig\" id=\"deployConfig\" size=\"20\">\n" +
             " </td>\n" +
             "</tr>\n" +
             "<tr>\n" +
             " <td class=\"row-right\">\n" +
-            "  <small>{6}</small>\n" +
+            "  <label for=\"deployWar\"><small>{6}</small></label>\n" +
             " </td>\n" +
             " <td class=\"row-left\">\n" +
-            "  <input type=\"text\" name=\"deployWar\" size=\"40\">\n" +
+            "  <input type=\"text\" name=\"deployWar\" id=\"deployWar\" size=\"40\">\n" +
             " </td>\n" +
             "</tr>\n" +
             "<tr>\n" +
@@ -1226,10 +1325,10 @@ public class HTMLManagerServlet extends ManagerServlet {
             "<table cellspacing=\"0\" cellpadding=\"3\">\n" +
             "<tr>\n" +
             " <td class=\"row-right\">\n" +
-            "  <small>{2}</small>\n" +
+            "  <label for=\"deployWarFile\"><small>{2}</small></label>\n" +
             " </td>\n" +
             " <td class=\"row-left\">\n" +
-            "  <input type=\"file\" name=\"deployWar\" size=\"40\">\n" +
+            "  <input type=\"file\" name=\"deployWar\" id=\"deployWarFile\" size=\"40\">\n" +
             " </td>\n" +
             "</tr>\n" +
             "<tr>\n" +
@@ -1262,10 +1361,10 @@ public class HTMLManagerServlet extends ManagerServlet {
             "<table cellspacing=\"0\" cellpadding=\"3\">\n" +
             "<tr>\n" +
             " <td class=\"row-right\">\n" +
-            "  <small>{3}</small>\n" +
+            "  <label for=\"tlsHostName\"><small>{3}</small></label>\n" +
             " </td>\n" +
             " <td class=\"row-left\">\n" +
-            "  <input type=\"text\" name=\"tlsHostName\" size=\"20\">\n" +
+            "  <input type=\"text\" name=\"tlsHostName\" id=\"tlsHostName\" size=\"20\">\n" +
             " </td>\n" +
             "</tr>\n" +
             "<tr>\n" +

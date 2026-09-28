@@ -18,6 +18,7 @@ package org.apache.tomcat.util.descriptor.web;
 
 import java.io.Serial;
 import java.io.Serializable;
+import java.util.Objects;
 
 
 /**
@@ -30,6 +31,12 @@ import java.io.Serializable;
  */
 public class SecurityRoleRef implements Serializable {
 
+    /**
+     * Default constructor.
+     */
+    public SecurityRoleRef() {
+    }
+
     @Serial
     private static final long serialVersionUID = 1L;
 
@@ -41,10 +48,20 @@ public class SecurityRoleRef implements Serializable {
      */
     private String name = null;
 
+    /**
+     * Get the role name.
+     *
+     * @return the role name
+     */
     public String getName() {
         return this.name;
     }
 
+    /**
+     * Set the role name.
+     *
+     * @param name The role name
+     */
     public void setName(String name) {
         this.name = name;
     }
@@ -55,10 +72,20 @@ public class SecurityRoleRef implements Serializable {
      */
     private String link = null;
 
+    /**
+     * Get the role link.
+     *
+     * @return the role link
+     */
     public String getLink() {
         return this.link;
     }
 
+    /**
+     * Set the role link.
+     *
+     * @param link The role link
+     */
     public void setLink(String link) {
         this.link = link;
     }
@@ -84,4 +111,28 @@ public class SecurityRoleRef implements Serializable {
     }
 
 
+    @Override
+    public int hashCode() {
+        final int prime = 31;
+        int result = 1;
+        result = prime * result + ((link == null) ? 0 : link.hashCode());
+        result = prime * result + ((name == null) ? 0 : name.hashCode());
+        return result;
+    }
+
+
+    @Override
+    public boolean equals(Object obj) {
+        if (this == obj) {
+            return true;
+        }
+        if (getClass() != obj.getClass()) {
+            return false;
+        }
+        SecurityRoleRef other = (SecurityRoleRef) obj;
+        if (!Objects.equals(link, other.link)) {
+            return false;
+        }
+        return Objects.equals(name, other.name);
+    }
 }

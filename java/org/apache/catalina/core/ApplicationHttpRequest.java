@@ -51,10 +51,9 @@ import org.apache.tomcat.util.http.Parameters;
 import org.apache.tomcat.util.res.StringManager;
 
 /**
- * Wrapper around a <code>jakarta.servlet.http.HttpServletRequest</code> that transforms an application request object
- * (which might be the original one passed to a servlet, or might be based on the 2.3
- * <code>jakarta.servlet.http.HttpServletRequestWrapper</code> class) back into an internal
- * <code>org.apache.catalina.HttpRequest</code>.
+ * Wrapper around a <code>jakarta.servlet.http.HttpServletRequest</code> that is used by the
+ * <code>RequestDispatcher</code> implementation to override the request attributes that are relevant to the current
+ * dispatch (e.g. the request URI, method and query string).
  * <p>
  * <strong>WARNING</strong>: Due to Java's lack of support for multiple inheritance, all of the logic in
  * <code>ApplicationRequest</code> is duplicated in <code>ApplicationHttpRequest</code>. Make sure that you keep these
@@ -225,7 +224,9 @@ class ApplicationHttpRequest extends HttpServletRequestWrapper {
     @Override
     public Object getAttribute(String name) {
 
-        if (name.equals(Globals.DISPATCHER_TYPE_ATTR)) {
+        if (name == null) {
+            throw new IllegalArgumentException(sm.getString("applicationHttpRequest.nullAttributeName"));
+        } else if (name.equals(Globals.DISPATCHER_TYPE_ATTR)) {
             return dispatcherType;
         } else if (name.equals(Globals.DISPATCHER_REQUEST_PATH_ATTR)) {
             if (requestDispatcherPath != null) {
@@ -293,7 +294,9 @@ class ApplicationHttpRequest extends HttpServletRequestWrapper {
     @Override
     public void setAttribute(String name, Object value) {
 
-        if (name.equals(Globals.DISPATCHER_TYPE_ATTR)) {
+        if (name == null) {
+            throw new IllegalArgumentException(sm.getString("applicationHttpRequest.nullAttributeName"));
+        } else if (name.equals(Globals.DISPATCHER_TYPE_ATTR)) {
             dispatcherType = (DispatcherType) value;
             return;
         } else if (name.equals(Globals.DISPATCHER_REQUEST_PATH_ATTR)) {
@@ -547,9 +550,13 @@ class ApplicationHttpRequest extends HttpServletRequestWrapper {
                 other = super.getSession(true);
             }
             if (other != null) {
+                Manager manager = context.getManager();
+                if (manager == null) {
+                    return null;
+                }
                 Session localSession = null;
                 try {
-                    localSession = context.getManager().findSession(other.getId());
+                    localSession = manager.findSession(other.getId());
                     if (localSession != null && !localSession.isValid()) {
                         localSession = null;
                     }
@@ -557,7 +564,7 @@ class ApplicationHttpRequest extends HttpServletRequestWrapper {
                     // Ignore
                 }
                 if (localSession == null && create) {
-                    localSession = context.getManager().createSession(other.getId());
+                    localSession = manager.createSession(other.getId());
                 }
                 if (localSession != null) {
                     localSession.access();
@@ -613,7 +620,8 @@ class ApplicationHttpRequest extends HttpServletRequestWrapper {
     // -------------------------------------------------------- Package Methods
 
     /**
-     * Recycle this request
+     * Recycle this request. Since there is no object reuse, this only ends
+     * the session access.
      */
     public void recycle() {
         if (session != null) {
@@ -796,7 +804,7 @@ class ApplicationHttpRequest extends HttpServletRequestWrapper {
      */
     protected boolean setSpecial(String name, Object value) {
         // Performance - see BZ 68089
-        if (name.length() < shortestSpecialNameLength) {
+        if (name ==  null || name.length() < shortestSpecialNameLength) {
             return false;
         }
         Integer index = specialsMap.get(name);

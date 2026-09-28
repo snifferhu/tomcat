@@ -24,20 +24,20 @@ import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 import javax.naming.NamingException;
 
 import org.apache.catalina.Container;
 import org.apache.catalina.Context;
-import org.apache.catalina.Engine;
 import org.apache.catalina.JmxEnabled;
 import org.apache.catalina.LifecycleException;
 import org.apache.catalina.LifecycleState;
 import org.apache.catalina.Server;
+import org.apache.catalina.Service;
 import org.apache.catalina.mbeans.MBeanUtils;
 import org.apache.catalina.util.Introspection;
 import org.apache.catalina.util.LifecycleMBeanBase;
@@ -61,7 +61,8 @@ import org.apache.tomcat.util.res.StringManager;
 
 
 /**
- * Holds and manages the naming resources defined in the Jakarta EE Naming Context and their associated JNDI context.
+ * Holds and manages the naming resource descriptors. The associated JNDI context is created and maintained by
+ * NamingContextListener.
  */
 public class NamingResourcesImpl extends LifecycleMBeanBase implements Serializable, NamingResources {
 
@@ -72,6 +73,9 @@ public class NamingResourcesImpl extends LifecycleMBeanBase implements Serializa
 
     private static final StringManager sm = StringManager.getManager(NamingResourcesImpl.class);
 
+    /**
+     * Flag that controls whether resources require explicit JMX registration.
+     */
     private volatile boolean resourceRequireExplicitRegistration = false;
 
     // ----------------------------------------------------------- Constructors
@@ -95,9 +99,9 @@ public class NamingResourcesImpl extends LifecycleMBeanBase implements Serializa
 
 
     /**
-     * Set of naming entries, keyed by name.
+     * Set of naming entry names.
      */
-    private final Set<String> entries = new HashSet<>();
+    private final Set<String> entries = ConcurrentHashMap.newKeySet();
 
 
     /**
@@ -172,7 +176,7 @@ public class NamingResourcesImpl extends LifecycleMBeanBase implements Serializa
     /**
      * Set the container with which the naming resources are associated.
      *
-     * @param container the associated with the resources
+     * @param container the container associated with the resources
      */
     public void setContainer(Object container) {
         this.container = container;
@@ -190,7 +194,9 @@ public class NamingResourcesImpl extends LifecycleMBeanBase implements Serializa
 
 
     /**
-     * @return the transaction object.
+     * Return the transaction object.
+     *
+     * @return the transaction object
      */
     public ContextTransaction getTransaction() {
         return transaction;
@@ -241,7 +247,11 @@ public class NamingResourcesImpl extends LifecycleMBeanBase implements Serializa
                 }
             } else if (rl != null) {
                 // Link. Need to look at the global resources
-                NamingResourcesImpl global = getServer().getGlobalNamingResources();
+                Server server = getServer();
+                if (server == null) {
+                    return;
+                }
+                NamingResourcesImpl global = server.getGlobalNamingResources();
                 if (global.findEnvironment(rl.getGlobal()) != null) {
                     if (global.findEnvironment(rl.getGlobal()).getOverride()) {
                         removeResourceLink(environment.getName());
@@ -294,15 +304,16 @@ public class NamingResourcesImpl extends LifecycleMBeanBase implements Serializa
     }
 
     // Container should be an instance of Server or Context. If it is anything
-    // else, return null which will trigger a NPE.
+    // else, return null.
     private Server getServer() {
         if (container instanceof Server) {
             return (Server) container;
         }
         if (container instanceof Context) {
-            // Could do this in one go. Lots of casts so split out for clarity
-            Engine engine = (Engine) ((Context) container).getParent().getParent();
-            return engine.getService().getServer();
+            Service service = Container.getService((Context) container);
+            if (service != null) {
+                return service.getServer();
+            }
         }
         return null;
     }
@@ -472,8 +483,9 @@ public class NamingResourcesImpl extends LifecycleMBeanBase implements Serializa
 
 
     /**
-     * @return the EJB resource reference with the specified name, if any; otherwise, return <code>null</code>.
+     * Return the EJB resource reference with the specified name.
      *
+     * @return the EJB resource reference, or <code>null</code> if not found
      * @param name Name of the desired EJB resource reference
      */
     public ContextEjb findEjb(String name) {
@@ -486,8 +498,9 @@ public class NamingResourcesImpl extends LifecycleMBeanBase implements Serializa
 
 
     /**
-     * @return the defined EJB resource references for this application. If there are none, a zero-length array is
-     *             returned.
+     * Return the defined EJB resource references for this application.
+     *
+     * @return the EJB resource references, or a zero-length array if none
      */
     public ContextEjb[] findEjbs() {
 
@@ -499,8 +512,9 @@ public class NamingResourcesImpl extends LifecycleMBeanBase implements Serializa
 
 
     /**
-     * @return the environment entry with the specified name, if any; otherwise, return <code>null</code>.
+     * Return the environment entry with the specified name.
      *
+     * @return the environment entry, or <code>null</code> if not found
      * @param name Name of the desired environment entry
      */
     public ContextEnvironment findEnvironment(String name) {
@@ -513,8 +527,9 @@ public class NamingResourcesImpl extends LifecycleMBeanBase implements Serializa
 
 
     /**
-     * @return the array of defined environment entries for this web application. If none have been defined, a
-     *             zero-length array is returned.
+     * Return the array of defined environment entries for this web application.
+     *
+     * @return the environment entries, or a zero-length array if none
      */
     public ContextEnvironment[] findEnvironments() {
 
@@ -526,8 +541,9 @@ public class NamingResourcesImpl extends LifecycleMBeanBase implements Serializa
 
 
     /**
-     * @return the local EJB resource reference with the specified name, if any; otherwise, return <code>null</code>.
+     * Return the local EJB resource reference with the specified name.
      *
+     * @return the local EJB resource reference, or <code>null</code> if not found
      * @param name Name of the desired EJB resource reference
      */
     public ContextLocalEjb findLocalEjb(String name) {
@@ -540,8 +556,9 @@ public class NamingResourcesImpl extends LifecycleMBeanBase implements Serializa
 
 
     /**
-     * @return the defined local EJB resource references for this application. If there are none, a zero-length array is
-     *             returned.
+     * Return the defined local EJB resource references for this application.
+     *
+     * @return the local EJB resource references, or a zero-length array if none
      */
     public ContextLocalEjb[] findLocalEjbs() {
 
@@ -553,8 +570,9 @@ public class NamingResourcesImpl extends LifecycleMBeanBase implements Serializa
 
 
     /**
-     * @return the message destination reference with the specified name, if any; otherwise, return <code>null</code>.
+     * Return the message destination reference with the specified name.
      *
+     * @return the message destination reference, or <code>null</code> if not found
      * @param name Name of the desired message destination reference
      */
     public MessageDestinationRef findMessageDestinationRef(String name) {
@@ -567,8 +585,9 @@ public class NamingResourcesImpl extends LifecycleMBeanBase implements Serializa
 
 
     /**
-     * @return the defined message destination references for this application. If there are none, a zero-length array
-     *             is returned.
+     * Return the defined message destination references for this application.
+     *
+     * @return the message destination references, or a zero-length array if none
      */
     public MessageDestinationRef[] findMessageDestinationRefs() {
 
@@ -580,8 +599,9 @@ public class NamingResourcesImpl extends LifecycleMBeanBase implements Serializa
 
 
     /**
-     * @return the resource reference with the specified name, if any; otherwise return <code>null</code>.
+     * Return the resource reference with the specified name.
      *
+     * @return the resource reference, or <code>null</code> if not found
      * @param name Name of the desired resource reference
      */
     public ContextResource findResource(String name) {
@@ -594,8 +614,9 @@ public class NamingResourcesImpl extends LifecycleMBeanBase implements Serializa
 
 
     /**
-     * @return the resource link with the specified name, if any; otherwise return <code>null</code>.
+     * Return the resource link with the specified name.
      *
+     * @return the resource link, or <code>null</code> if not found
      * @param name Name of the desired resource link
      */
     public ContextResourceLink findResourceLink(String name) {
@@ -608,8 +629,9 @@ public class NamingResourcesImpl extends LifecycleMBeanBase implements Serializa
 
 
     /**
-     * @return the defined resource links for this application. If none have been defined, a zero-length array is
-     *             returned.
+     * Return the defined resource links for this application.
+     *
+     * @return the resource links, or a zero-length array if none
      */
     public ContextResourceLink[] findResourceLinks() {
 
@@ -621,8 +643,9 @@ public class NamingResourcesImpl extends LifecycleMBeanBase implements Serializa
 
 
     /**
-     * @return the defined resource references for this application. If none have been defined, a zero-length array is
-     *             returned.
+     * Return the defined resource references for this application.
+     *
+     * @return the resource references, or a zero-length array if none
      */
     public ContextResource[] findResources() {
 
@@ -634,9 +657,9 @@ public class NamingResourcesImpl extends LifecycleMBeanBase implements Serializa
 
 
     /**
-     * @return the resource environment reference type for the specified name, if any; otherwise return
-     *             <code>null</code>.
+     * Return the resource environment reference type for the specified name.
      *
+     * @return the resource environment reference, or <code>null</code> if not found
      * @param name Name of the desired resource environment reference
      */
     public ContextResourceEnvRef findResourceEnvRef(String name) {
@@ -649,8 +672,9 @@ public class NamingResourcesImpl extends LifecycleMBeanBase implements Serializa
 
 
     /**
-     * @return the array of resource environment reference names for this web application. If none have been specified,
-     *             a zero-length array is returned.
+     * Return the array of resource environment references for this web application.
+     *
+     * @return the resource environment references, or a zero-length array if none
      */
     public ContextResourceEnvRef[] findResourceEnvRefs() {
 
@@ -662,8 +686,9 @@ public class NamingResourcesImpl extends LifecycleMBeanBase implements Serializa
 
 
     /**
-     * @return the web service reference for the specified name, if any; otherwise return <code>null</code>.
+     * Return the web service reference for the specified name.
      *
+     * @return the web service reference, or <code>null</code> if not found
      * @param name Name of the desired web service
      */
     public ContextService findService(String name) {
@@ -676,8 +701,9 @@ public class NamingResourcesImpl extends LifecycleMBeanBase implements Serializa
 
 
     /**
-     * @return the defined web service references for this application. If none have been defined, a zero-length array
-     *             is returned.
+     * Return the defined web service references for this application.
+     *
+     * @return the web service references, or a zero-length array if none
      */
     public ContextService[] findServices() {
 
@@ -887,7 +913,7 @@ public class NamingResourcesImpl extends LifecycleMBeanBase implements Serializa
         // timing issues. Duplication registration is not an issue.
         resourceRequireExplicitRegistration = true;
 
-        for (ContextResource cr : resources.values()) {
+        for (ContextResource cr : findResources()) {
             try {
                 MBeanUtils.createMBean(cr);
             } catch (Exception e) {
@@ -895,7 +921,7 @@ public class NamingResourcesImpl extends LifecycleMBeanBase implements Serializa
             }
         }
 
-        for (ContextEnvironment ce : envs.values()) {
+        for (ContextEnvironment ce : findEnvironments()) {
             try {
                 MBeanUtils.createMBean(ce);
             } catch (Exception e) {
@@ -903,7 +929,7 @@ public class NamingResourcesImpl extends LifecycleMBeanBase implements Serializa
             }
         }
 
-        for (ContextResourceLink crl : resourceLinks.values()) {
+        for (ContextResourceLink crl : findResourceLinks()) {
             try {
                 MBeanUtils.createMBean(crl);
             } catch (Exception e) {
@@ -946,7 +972,7 @@ public class NamingResourcesImpl extends LifecycleMBeanBase implements Serializa
             log.warn(sm.getString("namingResources.cleanupNoContext", container), e);
             return;
         }
-        for (ContextResource cr : resources.values()) {
+        for (ContextResource cr : findResources()) {
             if (cr.getSingleton()) {
                 String closeMethod = cr.getCloseMethod();
                 if (closeMethod != null && !closeMethod.isEmpty()) {
@@ -967,7 +993,7 @@ public class NamingResourcesImpl extends LifecycleMBeanBase implements Serializa
 
     /**
      * Clean up a resource by calling the defined close method. For example, closing a database connection pool will
-     * close it's open connections. This will happen on GC but that leaves db connections open that may cause issues.
+     * close its open connections. This will happen on GC but that leaves db connections open that may cause issues.
      *
      * @param resource The resource to close.
      */
@@ -1002,7 +1028,7 @@ public class NamingResourcesImpl extends LifecycleMBeanBase implements Serializa
         resourceRequireExplicitRegistration = false;
 
         // Destroy in reverse order to create, although it should not matter
-        for (ContextResourceLink crl : resourceLinks.values()) {
+        for (ContextResourceLink crl : findResourceLinks()) {
             try {
                 MBeanUtils.destroyMBean(crl);
             } catch (Exception e) {
@@ -1010,7 +1036,7 @@ public class NamingResourcesImpl extends LifecycleMBeanBase implements Serializa
             }
         }
 
-        for (ContextEnvironment ce : envs.values()) {
+        for (ContextEnvironment ce : findEnvironments()) {
             try {
                 MBeanUtils.destroyMBean(ce);
             } catch (Exception e) {
@@ -1018,7 +1044,7 @@ public class NamingResourcesImpl extends LifecycleMBeanBase implements Serializa
             }
         }
 
-        for (ContextResource cr : resources.values()) {
+        for (ContextResource cr : findResources()) {
             try {
                 MBeanUtils.destroyMBean(cr);
             } catch (Exception e) {

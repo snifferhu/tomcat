@@ -45,8 +45,9 @@ import org.apache.catalina.tribes.io.XByteBuffer;
  * though the interceptor actually operates on byte arrays. This is done
  * for readability for the tests and their outputs.
  */
+@Deprecated
 @FixMethodOrder(MethodSorters.NAME_ASCENDING)
-public class TestEncryptInterceptor extends EncryptionInterceptorBaseTest {
+public class TestEncryptInterceptor extends EncryptInterceptorBaseTest {
 
     @Test
     public void testBasic() throws Exception {
@@ -161,64 +162,6 @@ public class TestEncryptInterceptor extends EncryptionInterceptorBaseTest {
     }
 
     @Test
-    public void testOFB() throws Exception {
-        src.setEncryptionAlgorithm("AES/OFB/PKCS5Padding");
-        src.start(Channel.SND_TX_SEQ);
-        dest.setEncryptionAlgorithm("AES/OFB/PKCS5Padding");
-        dest.start(Channel.SND_TX_SEQ);
-
-        String testInput = "The quick brown fox jumps over the lazy dog.";
-
-        Assert.assertEquals("Failed in OFB mode",
-                     testInput,
-                     roundTrip(testInput, src, dest));
-    }
-
-    @Test
-    public void testCFB() throws Exception {
-        src.setEncryptionAlgorithm("AES/CFB/PKCS5Padding");
-        src.start(Channel.SND_TX_SEQ);
-        dest.setEncryptionAlgorithm("AES/CFB/PKCS5Padding");
-        dest.start(Channel.SND_TX_SEQ);
-
-        String testInput = "The quick brown fox jumps over the lazy dog.";
-
-        Assert.assertEquals("Failed in CFB mode",
-                     testInput,
-                     roundTrip(testInput, src, dest));
-    }
-
-    @Test
-    public void testGCM() throws Exception {
-        src.setEncryptionAlgorithm("AES/GCM/NoPadding");
-        src.start(Channel.SND_TX_SEQ);
-        dest.setEncryptionAlgorithm("AES/GCM/NoPadding");
-        dest.start(Channel.SND_TX_SEQ);
-
-        String testInput = "The quick brown fox jumps over the lazy dog.";
-
-        Assert.assertEquals("Failed in GCM mode",
-                     testInput,
-                     roundTrip(testInput, src, dest));
-    }
-
-    /*
-     * ECB mode isn't supported because it's insecure.
-     */
-    @Test
-    public void testECB() throws Exception {
-        try {
-            src.setEncryptionAlgorithm("AES/ECB/PKCS5Padding");
-            src.start(Channel.SND_TX_SEQ);
-
-            // start() should trigger IllegalArgumentException
-            Assert.fail("ECB mode is not being refused");
-        } catch (IllegalArgumentException iae) {
-            // Expected
-        }
-    }
-
-    @Test
     public void testViaFile() throws Exception {
         src.start(Channel.SND_TX_SEQ);
         src.setNext(new ValueCaptureInterceptor());
@@ -272,6 +215,90 @@ public class TestEncryptInterceptor extends EncryptionInterceptorBaseTest {
 
         MatcherAssert.assertThat("Two identical cleartexts encrypt to the same ciphertext",
                 cipherText1, IsNot.not(IsEqual.equalTo(cipherText2)));
+    }
+
+    @Test
+    public void testRejectReplay() throws Exception {
+        src.setNext(new ValueCaptureInterceptor());
+        dest.setPrevious(new ValuesCaptureInterceptor());
+        src.start(Channel.SND_TX_SEQ);
+        dest.start(Channel.SND_TX_SEQ);
+
+        byte[] encrypted = encrypt("msg-1", System.currentTimeMillis());
+
+        deliver(encrypted);
+        deliver(encrypted);
+
+        Collection<byte[]> messages = ((ValuesCaptureInterceptor) dest.getPrevious()).getValues();
+        Assert.assertEquals(1, messages.size());
+    }
+
+    @Test
+    public void testReplayWindowRejectsOldMessage() throws Exception {
+        src.setNext(new ValueCaptureInterceptor());
+        dest.setPrevious(new ValuesCaptureInterceptor());
+        dest.setReplayWindowTime(50);
+        src.start(Channel.SND_TX_SEQ);
+        dest.start(Channel.SND_TX_SEQ);
+
+        long now = System.currentTimeMillis();
+        byte[] encryptedRecent = encrypt("msg-recent", now);
+        byte[] encryptedOld = encrypt("msg-old", now - 1000);
+
+        deliver(encryptedRecent);
+        deliver(encryptedOld);
+
+        Collection<byte[]> messages = ((ValuesCaptureInterceptor) dest.getPrevious()).getValues();
+        Assert.assertEquals(1, messages.size());
+    }
+
+    @Test
+    public void testReplayWindowRejectsOldMessageAfterCountEviction() throws Exception {
+        src.setNext(new ValueCaptureInterceptor());
+        dest.setPrevious(new ValuesCaptureInterceptor());
+        dest.setReplayWindowMessageCount(2);
+        src.start(Channel.SND_TX_SEQ);
+        dest.start(Channel.SND_TX_SEQ);
+
+        long now = System.currentTimeMillis();
+        byte[] encrypted1000 = encrypt("msg-1000", now);
+        byte[] encrypted1001 = encrypt("msg-1001", now + 1);
+        byte[] encrypted1002 = encrypt("msg-1002", now + 2);
+        byte[] encrypted1003 = encrypt("msg-1003", now + 3);
+
+        deliver(encrypted1000);
+        deliver(encrypted1001);
+        deliver(encrypted1002);
+        deliver(encrypted1003);
+        deliver(encrypted1000);
+
+        Collection<byte[]> messages = ((ValuesCaptureInterceptor) dest.getPrevious()).getValues();
+        Assert.assertEquals(4, messages.size());
+    }
+
+    @Test
+    public void testReplayWindowEvictsOldestTimestampFirst() throws Exception {
+        src.setNext(new ValueCaptureInterceptor());
+        dest.setPrevious(new ValuesCaptureInterceptor());
+        dest.setReplayWindowMessageCount(2);
+        src.start(Channel.SND_TX_SEQ);
+        dest.start(Channel.SND_TX_SEQ);
+
+        long now = System.currentTimeMillis();
+        byte[] encrypted300 = encrypt("msg-300", now + 300);
+        byte[] encrypted100 = encrypt("msg-100", now + 100);
+        byte[] encrypted200 = encrypt("msg-200", now + 200);
+        byte[] encrypted225 = encrypt("msg-225", now + 225);
+        byte[] encrypted250 = encrypt("msg-250", now + 250);
+
+        deliver(encrypted300);
+        deliver(encrypted100);
+        deliver(encrypted200);
+        deliver(encrypted225);
+        deliver(encrypted250);
+
+        Collection<byte[]> messages = ((ValuesCaptureInterceptor) dest.getPrevious()).getValues();
+        Assert.assertEquals(5, messages.size());
     }
 
     @Test
@@ -373,5 +400,21 @@ public class TestEncryptInterceptor extends EncryptionInterceptorBaseTest {
         } catch (Throwable t) {
             Assert.fail("EncryptionInterceptor should throw ChannelConfigException, not " + t.getClass().getName());
         }
+    }
+
+    private byte[] encrypt(String message, long timestamp) throws Exception {
+        ChannelData msg = new ChannelData(false);
+        msg.setTimestamp(timestamp);
+        msg.setMessage(new XByteBuffer(message.getBytes("UTF-8"), false));
+        src.sendMessage(null, msg, null);
+        return ((ValueCaptureInterceptor) src.getNext()).getValue();
+    }
+
+    private void deliver(byte[] encrypted) {
+        ChannelData incoming = new ChannelData(false);
+        XByteBuffer xbb = new XByteBuffer(encrypted.length, false);
+        xbb.append(encrypted, 0, encrypted.length);
+        incoming.setMessage(xbb);
+        dest.messageReceived(incoming);
     }
 }

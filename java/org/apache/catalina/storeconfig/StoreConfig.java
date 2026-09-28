@@ -17,6 +17,7 @@
 package org.apache.catalina.storeconfig;
 
 import java.io.PrintWriter;
+import java.io.StringWriter;
 import java.net.URL;
 
 import javax.management.MBeanServer;
@@ -39,7 +40,16 @@ import org.apache.tomcat.util.res.StringManager;
  */
 public class StoreConfig implements IStoreConfig {
     private static final Log log = LogFactory.getLog(StoreConfig.class);
+    /**
+     * String manager for this class.
+     */
     protected static final StringManager sm = StringManager.getManager(Constants.Package);
+
+    /**
+     * Default constructor.
+     */
+    public StoreConfig() {
+    }
 
     private String serverFilename = "conf/server.xml";
 
@@ -173,7 +183,7 @@ public class StoreConfig implements IStoreConfig {
                         } finally {
                             desc.setStoreSeparate(oldSeparate);
                             desc.setBackup(oldBackup);
-                            desc.setBackup(oldExternalAllowed);
+                            desc.setExternalAllowed(oldExternalAllowed);
                         }
                     }
                 } else {
@@ -194,7 +204,12 @@ public class StoreConfig implements IStoreConfig {
         // Open an output writer for the new configuration file
         try {
             try (PrintWriter writer = mover.getWriter()) {
-                store(writer, -2, aServer);
+                // Generate the configuration in memory so that the layout of the previous version of the file can
+                // be preserved
+                StringWriter buffer = new StringWriter();
+                store(new PrintWriter(buffer), -2, aServer);
+                writer.write(XMLFormatPreserver.preserve(mover.getConfigOld(), buffer.toString(),
+                        getRegistry().getEncoding()));
             }
             mover.move();
             return true;

@@ -40,6 +40,11 @@ public class AjpMessage {
     protected static final StringManager sm = StringManager.getManager(AjpMessage.class);
 
 
+    /**
+     * Constructs a new AjpMessage with the specified packet size.
+     *
+     * @param packetSize The size of the packet buffer
+     */
     public AjpMessage(int packetSize) {
         buf = new byte[packetSize];
     }
@@ -151,7 +156,7 @@ public class AjpMessage {
             // values will be OK. Strings using other encodings may be
             // corrupted.
             byte[] buffer = bc.getBuffer();
-            for (int i = bc.getStart(); i < bc.getLength(); i++) {
+            for (int i = bc.getStart(); i < bc.getEnd(); i++) {
                 // byte values are signed i.e. -128 to 127
                 // The values are used unsigned. 0 to 31 are CTLs so they are
                 // filtered (apart from TAB which is 9). 127 is a control (DEL).
@@ -179,6 +184,18 @@ public class AjpMessage {
             return;
         }
         appendBytes(bc.getBytes(), bc.getStart(), bc.getLength());
+    }
+
+
+    /**
+     * Check if the given number of bytes can be appended to the message without overflowing the message buffer.
+     *
+     * @param numBytes The number of bytes to append
+     *
+     * @return {@code true} if the bytes can be appended without overflowing the buffer
+     */
+    public boolean hasRoom(int numBytes) {
+        return pos + numBytes <= buf.length;
     }
 
 
@@ -235,8 +252,9 @@ public class AjpMessage {
 
 
     /**
-     * Read an integer from packet, and advance the read position past it. Integers are encoded as two unsigned bytes
-     * with the high-order byte first, and, as far as I can tell, in little-endian order within each byte.
+     * Read an integer from packet, and advance the read position past it.
+     * Integers are encoded as two unsigned bytes in big-endian order
+     * (high-order byte first).
      *
      * @return The integer value read from the message
      */
@@ -248,6 +266,11 @@ public class AjpMessage {
     }
 
 
+    /**
+     * Peek at the next integer without advancing the read position.
+     *
+     * @return The integer value at the current read position
+     */
     public int peekInt() {
         validatePos(pos + 2);
         int b1 = buf[pos] & 0xFF;
@@ -256,6 +279,11 @@ public class AjpMessage {
     }
 
 
+    /**
+     * Read a single byte from the packet and advance the read position.
+     *
+     * @return The byte value read from the message
+     */
     public byte getByte() {
         byte res = buf[pos++];
         validatePos(pos);
@@ -263,17 +291,28 @@ public class AjpMessage {
     }
 
 
+    /**
+     * Read a null-terminated string of bytes from the packet. A length of {@code 0xFFFF} indicates that there is no
+     * value: the {@code MessageBytes} is recycled and the read position is not advanced.
+     *
+     * @param mb The MessageBytes to populate with the read bytes
+     */
     public void getBytes(MessageBytes mb) {
         doGetBytes(mb, true);
     }
 
+    /**
+     * Read a non-terminated string of bytes from the packet.
+     *
+     * @param mb The MessageBytes to populate with the read bytes
+     */
     public void getBodyBytes(MessageBytes mb) {
         doGetBytes(mb, false);
     }
 
     private void doGetBytes(MessageBytes mb, boolean terminated) {
         int length = getInt();
-        if (length == 0xFFFF || length == -1) {
+        if (length == 0xFFFF) {
             mb.recycle();
             return;
         }
@@ -292,10 +331,11 @@ public class AjpMessage {
 
 
     /**
-     * Read a 32 bits integer from packet, and advance the read position past it. Integers are encoded as four unsigned
-     * bytes with the high-order byte first, and, as far as I can tell, in little-endian order within each byte.
+     * Read a 32-bit integer from packet, and advance the read position past it.
+     * The integer is encoded as four unsigned bytes in big-endian order
+     * (high-order byte first).
      *
-     * @return The long value read from the message
+     * @return The integer value read from the message
      */
     public int getLongInt() {
         int b1 = buf[pos++] & 0xFF; // No swap, Java order
@@ -310,6 +350,13 @@ public class AjpMessage {
     }
 
 
+    /**
+     * Process the AJP message header, validating the message signature.
+     *
+     * @param toContainer {@code true} if the message is from the web server to the container,
+     *                          {@code false} if from the container to the web server
+     * @return The length of the payload, or -1 if the message signature is invalid
+     */
     public int processHeader(boolean toContainer) {
         pos = 0;
         int mark = getInt();
@@ -357,6 +404,14 @@ public class AjpMessage {
     // ------------------------------------------------------ Protected Methods
 
 
+    /**
+     * Generate a hex dump line for debugging.
+     *
+     * @param buf   The byte buffer
+     * @param start The starting offset
+     * @param len   The current message length
+     * @return A string representation of the hex dump line
+     */
     protected static String hexLine(byte[] buf, int start, int len) {
         StringBuilder sb = new StringBuilder();
         for (int i = start; i < start + 16; i++) {
@@ -378,6 +433,12 @@ public class AjpMessage {
     }
 
 
+    /**
+     * Convert an integer to a two-character hex string.
+     *
+     * @param x the integer to convert
+     * @return the hex string
+     */
     protected static String hex(int x) {
         String h = Integer.toHexString(x);
         if (h.length() == 1) {

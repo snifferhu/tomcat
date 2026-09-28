@@ -16,6 +16,7 @@
  */
 package org.apache.catalina.valves.rewrite;
 
+import java.io.File;
 import java.io.IOException;
 import java.nio.charset.Charset;
 import java.security.cert.CertificateEncodingException;
@@ -28,7 +29,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
-import java.util.StringTokenizer;
 import java.util.concurrent.TimeUnit;
 
 import org.apache.catalina.WebResource;
@@ -36,6 +36,7 @@ import org.apache.catalina.WebResourceRoot;
 import org.apache.catalina.connector.Request;
 import org.apache.juli.logging.Log;
 import org.apache.tomcat.util.http.FastHttpDateFormat;
+import org.apache.tomcat.util.http.RequestUtil;
 import org.apache.tomcat.util.net.SSLSupport;
 import org.apache.tomcat.util.net.jsse.PEMFile;
 import org.apache.tomcat.util.net.openssl.ciphers.Cipher;
@@ -43,14 +44,30 @@ import org.apache.tomcat.util.net.openssl.ciphers.EncryptionLevel;
 import org.apache.tomcat.util.net.openssl.ciphers.OpenSSLCipherConfigurationParser;
 import org.apache.tomcat.util.res.StringManager;
 
+/**
+ * Implementation of the Resolver interface for the rewrite valve.
+ */
 public class ResolverImpl extends Resolver {
 
     private static final StringManager sm = StringManager.getManager(ResolverImpl.class);
 
+    /**
+     * The request being processed.
+     */
     protected final Request request;
+
+    /**
+     * The container log for debug output.
+     */
     private final Log containerLog;
 
 
+    /**
+     * Construct a new resolver for the given request.
+     *
+     * @param request      The request being processed
+     * @param containerLog The container log for debug output
+     */
     public ResolverImpl(Request request, Log containerLog) {
         this.request = request;
         this.containerLog = containerLog;
@@ -88,7 +105,7 @@ public class ResolverImpl extends Resolver {
             case "REQUEST_METHOD" -> request.getMethod();
             case "SCRIPT_FILENAME" -> request.getServletContext().getRealPath(request.getServletPath());
             case "REQUEST_PATH" -> request.getRequestPathMB().toString();
-            case "CONTEXT_PATH" -> request.getContextPath();
+            case "CONTEXT_PATH" -> request.getContext().getPath();
             case "SERVLET_PATH" -> emptyStringIfNull(request.getServletPath());
             case "PATH_INFO" -> emptyStringIfNull(request.getPathInfo());
             case "QUERY_STRING" -> emptyStringIfNull(request.getQueryString());
@@ -123,88 +140,91 @@ public class ResolverImpl extends Resolver {
 
     @Override
     public String resolveSsl(String key) {
-        SSLSupport sslSupport = (SSLSupport) request.getAttribute(SSLSupport.SESSION_MGR);
-        try {
-            // SSL_SRP_USER: no planned support for SRP
-            // SSL_SRP_USERINFO: no planned support for SRP
-            if (key.equals("HTTPS")) {
-                return String.valueOf(sslSupport != null);
-            } else if (key.equals("SSL_PROTOCOL")) {
-                return sslSupport.getProtocol();
-            } else if (key.equals("SSL_SESSION_ID")) {
-                return sslSupport.getSessionId();
-            } else if (key.equals("SSL_SESSION_RESUMED")) {
-                // FIXME session resumption state, not available anywhere
-            } else if (key.equals("SSL_SECURE_RENEG")) {
-                // FIXME available from SSLHostConfig
-            } else if (key.equals("SSL_COMPRESS_METHOD")) {
-                // FIXME available from SSLHostConfig
-            } else if (key.equals("SSL_TLS_SNI")) {
-                // FIXME from handshake SNI processing
-            } else if (key.equals("SSL_CIPHER")) {
-                return sslSupport.getCipherSuite();
-            } else if (key.equals("SSL_CIPHER_EXPORT")) {
-                String cipherSuite = sslSupport.getCipherSuite();
-                if (cipherSuite != null) {
-                    Set<Cipher> cipherList = OpenSSLCipherConfigurationParser.parse(cipherSuite);
-                    if (cipherList.size() == 1) {
-                        Cipher cipher = cipherList.iterator().next();
-                        if (cipher.getLevel().equals(EncryptionLevel.EXP40) ||
-                                cipher.getLevel().equals(EncryptionLevel.EXP56)) {
-                            return "true";
-                        } else {
-                            return "false";
+        if (request.getAttribute(SSLSupport.SESSION_MGR) instanceof SSLSupport sslSupport) {
+            try {
+                // SSL_SRP_USER: no planned support for SRP
+                // SSL_SRP_USERINFO: no planned support for SRP
+                if (key.equals("HTTPS")) {
+                    return "on";
+                } else if (key.equals("SSL_PROTOCOL")) {
+                    return sslSupport.getProtocol();
+                } else if (key.equals("SSL_SESSION_ID")) {
+                    return sslSupport.getSessionId();
+                } else if (key.equals("SSL_SESSION_RESUMED")) {
+                    // FIXME session resumption state, not available anywhere
+                } else if (key.equals("SSL_SECURE_RENEG")) {
+                    // FIXME available from SSLHostConfig
+                } else if (key.equals("SSL_COMPRESS_METHOD")) {
+                    // FIXME available from SSLHostConfig
+                } else if (key.equals("SSL_TLS_SNI")) {
+                    // FIXME from handshake SNI processing
+                } else if (key.equals("SSL_CIPHER")) {
+                    return sslSupport.getCipherSuite();
+                } else if (key.equals("SSL_CIPHER_EXPORT")) {
+                    String cipherSuite = sslSupport.getCipherSuite();
+                    if (cipherSuite != null) {
+                        Set<Cipher> cipherList = OpenSSLCipherConfigurationParser.parse(cipherSuite);
+                        if (cipherList.size() == 1) {
+                            Cipher cipher = cipherList.iterator().next();
+                            if (cipher.getLevel().equals(EncryptionLevel.EXP40) ||
+                                    cipher.getLevel().equals(EncryptionLevel.EXP56)) {
+                                return "true";
+                            } else {
+                                return "false";
+                            }
+                        }
+                    }
+                } else if (key.equals("SSL_CIPHER_ALGKEYSIZE")) {
+                    String cipherSuite = sslSupport.getCipherSuite();
+                    if (cipherSuite != null) {
+                        Set<Cipher> cipherList = OpenSSLCipherConfigurationParser.parse(cipherSuite);
+                        if (cipherList.size() == 1) {
+                            Cipher cipher = cipherList.iterator().next();
+                            return String.valueOf(cipher.getAlg_bits());
+                        }
+                    }
+                } else if (key.equals("SSL_CIPHER_USEKEYSIZE")) {
+                    Integer keySize = sslSupport.getKeySize();
+                    return (keySize == null) ? null : sslSupport.getKeySize().toString();
+                } else if (key.startsWith("SSL_CLIENT_")) {
+                    X509Certificate[] certificates = sslSupport.getPeerCertificateChain();
+                    if (certificates != null && certificates.length > 0) {
+                        key = key.substring("SSL_CLIENT_".length());
+                        String result = resolveSslCertificates(key, certificates);
+                        if (result != null) {
+                            return result;
+                        } else if (key.startsWith("SAN_OTHER_msUPN_")) {
+                            // Type otherName, which is 0
+                            key = key.substring("SAN_OTHER_msUPN_".length());
+                            // FIXME OID from resolveAlternateName
+                        } else if (key.equals("CERT_RFC4523_CEA")) {
+                            // FIXME return certificate[0] format CertificateExactAssertion in RFC4523
+                        } else if (key.equals("VERIFY")) {
+                            // FIXME return verification state, not available anywhere
+                        }
+                    }
+                } else if (key.startsWith("SSL_SERVER_")) {
+                    X509Certificate[] certificates = sslSupport.getLocalCertificateChain();
+                    if (certificates != null && certificates.length > 0) {
+                        key = key.substring("SSL_SERVER_".length());
+                        String result = resolveSslCertificates(key, certificates);
+                        if (result != null) {
+                            return result;
+                        } else if (key.startsWith("SAN_OTHER_dnsSRV_")) {
+                            // Type otherName, which is 0
+                            key = key.substring("SAN_OTHER_dnsSRV_".length());
+                            // FIXME OID from resolveAlternateName
                         }
                     }
                 }
-            } else if (key.equals("SSL_CIPHER_ALGKEYSIZE")) {
-                String cipherSuite = sslSupport.getCipherSuite();
-                if (cipherSuite != null) {
-                    Set<Cipher> cipherList = OpenSSLCipherConfigurationParser.parse(cipherSuite);
-                    if (cipherList.size() == 1) {
-                        Cipher cipher = cipherList.iterator().next();
-                        return String.valueOf(cipher.getAlg_bits());
-                    }
-                }
-            } else if (key.equals("SSL_CIPHER_USEKEYSIZE")) {
-                Integer keySize = sslSupport.getKeySize();
-                return (keySize == null) ? null : sslSupport.getKeySize().toString();
-            } else if (key.startsWith("SSL_CLIENT_")) {
-                X509Certificate[] certificates = sslSupport.getPeerCertificateChain();
-                if (certificates != null && certificates.length > 0) {
-                    key = key.substring("SSL_CLIENT_".length());
-                    String result = resolveSslCertificates(key, certificates);
-                    if (result != null) {
-                        return result;
-                    } else if (key.startsWith("SAN_OTHER_msUPN_")) {
-                        // Type otherName, which is 0
-                        key = key.substring("SAN_OTHER_msUPN_".length());
-                        // FIXME OID from resolveAlternateName
-                    } else if (key.equals("CERT_RFC4523_CEA")) {
-                        // FIXME return certificate[0] format CertificateExactAssertion in RFC4523
-                    } else if (key.equals("VERIFY")) {
-                        // FIXME return verification state, not available anywhere
-                    }
-                }
-            } else if (key.startsWith("SSL_SERVER_")) {
-                X509Certificate[] certificates = sslSupport.getLocalCertificateChain();
-                if (certificates != null && certificates.length > 0) {
-                    key = key.substring("SSL_SERVER_".length());
-                    String result = resolveSslCertificates(key, certificates);
-                    if (result != null) {
-                        return result;
-                    } else if (key.startsWith("SAN_OTHER_dnsSRV_")) {
-                        // Type otherName, which is 0
-                        key = key.substring("SAN_OTHER_dnsSRV_".length());
-                        // FIXME OID from resolveAlternateName
-                    }
+            } catch (IOException ioe) {
+                // TLS access error
+                if (containerLog.isDebugEnabled()) {
+                    containerLog.debug(sm.getString("resolverImpl.tlsError"), ioe);
                 }
             }
-        } catch (IOException ioe) {
-            // TLS access error
-            if (containerLog.isDebugEnabled()) {
-                containerLog.debug(sm.getString("resolverImpl.tlsError"), ioe);
-            }
+        } else if (key.equals("HTTPS")) {
+            return "off";
         }
         return null;
     }
@@ -215,7 +235,7 @@ public class ResolverImpl extends Resolver {
         } else if (key.equals("M_SERIAL")) {
             return certificates[0].getSerialNumber().toString();
         } else if (key.equals("S_DN")) {
-            return certificates[0].getSubjectX500Principal().toString();
+            return certificates[0].getSubjectX500Principal().getName();
         } else if (key.startsWith("S_DN_")) {
             key = key.substring("S_DN_".length());
             return resolveComponent(certificates[0].getSubjectX500Principal().getName(), key);
@@ -231,7 +251,7 @@ public class ResolverImpl extends Resolver {
             return certificates[0].getIssuerX500Principal().getName();
         } else if (key.startsWith("I_DN_")) {
             key = key.substring("I_DN_".length());
-            return resolveComponent(certificates[0].getIssuerX500Principal().toString(), key);
+            return resolveComponent(certificates[0].getIssuerX500Principal().getName(), key);
         } else if (key.equals("V_START")) {
             return String.valueOf(certificates[0].getNotBefore().getTime());
         } else if (key.equals("V_END")) {
@@ -266,15 +286,71 @@ public class ResolverImpl extends Resolver {
 
     private String resolveComponent(String fullDN, String component) {
         HashMap<String,String> components = new HashMap<>();
-        StringTokenizer tokenizer = new StringTokenizer(fullDN, ",");
-        while (tokenizer.hasMoreElements()) {
-            String token = tokenizer.nextToken().trim();
-            int pos = token.indexOf('=');
-            if (pos > 0 && (pos + 1) < token.length()) {
-                components.put(token.substring(0, pos), token.substring(pos + 1));
+        int len = fullDN.length();
+        int start = 0;
+        while (start < len) {
+            // Skip leading whitespace
+            while (start < len && Character.isWhitespace(fullDN.charAt(start))) {
+                start++;
             }
+            if (start >= len) {
+                break;
+            }
+
+            // Find the unescaped '=' that separates key from value
+            int eqPos = -1;
+            for (int i = start; i < len; i++) {
+                char c = fullDN.charAt(i);
+                if (c == '\\' && i + 1 < len) {
+                    i++; // Skip escaped character
+                } else if (c == '=') {
+                    eqPos = i;
+                    break;
+                }
+            }
+            if (eqPos < 0) {
+                break;
+            }
+
+            String key = unescape(fullDN.substring(start, eqPos)).trim();
+            int valStart = eqPos + 1;
+
+            // Find the unescaped ',' that ends this RDN, or end of string
+            int commaPos = len;
+            for (int i = valStart; i < len; i++) {
+                char c = fullDN.charAt(i);
+                if (c == '\\' && i + 1 < len) {
+                    i++; // Skip escaped character
+                } else if (c == ',') {
+                    commaPos = i;
+                    break;
+                }
+            }
+
+            String value = unescape(fullDN.substring(valStart, commaPos)).trim();
+            if (!key.isEmpty()) {
+                components.put(key, value);
+            }
+
+            start = commaPos + 1;
         }
         return components.get(component);
+    }
+
+    private String unescape(String s) {
+        StringBuilder sb = new StringBuilder(s.length());
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            // Note: Does not handle hex escapes
+            if (c == '\\' && i + 1 < s.length()) {
+                char next = s.charAt(i + 1);
+                sb.append(next);
+                i++;
+            } else {
+                sb.append(c);
+            }
+        }
+        return sb.toString();
     }
 
     private String resolveAlternateName(X509Certificate certificate, int type, int n) {
@@ -305,6 +381,12 @@ public class ResolverImpl extends Resolver {
 
     @Override
     public boolean resolveResource(int type, String name) {
+        if (name == null || !name.startsWith("/")) {
+            return false;
+        }
+        if (RequestUtil.normalize(name, File.separatorChar == '\\') == null) {
+            return false;
+        }
         WebResourceRoot resources = request.getContext().getResources();
         WebResource resource = resources.getResource(name);
         if (!resource.exists()) {

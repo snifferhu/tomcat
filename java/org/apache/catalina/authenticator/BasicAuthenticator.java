@@ -37,17 +37,36 @@ import org.apache.tomcat.util.buf.MessageBytes;
  */
 public class BasicAuthenticator extends AuthenticatorBase {
 
+    /**
+     * Default constructor.
+     */
+    public BasicAuthenticator() {
+    }
+
     private final Log log = LogFactory.getLog(BasicAuthenticator.class); // must not be static
 
     private Charset charset = StandardCharsets.UTF_8;
     private String charsetString = "UTF-8";
 
 
+    /**
+     * Returns the character set name used for encoding credentials, as set by the user.
+     *
+     * @return the character set name, the default value is "UTF-8". May be <code>null</code> or empty, in which case
+     *             the credentials are encoded using ISO-8859-1.
+     */
     public String getCharset() {
         return charsetString;
     }
 
 
+    /**
+     * Sets the character set used for encoding credentials. Empty charsets will set ISO-8859-1.
+     *
+     * @param charsetString the character set name
+     *
+     * @throws IllegalArgumentException if the charset is not supported
+     */
     public void setCharset(String charsetString) {
         // Only acceptable options are null, "" or "UTF-8" (case-insensitive)
         if (charsetString == null || charsetString.isEmpty()) {
@@ -122,7 +141,7 @@ public class BasicAuthenticator extends AuthenticatorBase {
 
 
     /**
-     * Parser for an HTTP Authorization header for BASIC authentication as per RFC 2617 section 2, and the Base64
+     * Parser for an HTTP Authorization header for BASIC authentication as per RFC 7617, and the Base64
      * encoded credentials as per RFC 2045 section 6.8.
      */
     public static class BasicCredentials {
@@ -161,7 +180,7 @@ public class BasicAuthenticator extends AuthenticatorBase {
         /**
          * Trivial accessor.
          *
-         * @return the decoded username token as a String, which is never be <code>null</code>, but can be empty.
+         * @return the decoded username token as a String, which is never <code>null</code>, but can be empty.
          */
         public String getUsername() {
             return username;
@@ -170,8 +189,7 @@ public class BasicAuthenticator extends AuthenticatorBase {
         /**
          * Trivial accessor.
          *
-         * @return the decoded password token as a String, or <code>null</code> if no password was found in the
-         *             credentials.
+         * @return the decoded password token as a String, which is never <code>null</code>, but can be empty.
          */
         public String getPassword() {
             return password;
@@ -192,25 +210,26 @@ public class BasicAuthenticator extends AuthenticatorBase {
         }
 
         /*
-         * Decode the base64-user-pass token, which RFC 2617 states can be longer than the 76 characters per line limit
-         * defined in RFC 2045. The base64 decoder will ignore embedded line break characters as well as surplus
-         * surrounding white space.
+         * Decode the base64-user-pass token, which RFC 7617 states can be longer than the 76 characters per line limit
+         * defined in RFC 2045. The base64 decoder is a strict decoder that rejects any embedded line break characters
+         * as well as surplus surrounding white space.
          */
         private byte[] parseBase64() throws IllegalArgumentException {
             byte[] encoded = new byte[base64blobLength];
             System.arraycopy(authorization.getBuffer(), base64blobOffset, encoded, 0, base64blobLength);
-            byte[] decoded = Base64.getDecoder().decode(encoded);
-            // restore original offset
-            authorization.setStart(initialOffset);
-            if (decoded == null) {
-                throw new IllegalArgumentException(sm.getString("basicAuthenticator.notBase64"));
+            try {
+                byte[] decoded = Base64.getDecoder().decode(encoded);
+                // restore original offset
+                authorization.setStart(initialOffset);
+                return decoded;
+            } catch (IllegalArgumentException e) {
+                throw new IllegalArgumentException(sm.getString("basicAuthenticator.notBase64"), e);
             }
-            return decoded;
         }
 
         /*
-         * Extract the mandatory username token and separate it from the optional password token. Tolerate surplus
-         * surrounding white space.
+         * Extract the mandatory username and password tokens separated by a colon. Tolerate surplus surrounding white
+         * space.
          */
         private void parseCredentials(byte[] decoded) throws IllegalArgumentException {
 
@@ -222,9 +241,11 @@ public class BasicAuthenticator extends AuthenticatorBase {
                 }
             }
 
+            // Null password is not allowed according to RFC 7617
             if (colon < 0) {
-                username = new String(decoded, charset);
-                // password will remain null!
+                throw new IllegalArgumentException(sm.getString("basicAuthenticator.noColon"));
+            } else if (colon == 0) {
+                throw new IllegalArgumentException(sm.getString("basicAuthenticator.emptyUsername"));
             } else {
                 username = new String(decoded, 0, colon, charset);
                 password = new String(decoded, colon + 1, decoded.length - colon - 1, charset);

@@ -32,6 +32,7 @@ import java.net.SocketAddress;
 import java.nio.CharBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -80,7 +81,7 @@ public class TestHttp11Processor extends TomcatBaseTest {
 
         // Add protected servlet
         Tomcat.addServlet(ctx, "ChunkedResponseWithErrorServlet", new ResponseWithErrorServlet(true));
-        ctx.addServletMappingDecoded("/*", "ChunkedResponseWithErrorServlet");
+        ctx.addServletMapping("/*", "ChunkedResponseWithErrorServlet");
 
         tomcat.start();
 
@@ -317,7 +318,7 @@ public class TestHttp11Processor extends TomcatBaseTest {
 
         // Add protected servlet
         Tomcat.addServlet(ctx, "TesterServlet", new TesterServlet());
-        ctx.addServletMappingDecoded("/foo", "TesterServlet");
+        ctx.addServletMapping("/foo", "TesterServlet");
 
         tomcat.start();
 
@@ -373,7 +374,7 @@ public class TestHttp11Processor extends TomcatBaseTest {
         // Add protected servlet
         Wrapper w = Tomcat.addServlet(ctx, "servlet", new Bug64974Servlet());
         w.setAsyncSupported(true);
-        ctx.addServletMappingDecoded("/foo", "servlet");
+        ctx.addServletMapping("/foo", "servlet");
 
         tomcat.start();
 
@@ -416,12 +417,12 @@ public class TestHttp11Processor extends TomcatBaseTest {
         Context ctx = getProgrammaticRootContext();
 
         Tomcat.addServlet(ctx, "NoContentLengthFlushingServlet", new NoContentLengthFlushingServlet());
-        ctx.addServletMappingDecoded("/test", "NoContentLengthFlushingServlet");
+        ctx.addServletMapping("/test", "NoContentLengthFlushingServlet");
 
         tomcat.start();
 
         ByteChunk responseBody = new ByteChunk();
-        Map<String, List<String>> responseHeaders = new HashMap<>();
+        Map<String,List<String>> responseHeaders = new HashMap<>();
         int rc = getUrl("http://localhost:" + getPort() + "/test", responseBody, responseHeaders);
 
         Assert.assertEquals(HttpServletResponse.SC_OK, rc);
@@ -440,12 +441,12 @@ public class TestHttp11Processor extends TomcatBaseTest {
 
         Tomcat.addServlet(ctx, "NoContentLengthConnectionCloseFlushingServlet",
                 new NoContentLengthConnectionCloseFlushingServlet());
-        ctx.addServletMappingDecoded("/test", "NoContentLengthConnectionCloseFlushingServlet");
+        ctx.addServletMapping("/test", "NoContentLengthConnectionCloseFlushingServlet");
 
         tomcat.start();
 
         ByteChunk responseBody = new ByteChunk();
-        Map<String, List<String>> responseHeaders = new HashMap<>();
+        Map<String,List<String>> responseHeaders = new HashMap<>();
         int rc = getUrl("http://localhost:" + getPort() + "/test", responseBody, responseHeaders);
 
         Assert.assertEquals(HttpServletResponse.SC_OK, rc);
@@ -475,7 +476,7 @@ public class TestHttp11Processor extends TomcatBaseTest {
         Context ctx = getProgrammaticRootContext();
 
         Tomcat.addServlet(ctx, "LargeHeaderServlet", new LargeHeaderServlet(flush));
-        ctx.addServletMappingDecoded("/test", "LargeHeaderServlet");
+        ctx.addServletMapping("/test", "LargeHeaderServlet");
 
         tomcat.start();
 
@@ -508,7 +509,7 @@ public class TestHttp11Processor extends TomcatBaseTest {
         Context ctx = getProgrammaticRootContext();
 
         Tomcat.addServlet(ctx, "async", new Bug55772Servlet());
-        ctx.addServletMappingDecoded("/*", "async");
+        ctx.addServletMapping("/*", "async");
 
         tomcat.start();
 
@@ -571,10 +572,10 @@ public class TestHttp11Processor extends TomcatBaseTest {
         Context ctx = getProgrammaticRootContext();
 
         Tomcat.addServlet(ctx, "echo", new EchoBodyServlet());
-        ctx.addServletMappingDecoded("/echo", "echo");
+        ctx.addServletMapping("/echo", "echo");
 
         SecurityCollection collection = new SecurityCollection("All", "");
-        collection.addPatternDecoded("/*");
+        collection.addPattern("/*");
         SecurityConstraint constraint = new SecurityConstraint();
         constraint.addAuthRole("Any");
         constraint.addCollection(collection);
@@ -743,7 +744,7 @@ public class TestHttp11Processor extends TomcatBaseTest {
         Context root = getProgrammaticRootContext();
         Wrapper w = Tomcat.addServlet(root, "Bug57621", new Bug57621Servlet(delayAsyncThread));
         w.setAsyncSupported(true);
-        root.addServletMappingDecoded("/test", "Bug57621");
+        root.addServletMapping("/test", "Bug57621");
 
         tomcat.start();
 
@@ -849,16 +850,16 @@ public class TestHttp11Processor extends TomcatBaseTest {
         Context ctx = getProgrammaticRootContext();
 
         Tomcat.addServlet(ctx, "Bug59310", new Bug59310Servlet());
-        ctx.addServletMappingDecoded("/test", "Bug59310");
+        ctx.addServletMapping("/test", "Bug59310");
 
         tomcat.start();
 
         ByteChunk getBody = new ByteChunk();
-        Map<String, List<String>> getHeaders = new HashMap<>();
+        Map<String,List<String>> getHeaders = new HashMap<>();
         int getStatus = getUrl("http://localhost:" + getPort() + "/test", getBody, getHeaders);
 
         ByteChunk headBody = new ByteChunk();
-        Map<String, List<String>> headHeaders = new HashMap<>();
+        Map<String,List<String>> headHeaders = new HashMap<>();
         int headStatus = getUrl("http://localhost:" + getPort() + "/test", headBody, headHeaders);
 
         Assert.assertEquals(HttpServletResponse.SC_OK, getStatus);
@@ -904,7 +905,7 @@ public class TestHttp11Processor extends TomcatBaseTest {
         DispatchingServlet servlet = new DispatchingServlet();
         Wrapper w = Tomcat.addServlet(ctx, "Test", servlet);
         w.setAsyncSupported(true);
-        ctx.addServletMappingDecoded("/test", "Test");
+        ctx.addServletMapping("/test", "Test");
 
         tomcat.start();
 
@@ -992,12 +993,12 @@ public class TestHttp11Processor extends TomcatBaseTest {
 
         Bug61086Servlet servlet = new Bug61086Servlet();
         Tomcat.addServlet(ctx, "Test", servlet);
-        ctx.addServletMappingDecoded("/test", "Test");
+        ctx.addServletMapping("/test", "Test");
 
         tomcat.start();
 
         ByteChunk responseBody = new ByteChunk();
-        Map<String, List<String>> responseHeaders = new HashMap<>();
+        Map<String,List<String>> responseHeaders = new HashMap<>();
         int rc = getUrl("http://localhost:" + getPort() + "/test", responseBody, responseHeaders);
 
         Assert.assertEquals(HttpServletResponse.SC_RESET_CONTENT, rc);
@@ -1032,7 +1033,7 @@ public class TestHttp11Processor extends TomcatBaseTest {
 
         // Add servlet
         Tomcat.addServlet(ctx, "TesterServlet", new TesterServlet());
-        ctx.addServletMappingDecoded("/foo", "TesterServlet");
+        ctx.addServletMapping("/foo", "TesterServlet");
 
         tomcat.start();
 
@@ -1070,7 +1071,7 @@ public class TestHttp11Processor extends TomcatBaseTest {
 
         // Add servlet
         Tomcat.addServlet(ctx, "TesterServlet", new TesterServlet());
-        ctx.addServletMappingDecoded("/foo", "TesterServlet");
+        ctx.addServletMapping("/foo", "TesterServlet");
 
         tomcat.start();
 
@@ -1105,7 +1106,7 @@ public class TestHttp11Processor extends TomcatBaseTest {
 
         // Add servlet
         Tomcat.addServlet(ctx, "TesterServlet", new TesterServlet());
-        ctx.addServletMappingDecoded("/foo", "TesterServlet");
+        ctx.addServletMapping("/foo", "TesterServlet");
 
         tomcat.start();
 
@@ -1134,7 +1135,7 @@ public class TestHttp11Processor extends TomcatBaseTest {
 
         // Add servlet
         Tomcat.addServlet(ctx, "TesterServlet", new TesterServlet());
-        ctx.addServletMappingDecoded("/foo", "TesterServlet");
+        ctx.addServletMapping("/foo", "TesterServlet");
 
         tomcat.start();
 
@@ -1168,7 +1169,7 @@ public class TestHttp11Processor extends TomcatBaseTest {
 
         // Add servlet
         Tomcat.addServlet(ctx, "TesterServlet", new TesterServlet());
-        ctx.addServletMappingDecoded("/foo", "TesterServlet");
+        ctx.addServletMapping("/foo", "TesterServlet");
 
         tomcat.start();
 
@@ -1202,7 +1203,7 @@ public class TestHttp11Processor extends TomcatBaseTest {
 
         // Add servlet
         Tomcat.addServlet(ctx, "TesterServlet", new TesterServlet());
-        ctx.addServletMappingDecoded("/foo", "TesterServlet");
+        ctx.addServletMapping("/foo", "TesterServlet");
 
         tomcat.start();
 
@@ -1239,7 +1240,7 @@ public class TestHttp11Processor extends TomcatBaseTest {
 
         // Add servlet
         Tomcat.addServlet(ctx, "TesterServlet", new TesterServlet());
-        ctx.addServletMappingDecoded("/foo", "TesterServlet");
+        ctx.addServletMapping("/foo", "TesterServlet");
 
         tomcat.start();
 
@@ -1276,7 +1277,7 @@ public class TestHttp11Processor extends TomcatBaseTest {
 
         // Add servlet
         Tomcat.addServlet(ctx, "TesterServlet", new TesterServlet());
-        ctx.addServletMappingDecoded("/foo", "TesterServlet");
+        ctx.addServletMapping("/foo", "TesterServlet");
 
         tomcat.start();
 
@@ -1313,7 +1314,7 @@ public class TestHttp11Processor extends TomcatBaseTest {
 
         // Add servlet
         Tomcat.addServlet(ctx, "TesterServlet", new TesterServlet());
-        ctx.addServletMappingDecoded("/foo", "TesterServlet");
+        ctx.addServletMapping("/foo", "TesterServlet");
 
         tomcat.start();
 
@@ -1351,7 +1352,7 @@ public class TestHttp11Processor extends TomcatBaseTest {
 
         // Add servlet
         Tomcat.addServlet(ctx, "TesterServlet", new ServerNameTesterServlet());
-        ctx.addServletMappingDecoded("/foo", "TesterServlet");
+        ctx.addServletMapping("/foo", "TesterServlet");
 
         tomcat.start();
 
@@ -1390,7 +1391,7 @@ public class TestHttp11Processor extends TomcatBaseTest {
 
         // Add servlet
         Tomcat.addServlet(ctx, "TesterServlet", new ServerNameTesterServlet());
-        ctx.addServletMappingDecoded("/foo", "TesterServlet");
+        ctx.addServletMapping("/foo", "TesterServlet");
 
         tomcat.start();
 
@@ -1430,7 +1431,7 @@ public class TestHttp11Processor extends TomcatBaseTest {
 
         // Add servlet
         Tomcat.addServlet(ctx, "TesterServlet", new ServerNameTesterServlet());
-        ctx.addServletMappingDecoded("/foo", "TesterServlet");
+        ctx.addServletMapping("/foo", "TesterServlet");
 
         tomcat.start();
 
@@ -1469,7 +1470,7 @@ public class TestHttp11Processor extends TomcatBaseTest {
 
         // Add servlet
         Tomcat.addServlet(ctx, "TesterServlet", new ServerNameTesterServlet());
-        ctx.addServletMappingDecoded("/foo", "TesterServlet");
+        ctx.addServletMapping("/foo", "TesterServlet");
 
         tomcat.start();
 
@@ -1509,7 +1510,7 @@ public class TestHttp11Processor extends TomcatBaseTest {
 
         // Add servlet
         Tomcat.addServlet(ctx, "TesterServlet", new ServerNameTesterServlet());
-        ctx.addServletMappingDecoded("/foo", "TesterServlet");
+        ctx.addServletMapping("/foo", "TesterServlet");
 
         tomcat.start();
 
@@ -1549,7 +1550,7 @@ public class TestHttp11Processor extends TomcatBaseTest {
 
         // Add servlet
         Tomcat.addServlet(ctx, "TesterServlet", new ServerNameTesterServlet());
-        ctx.addServletMappingDecoded("/foo", "TesterServlet");
+        ctx.addServletMapping("/foo", "TesterServlet");
 
         tomcat.start();
 
@@ -1645,7 +1646,7 @@ public class TestHttp11Processor extends TomcatBaseTest {
 
         // Add servlet
         Tomcat.addServlet(ctx, "TesterServlet", new TesterServlet(explicitClose));
-        ctx.addServletMappingDecoded("/foo", "TesterServlet");
+        ctx.addServletMapping("/foo", "TesterServlet");
 
         tomcat.start();
 
@@ -1761,7 +1762,7 @@ public class TestHttp11Processor extends TomcatBaseTest {
 
         // Add servlet
         Tomcat.addServlet(ctx, "TesterServlet", new SwallowBodyTesterServlet());
-        ctx.addServletMappingDecoded("/foo", "TesterServlet");
+        ctx.addServletMapping("/foo", "TesterServlet");
 
         tomcat.start();
 
@@ -1921,7 +1922,7 @@ public class TestHttp11Processor extends TomcatBaseTest {
 
         // Add servlet
         Tomcat.addServlet(ctx, "TesterServlet", new TesterServlet(false));
-        ctx.addServletMappingDecoded("/foo", "TesterServlet");
+        ctx.addServletMapping("/foo", "TesterServlet");
 
         tomcat.start();
 
@@ -1971,8 +1972,7 @@ public class TestHttp11Processor extends TomcatBaseTest {
 
         client.connect();
         client.processRequest();
-        Assert.assertTrue(client.isResponse200());
-        Assert.assertTrue(client.getResponseBody().contains("test - data"));
+        Assert.assertTrue(client.isResponse400());
     }
 
 
@@ -1988,7 +1988,7 @@ public class TestHttp11Processor extends TomcatBaseTest {
 
         // Add servlet
         Tomcat.addServlet(ctx, "TestPostNoReadServlet", new TestPostNoReadServlet());
-        ctx.addServletMappingDecoded("/foo", "TestPostNoReadServlet");
+        ctx.addServletMapping("/foo", "TestPostNoReadServlet");
 
         tomcat.start();
 
@@ -2060,7 +2060,7 @@ public class TestHttp11Processor extends TomcatBaseTest {
 
         // Add servlet
         Tomcat.addServlet(ctx, "EarlyHintsServlet", new EarlyHintsServlet());
-        ctx.addServletMappingDecoded("/ehs", "EarlyHintsServlet");
+        ctx.addServletMapping("/ehs", "EarlyHintsServlet");
 
         tomcat.start();
 
@@ -2092,7 +2092,7 @@ public class TestHttp11Processor extends TomcatBaseTest {
 
         // Add servlet
         Tomcat.addServlet(ctx, "EarlyHintsServlet", new EarlyHintsServlet(true, null));
-        ctx.addServletMappingDecoded("/ehs", "EarlyHintsServlet");
+        ctx.addServletMapping("/ehs", "EarlyHintsServlet");
 
         tomcat.start();
 
@@ -2125,7 +2125,7 @@ public class TestHttp11Processor extends TomcatBaseTest {
 
         // Add servlet
         Tomcat.addServlet(ctx, "EarlyHintsServlet", new EarlyHintsServlet(true, "ignored"));
-        ctx.addServletMappingDecoded("/ehs", "EarlyHintsServlet");
+        ctx.addServletMapping("/ehs", "EarlyHintsServlet");
 
         tomcat.start();
 
@@ -2149,7 +2149,6 @@ public class TestHttp11Processor extends TomcatBaseTest {
     }
 
 
-
     private static class EarlyHintsServlet extends HttpServlet {
 
         private static final long serialVersionUID = 1L;
@@ -2165,6 +2164,7 @@ public class TestHttp11Processor extends TomcatBaseTest {
             this.useSendError = useSendError;
             this.errorString = errorString;
         }
+
         @Override
         protected void doGet(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
             resp.addHeader("Link", "</style.css>; rel=preload; as=style");
@@ -2184,5 +2184,81 @@ public class TestHttp11Processor extends TomcatBaseTest {
 
             resp.getWriter().write("OK");
         }
+    }
+
+
+    @Test
+    public void testNoCompressionEncodings() {
+        Http11NioProtocol protocol = new Http11NioProtocol();
+        String encodings = protocol.getNoCompressionEncodings();
+        Assert.assertTrue(Arrays.asList("br", "compress", "dcb", "dcz", "deflate", "gzip", "pack200-gzip", "zstd")
+                .stream().anyMatch(encodings::contains));
+
+        protocol.setNoCompressionEncodings("br");
+
+        String newEncodings = protocol.getNoCompressionEncodings();
+        Assert.assertTrue(newEncodings.contains("br"));
+        Assert.assertFalse(newEncodings.contains("gzip"));
+    }
+
+
+    private static final class AltSvcClient extends SimpleHttpClient {
+
+        AltSvcClient(int port) {
+            setPort(port);
+        }
+
+        @Override
+        public boolean isResponseBodyOK() {
+            return true;
+        }
+    }
+
+
+    @Test
+    public void testAltServiceHeader() throws Exception {
+        Tomcat tomcat = getTomcatInstance();
+        Context root = getProgrammaticRootContext();
+        Tomcat.addServlet(root, "AltSvc", new TesterServlet());
+        root.addServletMapping("/test", "AltSvc");
+
+        AbstractHttp11Protocol<?> protocol =
+                (AbstractHttp11Protocol<?>) tomcat.getConnector().getProtocolHandler();
+        protocol.setAltService("h2");
+
+        tomcat.start();
+        int port = tomcat.getConnector().getLocalPort();
+
+        AltSvcClient client = new AltSvcClient(port);
+        String request = "GET /test HTTP/1.1" + CRLF + "Host: localhost:" + port + CRLF + "Connection: close" +
+                CRLF + CRLF;
+        client.setRequest(new String[] { request });
+        client.connect();
+        client.processRequest();
+
+        Assert.assertTrue(client.getResponseLine(), client.isResponse200());
+        String expected = "Alt-Svc: h2=\"" + ":" + port + "\"";
+        Assert.assertTrue(client.getResponseHeaders().toString(), client.getResponseHeaders().contains(expected));
+    }
+
+
+    @Test
+    public void testAltServiceInvalidValue() {
+        Http11NioProtocol protocol = new Http11NioProtocol();
+
+        Assert.assertThrows(IllegalArgumentException.class,
+                () -> protocol.setAltService("not a token"));
+        Assert.assertThrows(IllegalArgumentException.class,
+                () -> protocol.setAltService("h2=\""));
+
+        // Any valid token identifier is accepted
+        protocol.setAltService("h2");
+        Assert.assertEquals("h2", protocol.getAltService());
+
+        protocol.setAltService("");
+        Assert.assertNull(protocol.getAltService());
+
+        protocol.setAltService(null);
+        Assert.assertNull(protocol.getAltService());
     }
 }

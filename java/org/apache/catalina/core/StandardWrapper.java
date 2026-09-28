@@ -25,6 +25,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
@@ -68,6 +69,9 @@ public class StandardWrapper extends ContainerBase implements ServletConfig, Wra
 
     private final Log log = LogFactory.getLog(StandardWrapper.class); // must not be static
 
+    /**
+     * Default servlet methods supported by this wrapper.
+     */
     protected static final String[] DEFAULT_SERVLET_METHODS = new String[] { "GET", "HEAD", "POST" };
 
     // ----------------------------------------------------------- Constructors
@@ -197,7 +201,13 @@ public class StandardWrapper extends ContainerBase implements ServletConfig, Wra
 
     // To support jmx attributes
     StandardWrapperValve swValve;
+    /**
+     * Time taken to load the servlet.
+     */
     protected long loadTime = 0;
+    /**
+     * Time taken to load the servlet class.
+     */
     protected int classLoadTime = 0;
 
     /**
@@ -255,7 +265,9 @@ public class StandardWrapper extends ContainerBase implements ServletConfig, Wra
 
 
     /**
-     * @return the number of active allocations of this servlet.
+     * Returns the number of active allocations of this servlet.
+     *
+     * @return the number of active allocations of this servlet
      */
     public int getCountAllocated() {
         return this.countAllocated.get();
@@ -305,6 +317,8 @@ public class StandardWrapper extends ContainerBase implements ServletConfig, Wra
     }
 
     /**
+     * Returns the load-on-startup value that was parsed.
+     *
      * @return the load-on-startup value that was parsed
      */
     public String getLoadOnStartupString() {
@@ -654,15 +668,6 @@ public class StandardWrapper extends ContainerBase implements ServletConfig, Wra
             referencesLock.readLock().unlock();
         }
 
-        // If not specified on the Wrapper, check the Context
-        if (getParent() instanceof Context context) {
-            if (reference != null) {
-                reference = context.findRoleMapping(reference);
-            } else {
-                reference = context.findRoleMapping(name);
-            }
-        }
-
         return reference;
     }
 
@@ -741,7 +746,7 @@ public class StandardWrapper extends ContainerBase implements ServletConfig, Wra
 
         Servlet servlet;
         try {
-            long t1 = System.currentTimeMillis();
+            long t1 = System.nanoTime();
             // Complain if no servlet class has been specified
             if (servletClass == null) {
                 unavailable(null);
@@ -784,13 +789,13 @@ public class StandardWrapper extends ContainerBase implements ServletConfig, Wra
                 ((ContainerServlet) servlet).setWrapper(this);
             }
 
-            classLoadTime = (int) (System.currentTimeMillis() - t1);
+            classLoadTime = (int) TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - t1);
 
             initServlet(servlet);
 
             fireContainerEvent("load", this);
 
-            loadTime = System.currentTimeMillis() - t1;
+            loadTime = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - t1);
         } finally {
             if (swallowOutput) {
                 String log = SystemLogHandler.stopCapture();
@@ -905,7 +910,8 @@ public class StandardWrapper extends ContainerBase implements ServletConfig, Wra
         }
         unloading = true;
 
-        // Loaf a while if the current instance is allocated
+        // Wait a while if the current instance is allocated. Use wait() to
+        // release the lock while waiting to avoid blocking other threads.
         if (countAllocated.get() > 0) {
             int nRetries = 0;
             long delay = unloadDelay / 20;
@@ -914,13 +920,15 @@ public class StandardWrapper extends ContainerBase implements ServletConfig, Wra
                     log.info(sm.getString("standardWrapper.waiting", countAllocated.toString(), getName()));
                 }
                 try {
-                    Thread.sleep(delay);
+                    wait(delay);
                 } catch (InterruptedException e) {
                     // Ignore
                 }
                 nRetries++;
             }
         }
+
+        ServletException servletException = null;
 
         if (instanceInitialized) {
             PrintStream out = System.out;
@@ -934,9 +942,7 @@ public class StandardWrapper extends ContainerBase implements ServletConfig, Wra
             } catch (Throwable t) {
                 Throwable throwable = ExceptionUtils.unwrapInvocationTargetException(t);
                 ExceptionUtils.handleThrowable(throwable);
-                fireContainerEvent("unload", this);
-                unloading = false;
-                throw new ServletException(sm.getString("standardWrapper.destroyException", getName()), throwable);
+                servletException = new ServletException(sm.getString("standardWrapper.destroyException", getName()), throwable);
             } finally {
                 // Annotation processing
                 if (!((Context) getParent()).getIgnoreAnnotations()) {
@@ -958,7 +964,6 @@ public class StandardWrapper extends ContainerBase implements ServletConfig, Wra
                         }
                     }
                 }
-                instance = null;
                 instanceInitialized = false;
             }
         }
@@ -972,6 +977,11 @@ public class StandardWrapper extends ContainerBase implements ServletConfig, Wra
 
         unloading = false;
         fireContainerEvent("unload", this);
+
+        if (servletException != null) {
+            throw servletException;
+        }
+
     }
 
 
@@ -1014,14 +1024,29 @@ public class StandardWrapper extends ContainerBase implements ServletConfig, Wra
         return getName();
     }
 
+    /**
+     * Returns the total processing time for all requests.
+     *
+     * @return the total processing time in milliseconds
+     */
     public long getProcessingTime() {
         return swValve.getProcessingTime();
     }
 
+    /**
+     * Returns the maximum processing time for a single request.
+     *
+     * @return the maximum processing time in milliseconds
+     */
     public long getMaxTime() {
         return swValve.getMaxTime();
     }
 
+    /**
+     * Returns the minimum processing time for a single request.
+     *
+     * @return the minimum processing time in milliseconds
+     */
     public long getMinTime() {
         return swValve.getMinTime();
     }
@@ -1052,10 +1077,20 @@ public class StandardWrapper extends ContainerBase implements ServletConfig, Wra
         swValve.incrementErrorCount();
     }
 
+    /**
+     * Returns the time taken to load the servlet.
+     *
+     * @return the load time in milliseconds
+     */
     public long getLoadTime() {
         return loadTime;
     }
 
+    /**
+     * Returns the time taken to load the servlet class.
+     *
+     * @return the class load time in milliseconds
+     */
     public int getClassLoadTime() {
         return classLoadTime;
     }
@@ -1096,6 +1131,13 @@ public class StandardWrapper extends ContainerBase implements ServletConfig, Wra
     // -------------------------------------------------------- protected Methods
 
 
+    /**
+     * Recursively collects all declared methods from the given class and its superclasses,
+     * stopping at HttpServlet.
+     *
+     * @param c the class to inspect
+     * @return array of all declared methods, or null if c is HttpServlet
+     */
     protected Method[] getAllDeclaredMethods(Class<?> c) {
 
         if (c.equals(jakarta.servlet.http.HttpServlet.class)) {
@@ -1262,21 +1304,22 @@ public class StandardWrapper extends ContainerBase implements ServletConfig, Wra
         broadcaster.removeNotificationListener(listener, filter, object);
     }
 
+    /**
+     * Cache for notification info.
+     */
     protected MBeanNotificationInfo[] notificationInfo;
 
     @Override
     public MBeanNotificationInfo[] getNotificationInfo() {
         if (notificationInfo == null) {
             notificationInfo = new MBeanNotificationInfo[] {
-                    new MBeanNotificationInfo(new String[] { "j2ee.object.created" }, Notification.class.getName(),
-                            "servlet is created"),
                     new MBeanNotificationInfo(new String[] { "j2ee.state.starting" }, Notification.class.getName(),
                             "servlet is starting"),
                     new MBeanNotificationInfo(new String[] { "j2ee.state.running" }, Notification.class.getName(),
                             "servlet is running"),
+                    new MBeanNotificationInfo(new String[] { "j2ee.state.stopping" }, Notification.class.getName(),
+                            "servlet is stopping"),
                     new MBeanNotificationInfo(new String[] { "j2ee.state.stopped" }, Notification.class.getName(),
-                            "servlet start to stopped"),
-                    new MBeanNotificationInfo(new String[] { "j2ee.object.stopped" }, Notification.class.getName(),
                             "servlet is stopped"),
                     new MBeanNotificationInfo(new String[] { "j2ee.object.deleted" }, Notification.class.getName(),
                             "servlet is deleted") };

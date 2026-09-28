@@ -36,17 +36,25 @@ import jakarta.servlet.http.HttpServletResponse;
  * expressions (in the syntax supported by {@link Pattern}) to which the appropriate request property will be compared.
  * Evaluation proceeds as follows:
  * <ul>
- * <li>The subclass extracts the request property to be filtered, and calls the common <code>process()</code> method.
+ * <li>The subclass extracts the request property to be filtered, and calls the common <code>process()</code> method.</li>
  * <li>If there is a deny expression configured, the property will be compared to the expression. If a match is found,
  * this request will be rejected with a "Forbidden" HTTP response.</li>
  * <li>If there is an allow expression configured, the property will be compared to the expression. If a match is found,
  * this request will be allowed to pass through to the next filter in the current pipeline.</li>
  * <li>If a deny expression was specified but no allow expression, allow this request to pass through (because none of
- * the deny expressions matched it).
- * <li>The request will be rejected with a "Forbidden" HTTP response.</li>
+ * the deny expressions matched it).</li>
+ * <li>Otherwise (an allow expression was configured but did not match, or no expressions were configured at all), the
+ * request will be rejected with a "Forbidden" HTTP response.</li>
  * </ul>
  */
 public abstract class RequestFilter extends FilterBase {
+
+    /**
+     * Default constructor.
+     */
+    public RequestFilter() {
+        super();
+    }
 
 
     // ----------------------------------------------------- Instance Variables
@@ -77,6 +85,8 @@ public abstract class RequestFilter extends FilterBase {
 
 
     /**
+     * Return the regular expression used to test for allowed requests for this Filter, if any.
+     *
      * @return the regular expression used to test for allowed requests for this Filter, if any; otherwise, return
      *             <code>null</code>.
      */
@@ -103,6 +113,8 @@ public abstract class RequestFilter extends FilterBase {
 
 
     /**
+     * Return the regular expression used to test for denied requests for this Filter, if any.
+     *
      * @return the regular expression used to test for denied requests for this Filter, if any; otherwise, return
      *             <code>null</code>.
      */
@@ -129,6 +141,8 @@ public abstract class RequestFilter extends FilterBase {
 
 
     /**
+     * Return the HTTP response status code used to reject denied requests.
+     *
      * @return response status code that is used to reject denied request.
      */
     public int getDenyStatus() {

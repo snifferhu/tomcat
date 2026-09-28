@@ -73,7 +73,7 @@ import org.apache.tomcat.util.res.StringManager;
  * {@link CorsFilter#doFilter(ServletRequest, ServletResponse, FilterChain)} and add appropriate locking so that the
  * {@code doFilter()} method executes with a consistent configuration.
  *
- * @see <a href="http://www.w3.org/TR/cors/">CORS specification</a>
+ * @see <a href="https://fetch.spec.whatwg.org/#http-cors-protocol">CORS specification</a>
  */
 public class CorsFilter extends GenericFilter {
 
@@ -82,6 +82,12 @@ public class CorsFilter extends GenericFilter {
     private static final StringManager sm = StringManager.getManager(CorsFilter.class);
 
     private transient Log log = LogFactory.getLog(CorsFilter.class); // must not be static
+
+    /**
+     * Default constructor.
+     */
+    public CorsFilter() {
+    }
 
 
     /**
@@ -446,8 +452,8 @@ public class CorsFilter extends GenericFilter {
      * <li><b>cors.isCorsRequest:</b> Flag to determine if request is a CORS request. Set to <code>true</code> if CORS
      * request; <code>false</code> otherwise.</li>
      * <li><b>cors.request.origin:</b> The Origin URL.</li>
-     * <li><b>cors.request.type:</b> Type of request. Values: <code>simple</code> or <code>preflight</code> or
-     * <code>not_cors</code> or <code>invalid_cors</code></li>
+     * <li><b>cors.request.type:</b> Type of request. Values: <code>simple</code> or <code>actual</code> or
+     * <code>preflight</code> or <code>not_cors</code> or <code>invalid_cors</code></li>
      * <li><b>cors.request.headers:</b> Request headers sent as 'Access-Control-Request-Headers' header, for pre-flight
      * request.</li>
      * </ul>
@@ -498,7 +504,7 @@ public class CorsFilter extends GenericFilter {
      * Joins elements of {@link Set} into a string, where each element is separated by the provided separator.
      *
      * @param elements      The {@link Set} containing elements to join together.
-     * @param joinSeparator The character to be used for separating elements.
+     * @param joinSeparator The string to be used for separating elements.
      *
      * @return The joined {@link String}; <code>null</code> if elements {@link Set} is null.
      */
@@ -764,9 +770,14 @@ public class CorsFilter extends GenericFilter {
     }
 
 
-    /*
+    /**
+     * Restores the transient log field after deserialization.
      * Log objects are not Serializable but this Filter is because it extends GenericFilter. Tomcat won't serialize a
      * Filter but in case something else does...
+     *
+     * @param ois the object input stream
+     * @throws ClassNotFoundException if the log class cannot be found
+     * @throws IOException if an I/O error occurs
      */
     @Serial
     private void readObject(ObjectInputStream ois) throws ClassNotFoundException, IOException {

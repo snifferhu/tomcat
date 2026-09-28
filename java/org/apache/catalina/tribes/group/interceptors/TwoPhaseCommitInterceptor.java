@@ -16,8 +16,9 @@
  */
 package org.apache.catalina.tribes.group.interceptors;
 
-import java.util.HashMap;
+import java.util.Iterator;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 import org.apache.catalina.tribes.ChannelException;
 import org.apache.catalina.tribes.ChannelMessage;
@@ -31,17 +32,43 @@ import org.apache.catalina.tribes.util.UUIDGenerator;
 import org.apache.juli.logging.Log;
 import org.apache.juli.logging.LogFactory;
 
+/**
+ * Two-phase commit interceptor. The sender transmits a confirmation message after each message. The receiver stores
+ * each message and only passes it on when the matching confirmation message is received. There is no retransmission,
+ * so a message whose confirmation is lost, or that arrives out of order, is dropped after the expiration time.
+ */
 public class TwoPhaseCommitInterceptor extends ChannelInterceptorBase {
+
+    /**
+     * Constructs a new TwoPhaseCommitInterceptor.
+     */
+    public TwoPhaseCommitInterceptor() {
+    }
 
     private static final byte[] START_DATA =
             new byte[] { 113, 1, -58, 2, -34, -60, 75, -78, -101, -12, 32, -29, 32, 111, -40, 4 };
     private static final byte[] END_DATA =
             new byte[] { 54, -13, 90, 110, 47, -31, 75, -24, -81, -29, 36, 52, -58, 77, -110, 56 };
     private static final Log log = LogFactory.getLog(TwoPhaseCommitInterceptor.class);
+    /**
+     * The string manager for this package.
+     */
     protected static final StringManager sm = StringManager.getManager(TwoPhaseCommitInterceptor.class);
 
-    protected final HashMap<UniqueId,MapEntry> messages = new HashMap<>();
+    /**
+     * Map of pending messages keyed by their unique ID.
+     */
+    protected final Map<UniqueId,MapEntry> messages = new ConcurrentHashMap<>();
+
+    /**
+     * Message expiration time in milliseconds.
+     */
     protected long expire = 1000 * 60; // one minute expiration
+
+    /**
+     * Whether the confirmation message is deep cloned (true) or shallow cloned (false) before it is sent. Messages
+     * that are stored for later delivery are always deep cloned.
+     */
     protected boolean deepclone = true;
 
     @Override
@@ -58,7 +85,7 @@ public class TwoPhaseCommitInterceptor extends ChannelInterceptorBase {
             } else {
                 confirmation = (ChannelMessage) msg.clone();
             }
-            confirmation.getMessage().reset();
+            confirmation.getMessage().clear();
             UUIDGenerator.randomUUID(false, confirmation.getUniqueId(), 0);
             confirmation.getMessage().append(START_DATA, 0, START_DATA.length);
             confirmation.getMessage().append(msg.getUniqueId(), 0, msg.getUniqueId().length);
@@ -82,10 +109,9 @@ public class TwoPhaseCommitInterceptor extends ChannelInterceptorBase {
                             END_DATA, 0, END_DATA.length)) {
                 UniqueId id =
                         new UniqueId(msg.getMessage().getBytesDirect(), START_DATA.length, msg.getUniqueId().length);
-                MapEntry original = messages.get(id);
+                MapEntry original = messages.remove(id);
                 if (original != null) {
                     super.messageReceived(original.msg);
-                    messages.remove(id);
                 } else {
                     log.warn(sm.getString("twoPhaseCommitInterceptor.originalMessage.missing",
                             Arrays.toString(id.getBytes())));
@@ -100,18 +126,34 @@ public class TwoPhaseCommitInterceptor extends ChannelInterceptorBase {
         }
     }
 
+    /**
+     * Returns whether deep cloning is enabled.
+     * @return true if deep cloning is enabled
+     */
     public boolean getDeepclone() {
         return deepclone;
     }
 
+    /**
+     * Returns the message expiration time in milliseconds.
+     * @return the expiration time
+     */
     public long getExpire() {
         return expire;
     }
 
+    /**
+     * Sets whether deep cloning should be used.
+     * @param deepclone true to enable deep cloning
+     */
     public void setDeepclone(boolean deepclone) {
         this.deepclone = deepclone;
     }
 
+    /**
+     * Sets the message expiration time in milliseconds.
+     * @param expire the expiration time
+     */
     public void setExpire(long expire) {
         this.expire = expire;
     }
@@ -120,13 +162,13 @@ public class TwoPhaseCommitInterceptor extends ChannelInterceptorBase {
     public void heartbeat() {
         try {
             long now = System.currentTimeMillis();
-            @SuppressWarnings("unchecked")
-            Map.Entry<UniqueId,MapEntry>[] entries = messages.entrySet().toArray(new Map.Entry[0]);
-            for (Map.Entry<UniqueId,MapEntry> uniqueIdMapEntryEntry : entries) {
-                MapEntry entry = uniqueIdMapEntryEntry.getValue();
-                if (entry.expired(now, expire)) {
-                    log.info(sm.getString("twoPhaseCommitInterceptor.expiredMessage", entry.id));
-                    messages.remove(entry.id);
+            Iterator<Map.Entry<UniqueId,MapEntry>> iter = messages.entrySet().iterator();
+            while (iter.hasNext()) {
+                Map.Entry<UniqueId,MapEntry> entry = iter.next();
+                MapEntry value = entry.getValue();
+                if (value.expired(now, expire)) {
+                    log.info(sm.getString("twoPhaseCommitInterceptor.expiredMessage", value.id));
+                    iter.remove();
                 }
             }
         } catch (Exception e) {
@@ -136,7 +178,20 @@ public class TwoPhaseCommitInterceptor extends ChannelInterceptorBase {
         }
     }
 
+    /**
+     * Entry that holds a message, its ID, and the timestamp of arrival.
+     *
+     * @param msg the channel message
+     * @param id the unique identifier
+     * @param timestamp the arrival time
+     */
     public record MapEntry(ChannelMessage msg, UniqueId id, long timestamp) {
+        /**
+         * Checks if this entry has expired.
+         * @param now the current time
+         * @param expiration the expiration period
+         * @return true if expired
+         */
         public boolean expired(long now, long expiration) {
             return (now - timestamp) > expiration;
         }

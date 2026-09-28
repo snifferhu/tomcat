@@ -43,6 +43,12 @@ import org.apache.tomcat.util.res.StringManager;
  */
 public class KeyedReentrantReadWriteLock {
 
+    /**
+     * Default constructor.
+     */
+    public KeyedReentrantReadWriteLock() {
+    }
+
     private final Map<String,CountedLock> locksMap = new HashMap<>();
 
 
@@ -94,7 +100,7 @@ public class KeyedReentrantReadWriteLock {
 
     /*
      * Lock wrapper implementation that provides both read locks and write locks from the underlying lock and tracks
-     * their usage. Most of the methods throw UnsupportedOperationException as Tomcat does not (currently) require
+     * their usage. All other methods throw UnsupportedOperationException as Tomcat does not (currently) require
      * implementations of those methods.
      */
     private static class LockImpl implements Lock {

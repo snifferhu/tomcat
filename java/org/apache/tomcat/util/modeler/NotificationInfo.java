@@ -30,6 +30,12 @@ import javax.management.MBeanNotificationInfo;
  */
 public class NotificationInfo extends FeatureInfo {
 
+    /**
+     * Constructs a new NotificationInfo.
+     */
+    public NotificationInfo() {
+    }
+
     @Serial
     private static final long serialVersionUID = -6319885418912650856L;
 
@@ -40,8 +46,14 @@ public class NotificationInfo extends FeatureInfo {
      * The <code>ModelMBeanNotificationInfo</code> object that corresponds to this <code>NotificationInfo</code>
      * instance.
      */
-    transient MBeanNotificationInfo info = null;
+    transient MBeanNotificationInfo notifInfo = null;
+    /**
+     * Array of notification types.
+     */
     protected String[] notifTypes = new String[0];
+    /**
+     * Lock for notification types access.
+     */
     protected final ReadWriteLock notifTypesLock = new ReentrantReadWriteLock();
 
 
@@ -50,19 +62,21 @@ public class NotificationInfo extends FeatureInfo {
     @Override
     public void setDescription(String description) {
         super.setDescription(description);
-        this.info = null;
+        this.notifInfo = null;
     }
 
 
     @Override
     public void setName(String name) {
         super.setName(name);
-        this.info = null;
+        this.notifInfo = null;
     }
 
 
     /**
-     * @return the array of notification types for this MBean.
+     * Returns the array of notification types for this MBean.
+     *
+     * @return The array of notification types
      */
     public String[] getNotifTypes() {
         Lock readLock = notifTypesLock.readLock();
@@ -93,7 +107,7 @@ public class NotificationInfo extends FeatureInfo {
             System.arraycopy(notifTypes, 0, results, 0, notifTypes.length);
             results[notifTypes.length] = notifType;
             notifTypes = results;
-            this.info = null;
+            this.notifInfo = null;
         } finally {
             writeLock.unlock();
         }
@@ -101,24 +115,24 @@ public class NotificationInfo extends FeatureInfo {
 
 
     /**
-     * Create and return a <code>ModelMBeanNotificationInfo</code> object that corresponds to the attribute described by
-     * this instance.
+     * Create and return a <code>ModelMBeanNotificationInfo</code> object that corresponds to the notification
+     * described by this instance.
      *
      * @return the notification info
      */
     public MBeanNotificationInfo createNotificationInfo() {
 
         // Return our cached information (if any)
-        if (info != null) {
-            return info;
+        if (notifInfo != null) {
+            return notifInfo;
         }
 
         // Create and return a new information object
-        info = new MBeanNotificationInfo(getNotifTypes(), getName(), getDescription());
-        // Descriptor descriptor = info.getDescriptor();
+        notifInfo = new MBeanNotificationInfo(getNotifTypes(), getName(), getDescription());
+        // Descriptor descriptor = notifInfo.getDescriptor();
         // addFields(descriptor);
-        // info.setDescriptor(descriptor);
-        return info;
+        // notifInfo.setDescriptor(descriptor);
+        return notifInfo;
 
     }
 

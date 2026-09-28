@@ -32,6 +32,8 @@ import java.lang.annotation.Target;
 public @interface HandlesTypes {
 
     /**
+     * Declares the classes handled by the {@link jakarta.servlet.ServletContainerInitializer}.
+     *
      * @return array of classes
      */
     Class<?>[] value();

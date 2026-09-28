@@ -41,17 +41,22 @@ import org.apache.tools.ant.BuildException;
  *           name="Catalina:type=IDataSender,host=localhost,senderAddress=192.168.1.2,senderPort=9025"
  *           attribute="nrOfRequests"
  *           resultproperty="IDataSender.9025.nrOfRequests"
- *           echo="false"&gt;
- *       /&gt;
+ *           echo="false" /&gt;
  * </pre>
  * <p>
- * First call to a remote MBeanserver save the JMXConnection a referenz <em>jmx.server</em>
+ * First call to a remote MBeanserver save the JMXConnection a reference <em>jmx.server</em>
  * </p>
  * These tasks require Ant 1.6 or later interface.
  *
  * @since 5.5.10
  */
 public class JMXAccessorGetTask extends JMXAccessorTask {
+
+    /**
+     * Constructs a new JMXAccessorGetTask.
+     */
+    public JMXAccessorGetTask() {
+    }
 
 
     // ----------------------------------------------------- Instance Variables
@@ -61,14 +66,18 @@ public class JMXAccessorGetTask extends JMXAccessorTask {
     // ------------------------------------------------------------- Properties
 
     /**
-     * @return Returns the attribute.
+     * Get the MBean attribute name.
+     *
+     * @return the attribute name
      */
     public String getAttribute() {
         return attribute;
     }
 
     /**
-     * @param attribute The attribute to set.
+     * Set the MBean attribute name.
+     *
+     * @param attribute the attribute to set
      */
     public void setAttribute(String attribute) {
         this.attribute = attribute;
@@ -79,12 +88,14 @@ public class JMXAccessorGetTask extends JMXAccessorTask {
 
     @Override
     public String jmxExecute(MBeanServerConnection jmxServerConnection) throws Exception {
-
         if (getName() == null) {
             throw new BuildException("Must specify a 'name'");
         }
         if ((attribute == null)) {
             throw new BuildException("Must specify a 'attribute' for get");
+        }
+        if (jmxServerConnection == null) {
+            throw new BuildException("Must open a connection!");
         }
         return jmxGet(jmxServerConnection, getName());
     }

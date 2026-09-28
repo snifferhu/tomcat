@@ -48,9 +48,15 @@ import org.apache.tomcat.util.security.Escape;
  * However if you use a software that parses the output of <code>HostManagerServlet</code> you won't be able to upgrade
  * to this Servlet since the output are not in the same format as from <code>HostManagerServlet</code>
  *
- * @see org.apache.catalina.manager.ManagerServlet
+ * @see org.apache.catalina.manager.host.HostManagerServlet
  */
 public class HTMLHostManagerServlet extends HostManagerServlet {
+
+    /**
+     * Constructs a new HTMLHostManagerServlet.
+     */
+    public HTMLHostManagerServlet() {
+    }
 
     @Serial
     private static final long serialVersionUID = 1L;
@@ -220,8 +226,7 @@ public class HTMLHostManagerServlet extends HostManagerServlet {
 
 
     /**
-     * Render an HTML list of the currently active Contexts in our virtual host, and memory and server status
-     * information.
+     * Render an HTML list of the currently active virtual hosts in our engine, and server status information.
      *
      * @param request  The request
      * @param response The response

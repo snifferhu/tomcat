@@ -299,7 +299,7 @@
 
     <p>The <strong>OpenSSL Lifecycle Listener</strong> checks for the presence
     of the OpenSSL library and loads the library if it is present. This
-    uses the FFM API from Java 22 instead of additional native code. When
+    uses the FFM API from Java 25 instead of additional native code. When
     enabled and successfully loaded, the NIO connector will then make use
     of OpenSSL for TLS functionality. This is a functional replacement to the
     <strong>APR Lifecycle Listener</strong> described above.</p>
@@ -428,10 +428,31 @@
 
   <subsection name="StoreConfig Lifecycle Listener - org.apache.catalina.storeconfig.StoreConfigLifecycleListener">
 
-    <p>The <strong>StoreConfig Lifecycle Listener</strong> configures a
-    StoreConfig MBean that may be used to save the current server configuration
-    in server.xml or the current configuration for a web application in a
-    context.xml file.</p>
+    <p>The <strong>StoreConfig Lifecycle Listener</strong> enables persisting
+      runtime configuration changes. When Tomcat's configuration is
+      modified at runtime, for example, adding or removing a virtual host
+      through the Host Manager, those changes only exist in memory and are lost
+      on restart. This listener provides the ability to write the current
+      in-memory configuration to <code>server.xml</code> (or an individual web
+      application's <code>context.xml</code>), so that runtime changes are
+      preserved across restarts.</p>
+
+    <p>When this listener is enabled, configuration persistence can be
+      triggered through the
+      <a href="../host-manager-howto.html#Persist_command">Host Manager</a> and
+      <a href="../manager-howto.html#Save_Configuration">Manager</a> applications.
+      The listener compares the current configuration against
+      default values and only writes attributes that differ from the defaults.
+      Before overwriting <code>server.xml</code>, a backup of the existing file
+      is created.</p>
+
+    <p>When an existing configuration file is re-written, the generated
+      configuration is reformatted on a best effort basis to preserve the
+      layout of the existing file, including comments, blank lines and the
+      order of attributes. Layout information that cannot be matched to the
+      stored content, for example comments attached to elements that no longer
+      exist, is not preserved. If the layout of the existing file cannot be
+      preserved, the file is written without layout information.</p>
 
     <p>This listener must only be nested within <a href="server.html">Server</a>
     elements.</p>
@@ -442,16 +463,18 @@
     <attributes>
 
       <attribute name="storeConfigClass" required="false">
-        <p>The name of the <code>IStoreConfig</code> implementation to use. If
+        <p>The name of the <code>IStoreConfig</code> implementation to use.
+        This is an extension point for custom implementations. If
         not specified the default of
         <code>org.apache.catalina.storeconfig.StoreConfig</code> will be
         used.</p>
       </attribute>
 
       <attribute name="storeRegistry" required="false">
-        <p>The URL of the configuration file that configures how the
-        <code>IStoreConfig</code> is to save the configuration. If not specified
-        the built in resource
+        <p>The URL of the configuration file that defines how each server
+          component type (connectors, hosts, realms, valves, etc.) should be
+          serialized to XML. This is an extension point for custom serialization
+          rules. If not specified the built in resource
         <code>/org/apache/catalina/storeconfig/server-registry.xml</code> will
         be used.</p>
       </attribute>
@@ -614,7 +637,8 @@
 
     <attributes>
       <attribute name="Port" required="false">
-        <p>Port the connector that will received proxied traffic from HTTPD, default the first connector will be used</p>
+        <p>Port of the connector that will receive proxied traffic from HTTPD, default 8009.
+        Set to 0 to match any port (the first connector will be used)</p>
       </attribute>
 
       <attribute name="Host" required="false">
@@ -622,8 +646,8 @@
         default empty the <strong>Port</strong> will be used</p>
       </attribute>
 
-      <attribute name="proxyURL" required="false">
-        <p>proxyURL is the URL corresponding to the <strong>Location</strong> in httpd configuration of the heartbeat Handler,
+      <attribute name="proxyURLString" required="false">
+        <p>proxyURLString is the URL corresponding to the <strong>Location</strong> in httpd configuration of the heartbeat Handler,
         default /HeartbeatListener</p>
       </attribute>
 

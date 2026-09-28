@@ -20,13 +20,18 @@ import java.io.Serial;
 import java.io.Serializable;
 import java.util.Objects;
 
-import org.apache.tomcat.util.buf.UDecoder;
-
 /**
  * Representation of an error page element for a web application, as represented in a <code>&lt;error-page&gt;</code>
  * element in the deployment descriptor.
  */
-public class ErrorPage extends XmlEncodingBase implements Serializable {
+public class ErrorPage implements Serializable {
+
+    /**
+     * Default constructor for ErrorPage.
+     */
+    public ErrorPage() {
+        // NO-OP
+    }
 
     @Serial
     private static final long serialVersionUID = 2L;
@@ -57,7 +62,9 @@ public class ErrorPage extends XmlEncodingBase implements Serializable {
 
 
     /**
-     * @return the error code.
+     * Returns the error code for which this error page is active.
+     *
+     * @return the error code
      */
     public int getErrorCode() {
         return this.errorCode;
@@ -75,7 +82,7 @@ public class ErrorPage extends XmlEncodingBase implements Serializable {
 
 
     /**
-     * Set the error code (hack for default XmlMapper data type).
+     * Set the error code, parsing the provided string value.
      *
      * @param errorCode The new error code
      */
@@ -90,7 +97,9 @@ public class ErrorPage extends XmlEncodingBase implements Serializable {
 
 
     /**
-     * @return the exception type.
+     * Returns the exception type for which this error page is active.
+     *
+     * @return the fully qualified exception type name, or {@code null} if none
      */
     public String getExceptionType() {
         return this.exceptionType;
@@ -108,7 +117,9 @@ public class ErrorPage extends XmlEncodingBase implements Serializable {
 
 
     /**
-     * @return the location.
+     * Returns the context-relative location to handle this error or exception.
+     *
+     * @return the location
      */
     public String getLocation() {
         return this.location;
@@ -121,12 +132,11 @@ public class ErrorPage extends XmlEncodingBase implements Serializable {
      * @param location The new location
      */
     public void setLocation(String location) {
-        this.location = UDecoder.URLDecode(location, getCharset());
+        this.location = location;
     }
 
 
     // --------------------------------------------------------- Public Methods
-
 
     /**
      * Render a String representation of this object.
@@ -147,6 +157,12 @@ public class ErrorPage extends XmlEncodingBase implements Serializable {
         return sb.toString();
     }
 
+    /**
+     * Returns the name of this error page, which is either the exception type or
+     * the error code.
+     *
+     * @return the error page name
+     */
     public String getName() {
         return Objects.requireNonNullElseGet(exceptionType, () -> Integer.toString(errorCode));
     }

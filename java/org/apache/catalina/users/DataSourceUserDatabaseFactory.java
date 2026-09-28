@@ -39,9 +39,28 @@ import javax.sql.DataSource;
  * <ul>
  * <li><strong>dataSourceName</strong> - JNDI name of the DataSource, which must be located in the same Context
  * environment as the UserDatabase</li>
+ * <li><strong>readonly</strong> - whether the user database is read only</li>
+ * <li><strong>userTable</strong> - table that holds user data</li>
+ * <li><strong>groupTable</strong> - table that holds group data</li>
+ * <li><strong>roleTable</strong> - table that holds role data</li>
+ * <li><strong>userRoleTable</strong> - table that holds the relation between users and roles</li>
+ * <li><strong>userGroupTable</strong> - table that holds the relation between users and groups</li>
+ * <li><strong>groupRoleTable</strong> - table that holds the relation between groups and roles</li>
+ * <li><strong>roleNameCol</strong> - column in the user role table that names a role</li>
+ * <li><strong>roleAndGroupDescriptionCol</strong> - column used for role and group descriptions</li>
+ * <li><strong>groupNameCol</strong> - column used for group names</li>
+ * <li><strong>userCredCol</strong> - column in the user table that holds the user's credentials</li>
+ * <li><strong>userFullNameCol</strong> - column used for user full names</li>
+ * <li><strong>userNameCol</strong> - column in the user table that holds the user's name</li>
  * </ul>
  */
 public class DataSourceUserDatabaseFactory implements ObjectFactory {
+
+    /**
+     * Default constructor.
+     */
+    public DataSourceUserDatabaseFactory() {
+    }
 
 
     // --------------------------------------------------------- Public Methods
@@ -77,7 +96,7 @@ public class DataSourceUserDatabaseFactory implements ObjectFactory {
         DataSource dataSource = null;
         String dataSourceName = null;
         RefAddr ra = ref.get("dataSourceName");
-        if (ra != null) {
+        if (ra != null && ra.getContent() != null) {
             dataSourceName = ra.getContent().toString();
             dataSource = (DataSource) nameCtx.lookup(dataSourceName);
         }
@@ -88,75 +107,72 @@ public class DataSourceUserDatabaseFactory implements ObjectFactory {
         database.setDataSourceName(dataSourceName);
 
         ra = ref.get("readonly");
-        if (ra != null) {
+        if (ra != null && ra.getContent() != null) {
             database.setReadonly(Boolean.parseBoolean(ra.getContent().toString()));
         }
 
         ra = ref.get("userTable");
-        if (ra != null) {
+        if (ra != null && ra.getContent() != null) {
             database.setUserTable(ra.getContent().toString());
         }
 
         ra = ref.get("groupTable");
-        if (ra != null) {
+        if (ra != null && ra.getContent() != null) {
             database.setGroupTable(ra.getContent().toString());
         }
 
         ra = ref.get("roleTable");
-        if (ra != null) {
+        if (ra != null && ra.getContent() != null) {
             database.setRoleTable(ra.getContent().toString());
         }
 
         ra = ref.get("userRoleTable");
-        if (ra != null) {
+        if (ra != null && ra.getContent() != null) {
             database.setUserRoleTable(ra.getContent().toString());
         }
 
         ra = ref.get("userGroupTable");
-        if (ra != null) {
+        if (ra != null && ra.getContent() != null) {
             database.setUserGroupTable(ra.getContent().toString());
         }
 
         ra = ref.get("groupRoleTable");
-        if (ra != null) {
+        if (ra != null && ra.getContent() != null) {
             database.setGroupRoleTable(ra.getContent().toString());
         }
 
         ra = ref.get("roleNameCol");
-        if (ra != null) {
+        if (ra != null && ra.getContent() != null) {
             database.setRoleNameCol(ra.getContent().toString());
         }
 
         ra = ref.get("roleAndGroupDescriptionCol");
-        if (ra != null) {
+        if (ra != null && ra.getContent() != null) {
             database.setRoleAndGroupDescriptionCol(ra.getContent().toString());
         }
 
         ra = ref.get("groupNameCol");
-        if (ra != null) {
+        if (ra != null && ra.getContent() != null) {
             database.setGroupNameCol(ra.getContent().toString());
         }
 
         ra = ref.get("userCredCol");
-        if (ra != null) {
+        if (ra != null && ra.getContent() != null) {
             database.setUserCredCol(ra.getContent().toString());
         }
 
         ra = ref.get("userFullNameCol");
-        if (ra != null) {
+        if (ra != null && ra.getContent() != null) {
             database.setUserFullNameCol(ra.getContent().toString());
         }
 
         ra = ref.get("userNameCol");
-        if (ra != null) {
+        if (ra != null && ra.getContent() != null) {
             database.setUserNameCol(ra.getContent().toString());
         }
 
         // Return the configured database instance
         database.open();
         return database;
-
     }
-
-
 }

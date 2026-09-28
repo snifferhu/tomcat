@@ -23,10 +23,11 @@ import org.apache.juli.logging.Log;
  * invalid input data logged to assist with debugging whereas in production it is likely to be desirable not to log
  * anything for invalid data. The following settings may be used:
  * <ul>
- * <li>NOTHING: Log nothing.</li>
+ * <li>NONE: Log nothing.</li>
  * <li>DEBUG_ALL: Log all problems at DEBUG log level.</li>
- * <li>INFO_THEN_DEBUG: Log first problem at INFO log level and any further issues in the following TBD (configurable)
- * seconds at DEBUG level</li>
+ * <li>INFO_THEN_DEBUG: Log first problem at INFO log level and any further issues in the following configurable
+ * suppression time (the <code>org.apache.juli.logging.UserDataHelper.SUPPRESSION_TIME</code> system property, in
+ * seconds) at DEBUG level</li>
  * <li>INFO_ALL: Log all problems at INFO log level.</li>
  * </ul>
  * By default, INFO_THEN_DEBUG is used with a suppression time of 24 hours.
@@ -48,6 +49,11 @@ public class UserDataHelper {
     private volatile long lastInfoTime = 0;
 
 
+    /**
+     * Constructs a new UserDataHelper with the specified log instance.
+     *
+     * @param log The log instance to use for logging
+     */
     public UserDataHelper(Log log) {
         this.log = log;
 
@@ -136,8 +142,17 @@ public class UserDataHelper {
      * Log mode for the next log message.
      */
     public enum Mode {
+        /**
+         * Log at DEBUG level.
+         */
         DEBUG,
+        /**
+         * Log at INFO level for the first message, then DEBUG for subsequent messages.
+         */
         INFO_THEN_DEBUG,
+        /**
+         * Log at INFO level.
+         */
         INFO
     }
 }

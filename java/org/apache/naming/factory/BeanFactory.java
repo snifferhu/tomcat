@@ -60,6 +60,9 @@ import org.apache.naming.StringManager;
  */
 public class BeanFactory implements ObjectFactory {
 
+    /** Default constructor. */
+    public BeanFactory() { }
+
     private static final StringManager sm = StringManager.getManager(BeanFactory.class);
 
     private final Log log = LogFactory.getLog(BeanFactory.class); // Not static
@@ -123,7 +126,7 @@ public class BeanFactory implements ObjectFactory {
                         continue;
                     }
 
-                    value = (String) ra.getContent();
+                    value = String.valueOf(ra.getContent());
 
                     Object[] valueArray = new Object[1];
 

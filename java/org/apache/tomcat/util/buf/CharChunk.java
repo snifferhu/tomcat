@@ -49,7 +49,7 @@ public final class CharChunk extends AbstractChunk implements CharSequence {
     public interface CharOutputChannel {
 
         /**
-         * Send the bytes ( usually the internal conversion buffer ). Expect 8k output if the buffer is full.
+         * Send the characters ( usually the internal conversion buffer ). Expect 8k output if the buffer is full.
          *
          * @param buf characters that will be written
          * @param off offset in the characters array
@@ -63,6 +63,9 @@ public final class CharChunk extends AbstractChunk implements CharSequence {
     // --------------------
 
     // char[]
+    /**
+     * The underlying character buffer.
+     */
     private char[] buff;
 
     // transient as serialization is primarily for values via, e.g. JMX
@@ -77,21 +80,36 @@ public final class CharChunk extends AbstractChunk implements CharSequence {
     }
 
 
+    /**
+     * Creates a new CharChunk with the specified initial buffer size.
+     *
+     * @param initial the initial buffer size
+     */
     public CharChunk(int initial) {
         allocate(initial, -1);
     }
 
 
-    // --------------------
-
     @Override
-    public Object clone() throws CloneNotSupportedException {
-        return super.clone();
+    public CharChunk clone() throws CloneNotSupportedException {
+        CharChunk result = (CharChunk) super.clone();
+        if (buff != null) {
+            result.buff = buff.clone();
+        }
+        result.in = null;
+        result.out = null;
+        return result;
     }
 
 
     // -------------------- Setup --------------------
 
+    /**
+     * Allocates a buffer of the specified size.
+     *
+     * @param initial the initial buffer size
+     * @param limit the maximum buffer size
+     */
     public void allocate(int initial, int limit) {
         if (buff == null || buff.length < initial) {
             buff = new char[initial];
@@ -121,7 +139,9 @@ public final class CharChunk extends AbstractChunk implements CharSequence {
 
 
     /**
-     * @return the buffer.
+     * Returns the character buffer.
+     *
+     * @return the character buffer
      */
     public char[] getChars() {
         return getBuffer();
@@ -129,7 +149,9 @@ public final class CharChunk extends AbstractChunk implements CharSequence {
 
 
     /**
-     * @return the buffer.
+     * Returns the underlying character buffer.
+     *
+     * @return the underlying character buffer
      */
     public char[] getBuffer() {
         return buff;
@@ -159,6 +181,13 @@ public final class CharChunk extends AbstractChunk implements CharSequence {
 
     // -------------------- Adding data to the buffer --------------------
 
+    /**
+     * Appends a single character to the buffer.
+     *
+     * @param c the character to append
+     *
+     * @throws IOException Writing overflow data to the output channel failed
+     */
     public void append(char c) throws IOException {
         makeSpace(1);
         int limit = getLimitInternal();
@@ -171,6 +200,13 @@ public final class CharChunk extends AbstractChunk implements CharSequence {
     }
 
 
+    /**
+     * Appends the contents of the source CharChunk to this buffer.
+     *
+     * @param src the source CharChunk
+     *
+     * @throws IOException Writing overflow data to the output channel failed
+     */
     public void append(CharChunk src) throws IOException {
         append(src.getBuffer(), src.getStart(), src.getLength());
     }
@@ -208,7 +244,7 @@ public final class CharChunk extends AbstractChunk implements CharSequence {
 
         // Need more space than we can afford, need to flush buffer.
 
-        // The buffer is already at (or bigger than) limit.
+        // The buffer is below the limit but does not have enough contiguous space for the data to append.
 
         // Optimization:
         // If len-avail < length (i.e. after we fill the buffer with what we
@@ -286,6 +322,13 @@ public final class CharChunk extends AbstractChunk implements CharSequence {
 
     // -------------------- Removing data from the buffer --------------------
 
+    /**
+     * Subtracts a single character from the buffer.
+     *
+     * @return the character or -1 if end of stream
+     *
+     * @throws IOException If an I/O error occurs
+     */
     public int subtract() throws IOException {
         if (checkEof()) {
             return -1;
@@ -294,6 +337,17 @@ public final class CharChunk extends AbstractChunk implements CharSequence {
     }
 
 
+    /**
+     * Subtracts characters from the buffer into the destination array.
+     *
+     * @param dest the destination array
+     * @param off the offset in the destination array
+     * @param len the maximum number of characters to read
+     *
+     * @return the number of characters read or -1 if end of stream
+     *
+     * @throws IOException If an I/O error occurs
+     */
     public int subtract(char[] dest, int off, int len) throws IOException {
         if (checkEof()) {
             return -1;
@@ -393,6 +447,11 @@ public final class CharChunk extends AbstractChunk implements CharSequence {
     }
 
 
+    /**
+     * Returns the string representation of the chunk contents.
+     *
+     * @return the string representation
+     */
     public String toStringInternal() {
         return new String(buff, start, end - start);
     }
@@ -410,7 +469,7 @@ public final class CharChunk extends AbstractChunk implements CharSequence {
 
 
     /**
-     * Compares the message bytes to the specified String object.
+     * Compares the characters in this CharChunk to the specified String object.
      *
      * @param s the String to compare
      *
@@ -433,7 +492,7 @@ public final class CharChunk extends AbstractChunk implements CharSequence {
 
 
     /**
-     * Compares the message bytes to the specified String object.
+     * Compares the characters in this CharChunk to the specified String object, ignoring case.
      *
      * @param s the String to compare
      *
@@ -447,7 +506,14 @@ public final class CharChunk extends AbstractChunk implements CharSequence {
         }
         int off = start;
         for (int i = 0; i < len; i++) {
-            if (Ascii.toLower(c[off++]) != Ascii.toLower(s.charAt(i))) {
+            char c1 = c[off++];
+            char c2 = s.charAt(i);
+            // Use ASCII short-cut if possible
+            if (c1 > 0xFF || c2 > 0xFF) {
+                if (Character.toLowerCase(c1) != Character.toLowerCase(c2)) {
+                    return false;
+                }
+            } else if (Ascii.toLower(c1) != Ascii.toLower(c2)) {
                 return false;
             }
         }
@@ -455,11 +521,27 @@ public final class CharChunk extends AbstractChunk implements CharSequence {
     }
 
 
+    /**
+     * Compares this CharChunk to another CharChunk.
+     *
+     * @param cc the CharChunk to compare to
+     *
+     * @return true if the CharChunks are equal
+     */
     public boolean equals(CharChunk cc) {
         return equals(cc.getChars(), cc.getStart(), cc.getLength());
     }
 
 
+    /**
+     * Compares this CharChunk to a character array.
+     *
+     * @param b2 the character array to compare to
+     * @param off2 the offset in the character array
+     * @param len2 the length of the character array
+     *
+     * @return true if the contents are equal
+     */
     public boolean equals(char[] b2, int off2, int len2) {
         char[] b1 = buff;
         if (b1 == null && b2 == null) {
@@ -483,9 +565,11 @@ public final class CharChunk extends AbstractChunk implements CharSequence {
 
 
     /**
-     * @return <code>true</code> if the message bytes starts with the specified string.
+     * Checks if the buffer starts with the specified string.
      *
-     * @param s The string
+     * @param s the string to check
+     *
+     * @return true if the buffer starts with the specified string
      */
     public boolean startsWith(String s) {
         char[] c = buff;
@@ -519,7 +603,14 @@ public final class CharChunk extends AbstractChunk implements CharSequence {
         }
         int off = start + pos;
         for (int i = 0; i < len; i++) {
-            if (Ascii.toLower(c[off++]) != Ascii.toLower(s.charAt(i))) {
+            char c1 = c[off++];
+            char c2 = s.charAt(i);
+            // Use ASCII short-cut if possible
+            if (c1 > 0xFF || c2 > 0xFF) {
+                if (Character.toLowerCase(c1) != Character.toLowerCase(c2)) {
+                    return false;
+                }
+            } else if (Ascii.toLower(c1) != Ascii.toLower(c2)) {
                 return false;
             }
         }
@@ -528,9 +619,11 @@ public final class CharChunk extends AbstractChunk implements CharSequence {
 
 
     /**
-     * @return <code>true</code> if the message bytes end with the specified string.
+     * Checks if the buffer ends with the specified string.
      *
-     * @param s The string
+     * @param s the string to check
+     *
+     * @return true if the buffer ends with the specified string
      */
     public boolean endsWith(String s) {
         char[] c = buff;
@@ -554,13 +647,20 @@ public final class CharChunk extends AbstractChunk implements CharSequence {
     }
 
 
+    /**
+     * Returns the index of the first occurrence of the given character.
+     *
+     * @param c the character to find
+     *
+     * @return the index of the character, or -1 if not found
+     */
     public int indexOf(char c) {
         return indexOf(c, start);
     }
 
 
     /**
-     * Returns the first instance of the given character in this CharChunk starting at the specified char. If the
+     * Returns the first instance of the given character in this CharChunk starting at the specified position. If the
      * character is not found, -1 is returned. <br>
      *
      * @param c        The character
@@ -612,7 +712,7 @@ public final class CharChunk extends AbstractChunk implements CharSequence {
     @Override
     public CharSequence subSequence(int start, int end) {
         try {
-            CharChunk result = (CharChunk) this.clone();
+            CharChunk result = this.clone();
             result.setStart(this.start + start);
             result.setEnd(this.start + end);
             return result;

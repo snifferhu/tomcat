@@ -34,6 +34,7 @@ import org.apache.coyote.http11.upgrade.InternalHttpUpgradeHandler;
 import org.apache.coyote.http11.upgrade.UpgradeInfo;
 import org.apache.juli.logging.Log;
 import org.apache.juli.logging.LogFactory;
+import org.apache.tomcat.util.ExceptionUtils;
 import org.apache.tomcat.util.net.AbstractEndpoint.Handler.SocketState;
 import org.apache.tomcat.util.net.SSLSupport;
 import org.apache.tomcat.util.net.SocketEvent;
@@ -72,6 +73,9 @@ public class WsHttpUpgradeHandler implements InternalHttpUpgradeHandler {
     private WsSession wsSession;
 
 
+    /**
+     * Default constructor.
+     */
     public WsHttpUpgradeHandler() {
         applicationClassLoader = Thread.currentThread().getContextClassLoader();
     }
@@ -83,6 +87,18 @@ public class WsHttpUpgradeHandler implements InternalHttpUpgradeHandler {
     }
 
 
+    /**
+     * Performs initialization before the WebSocket handshake is completed.
+     *
+     * @param serverEndpointConfig       the endpoint configuration
+     * @param wsc                        the WebSocket server container
+     * @param handshakeRequest           the handshake request
+     * @param negotiatedExtensionsPhase2 negotiated extensions
+     * @param subProtocol                the negotiated sub-protocol
+     * @param transformation             the data transformation
+     * @param pathParameters             the path parameters
+     * @param secure                     whether the connection is secure
+     */
     public void preInit(ServerEndpointConfig serverEndpointConfig, WsServerContainer wsc,
             WsHandshakeRequest handshakeRequest, List<Extension> negotiatedExtensionsPhase2, String subProtocol,
             Transformation transformation, Map<String,String> pathParameters, boolean secure) {
@@ -113,9 +129,9 @@ public class WsHttpUpgradeHandler implements InternalHttpUpgradeHandler {
         // Need to call onOpen using the web application's class loader
         // Create the frame using the application's class loader so it can pick
         // up application specific config from the ServerContainerImpl
-        Thread t = Thread.currentThread();
-        ClassLoader cl = t.getContextClassLoader();
-        t.setContextClassLoader(applicationClassLoader);
+        Thread currentThread = Thread.currentThread();
+        ClassLoader cl = currentThread.getContextClassLoader();
+        currentThread.setContextClassLoader(applicationClassLoader);
         try {
             wsRemoteEndpointServer =
                     new WsRemoteEndpointImplServer(socketWrapper, upgradeInfo, webSocketContainer, connection);
@@ -128,12 +144,25 @@ public class WsHttpUpgradeHandler implements InternalHttpUpgradeHandler {
             // WsFrame adds the necessary final transformations. Copy the
             // completed transformation chain to the remote end point.
             wsRemoteEndpointServer.setTransformation(wsFrame.getTransformation());
-            ep.onOpen(wsSession, serverEndpointConfig);
-            webSocketContainer.registerSession(serverEndpointConfig.getPath(), wsSession);
+            try {
+                ep.onOpen(wsSession, serverEndpointConfig);
+            } catch (Throwable t) {
+                // If this really is fatal re-thrown
+                ExceptionUtils.handleThrowable(t);
+                ep.onError(wsSession, t);
+                try {
+                    CloseReason cr = new CloseReason(CloseCodes.CLOSED_ABNORMALLY, t.getMessage());
+                    wsSession.close(cr);
+                } catch (IOException ioe) {
+                    log.warn(sm.getString("wsHttpUpgradeHandler.closeSessionFail"), ioe);
+                }
+                throw new IllegalArgumentException(t);
+            }
+            webSocketContainer.registerSession(serverEndpointConfig.getPath(), wsSession, session);
         } catch (DeploymentException e) {
             throw new IllegalArgumentException(e);
         } finally {
-            t.setContextClassLoader(cl);
+            currentThread.setContextClassLoader(cl);
         }
     }
 

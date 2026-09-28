@@ -42,7 +42,9 @@ public interface ObjectCreationFactory {
     Object createObject(Attributes attributes) throws Exception;
 
     /**
-     * @return the {@link Digester} that was set by the {@link FactoryCreateRule} upon initialization.
+     * Gets the digester that was set upon initialization.
+     *
+     * @return the {@link Digester} that was set by {@link Digester#addFactoryCreate} upon initialization.
      */
     Digester getDigester();
 

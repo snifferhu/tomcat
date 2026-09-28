@@ -24,12 +24,33 @@ import org.apache.catalina.tribes.MembershipListener;
 import org.apache.catalina.tribes.MembershipProvider;
 import org.apache.catalina.tribes.MembershipService;
 
+/**
+ * Base implementation for membership providers.
+ */
 public abstract class MembershipProviderBase implements MembershipProvider {
 
+    /**
+     * Default constructor.
+     */
+    public MembershipProviderBase() {
+    }
+
+    /**
+     * The membership.
+     */
     protected Membership membership;
+    /**
+     * The membership listener.
+     */
     protected MembershipListener membershipListener;
+    /**
+     * The membership service.
+     */
     protected MembershipService service;
     // The event notification executor
+    /**
+     * The event notification executor.
+     */
     protected ScheduledExecutorService executor;
 
     @Override
@@ -46,7 +67,7 @@ public abstract class MembershipProviderBase implements MembershipProvider {
 
     @Override
     public Member getMember(Member mbr) {
-        if (membership.getMembers() == null) {
+        if (membership == null || membership.getMembers() == null) {
             return null;
         }
         return membership.getMember(mbr);
@@ -54,7 +75,7 @@ public abstract class MembershipProviderBase implements MembershipProvider {
 
     @Override
     public Member[] getMembers() {
-        if (membership.getMembers() == null) {
+        if (membership == null || membership.getMembers() == null) {
             return Membership.EMPTY_MEMBERS;
         }
         return membership.getMembers();

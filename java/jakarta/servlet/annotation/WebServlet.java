@@ -47,6 +47,8 @@ import java.lang.annotation.Target;
 public @interface WebServlet {
 
     /**
+     * Provides the name of this servlet.
+     *
      * @return name of the Servlet
      */
     String name() default "";
@@ -61,41 +63,57 @@ public @interface WebServlet {
     String[] value() default {};
 
     /**
-     * @return array of URL patterns to which this Filter applies
+     * Declares the URL patterns for this servlet.
+     *
+     * @return array of URL patterns to which this Servlet applies
      */
     String[] urlPatterns() default {};
 
     /**
+     * Provides a load-on-startup ordering hint for this servlet.
+     *
      * @return load on startup ordering hint
      */
     int loadOnStartup() default -1;
 
     /**
+     * Declares initialization parameters for this servlet.
+     *
      * @return array of initialization params for this Servlet
      */
     WebInitParam[] initParams() default {};
 
-    /**
-     * @return asynchronous operation supported by this Servlet
-     */
+      /**
+       * Indicates whether this servlet supports asynchronous operation.
+       *
+       * @return asynchronous operation supported by this Servlet
+       */
     boolean asyncSupported() default false;
 
     /**
+     * Provides the URL of a small icon for this servlet.
+     *
      * @return small icon for this Servlet, if present
      */
     String smallIcon() default "";
 
     /**
+     * Provides the URL of a large icon for this servlet.
+     *
      * @return large icon for this Servlet, if present
      */
     String largeIcon() default "";
 
     /**
+     * Provides a description of this servlet.
+     *
      * @return description of this Servlet, if present
      */
     String description() default "";
 
     /**
+     * Provides a display name for this servlet.
+     *
      * @return display name of this Servlet, if present
      */
     String displayName() default "";

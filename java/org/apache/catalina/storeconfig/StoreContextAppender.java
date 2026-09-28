@@ -31,6 +31,12 @@ import org.apache.catalina.core.StandardHost;
 public class StoreContextAppender extends StoreAppender {
 
     /**
+     * Constructs a new StoreContextAppender for handling StandardContext serialization.
+     */
+    public StoreContextAppender() {
+    }
+
+    /**
      * {@inheritDoc} Adds special handling for <code>docBase</code>.
      */
     @Override
@@ -55,14 +61,13 @@ public class StoreContextAppender extends StoreAppender {
      * <li>Special handling to default workDir.</li>
      * <li>Don't save path at external context.xml</li>
      * <li>Don't generate docBase for host.appBase webapps
-     * <LI>
      * </ul>
      * {@inheritDoc}
      */
     @Override
     public boolean isPrintValue(Object bean, Object bean2, String attrName, StoreDescription desc) {
         boolean isPrint = super.isPrintValue(bean, bean2, attrName, desc);
-        if (isPrint) {
+        if (isPrint && bean instanceof StandardContext) {
             StandardContext context = ((StandardContext) bean);
             if ("workDir".equals(attrName)) {
                 String defaultWorkDir = getDefaultWorkDir(context);
@@ -70,19 +75,26 @@ public class StoreContextAppender extends StoreAppender {
                     isPrint = !defaultWorkDir.equals(context.getWorkDir());
                 }
             } else if ("path".equals(attrName)) {
-                isPrint = desc.isStoreSeparate() && desc.isExternalAllowed() && context.getConfigFile() == null;
+                isPrint = !desc.isStoreSeparate() || !desc.isExternalAllowed() || context.getConfigFile() == null;
             } else if ("docBase".equals(attrName)) {
                 Container host = context.getParent();
                 if (host instanceof StandardHost) {
                     File appBase = getAppBase(((StandardHost) host));
                     File docBase = getDocBase(context, appBase);
-                    isPrint = !appBase.equals(docBase.getParentFile());
+                    isPrint = docBase.getParentFile() == null || !appBase.equals(docBase.getParentFile());
                 }
             }
         }
         return isPrint;
     }
 
+    /**
+     * Resolves the absolute canonical path of the application base directory
+     * for the given host.
+     *
+     * @param host The StandardHost instance
+     * @return The canonical File representing the appBase directory
+     */
     protected File getAppBase(StandardHost host) {
 
         File appBase;
@@ -99,6 +111,14 @@ public class StoreContextAppender extends StoreAppender {
 
     }
 
+    /**
+     * Resolves the absolute canonical path of the document base directory
+     * for the given context.
+     *
+     * @param context The StandardContext instance
+     * @param appBase The application base directory
+     * @return The canonical File representing the docBase directory
+     */
     protected File getDocBase(StandardContext context, File appBase) {
         File docBase;
         String contextDocBase = context.getOriginalDocBase();

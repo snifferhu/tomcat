@@ -69,11 +69,13 @@ package org.apache.catalina;
  * does not start all its sub-components. When the component is stopped, it will
  * try to stop all sub-components - even those it didn't start.
  *
- * Attempting any other transition will throw {@link LifecycleException}.
+ * Attempting any other transition will throw {@link LifecycleException},
+ * except calling stop() while a component is in state INITIALIZED which has
+ * no effect.
  *
  * </pre>
  *
- * The {@link LifecycleEvent}s fired during state changes are defined in the methods that trigger the changed. No
+ * The {@link LifecycleEvent}s fired during state changes are defined in the methods that trigger the change. No
  * {@link LifecycleEvent}s are fired if the attempted transition is not valid.
  */
 public interface Lifecycle {
@@ -196,7 +198,8 @@ public interface Lifecycle {
      * Prepare the component for starting. This method should perform any initialization required post object creation.
      * The following {@link LifecycleEvent}s will be fired in the following order:
      * <ol>
-     * <li>INIT_EVENT: On the successful completion of component initialization.</li>
+     * <li>BEFORE_INIT_EVENT: At the beginning of the method.</li>
+     * <li>AFTER_INIT_EVENT: On the successful completion of component initialization.</li>
      * </ol>
      *
      * @exception LifecycleException if this component detects a fatal error that prevents this component from being
@@ -250,7 +253,8 @@ public interface Lifecycle {
     /**
      * Prepare to discard the object. The following {@link LifecycleEvent}s will be fired in the following order:
      * <ol>
-     * <li>DESTROY_EVENT: On the successful completion of component destruction.</li>
+     * <li>BEFORE_DESTROY_EVENT: At the beginning of the method.</li>
+     * <li>AFTER_DESTROY_EVENT: On the successful completion of component destruction.</li>
      * </ol>
      *
      * @exception LifecycleException if this component detects a fatal error that prevents this component from being

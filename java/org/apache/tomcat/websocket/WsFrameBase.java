@@ -16,6 +16,7 @@
  */
 package org.apache.tomcat.websocket;
 
+import java.io.EOFException;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.CharBuffer;
@@ -37,15 +38,21 @@ import org.apache.tomcat.util.ExceptionUtils;
 import org.apache.tomcat.util.res.StringManager;
 
 /**
- * Takes the ServletInputStream, processes the WebSocket frames it contains and extracts the messages. WebSocket Pings
- * received will be responded to automatically without any action required by the application.
+ * Processes the WebSocket frames read from the connection and extracts the messages. WebSocket Pings received will be
+ * responded to automatically without any action required by the application.
  */
 public abstract class WsFrameBase {
 
     private static final StringManager sm = StringManager.getManager(WsFrameBase.class);
 
     // Connection level attributes
+    /**
+     * The WebSocket session for this frame.
+     */
     protected final WsSession wsSession;
+    /**
+     * The input buffer for reading data.
+     */
     protected final ByteBuffer inputBuffer;
     private final Transformation transformation;
 
@@ -85,6 +92,12 @@ public abstract class WsFrameBase {
             AtomicReferenceFieldUpdater.newUpdater(WsFrameBase.class, ReadState.class, "readState");
     private volatile ReadState readState = ReadState.WAITING;
 
+    /**
+     * Constructs a new WsFrameBase.
+     *
+     * @param wsSession        The WebSocket session
+     * @param transformation   The transformation to apply
+     */
     public WsFrameBase(WsSession wsSession, Transformation transformation) {
         inputBuffer = ByteBuffer.allocate(Constants.DEFAULT_BUFFER_SIZE);
         inputBuffer.position(0).limit(0);
@@ -107,6 +120,11 @@ public abstract class WsFrameBase {
     }
 
 
+    /**
+     * Processes the input buffer, reading and handling WebSocket frames.
+     *
+     * @throws IOException If an I/O error occurs
+     */
     protected void processInputBuffer() throws IOException {
         while (!isSuspended()) {
             wsSession.updateLastActiveRead();
@@ -204,7 +222,7 @@ public abstract class WsFrameBase {
             // Client data must be masked
             throw new WsIOException(new CloseReason(CloseCodes.PROTOCOL_ERROR, sm.getString("wsFrame.notMasked")));
         } else if ((b & 0x80) != 0 && !isMasked()) {
-            // Server data must not masked
+            // Server data must not be masked
             throw new WsIOException(new CloseReason(CloseCodes.PROTOCOL_ERROR, sm.getString("wsFrame.masked")));
         }
         payloadLength = b & 0x7F;
@@ -217,8 +235,18 @@ public abstract class WsFrameBase {
     }
 
 
+    /**
+     * Returns whether frames from this peer must be masked.
+     *
+     * @return {@code true} if frames must be masked
+     */
     protected abstract boolean isMasked();
 
+    /**
+     * Returns the log instance for this frame.
+     *
+     * @return the log instance
+     */
     protected abstract Log getLog();
 
 
@@ -330,7 +358,8 @@ public abstract class WsFrameBase {
                         new CloseReason(CloseCodes.PROTOCOL_ERROR, sm.getString("wsFrame.oneByteCloseCode")));
             }
             if (controlBufferBinary.remaining() > 1) {
-                code = controlBufferBinary.getShort();
+                short rawCode = controlBufferBinary.getShort();
+                code = rawCode & 0xFFFF;
                 if (controlBufferBinary.remaining() > 0) {
                     CoderResult cr = utf8DecoderControl.decode(controlBufferBinary, controlBufferText, true);
                     if (cr.isError()) {
@@ -349,7 +378,16 @@ public abstract class WsFrameBase {
             wsSession.onClose(new CloseReason(Util.getCloseCode(code), reason));
         } else if (opCode == Constants.OPCODE_PING) {
             if (wsSession.isOpen()) {
-                wsSession.getBasicRemote().sendPong(controlBufferBinary);
+                try {
+                    wsSession.getBasicRemote().sendPong(controlBufferBinary);
+                } catch (IllegalStateException | EOFException e) {
+                    // IllegalStateException - wsSession started to close while pong was being prepared
+                    // EOFException - wsSession closed while pong was being prepared
+                    // Either way, ignore the error
+                    if (!wsSession.isClosing()) {
+                        throw e;
+                    }
+                }
             }
         } else if (opCode == Constants.OPCODE_PONG) {
             MessageHandler.Whole<PongMessage> mhPong = wsSession.getPongMessageHandler();
@@ -374,6 +412,13 @@ public abstract class WsFrameBase {
     }
 
 
+    /**
+     * Sends a text message to the remote endpoint.
+     *
+     * @param last Whether this is the last fragment of the message
+     *
+     * @throws WsIOException If a WebSocket I/O error occurs
+     */
     @SuppressWarnings("unchecked")
     protected void sendMessageText(boolean last) throws WsIOException {
         if (textMsgHandler instanceof WrappedMessageHandler) {
@@ -551,6 +596,14 @@ public abstract class WsFrameBase {
     }
 
 
+    /**
+     * Sends a binary message to the remote endpoint.
+     *
+     * @param msg  The message data
+     * @param last Whether this is the last fragment of the message
+     *
+     * @throws WsIOException If a WebSocket I/O error occurs
+     */
     @SuppressWarnings("unchecked")
     protected void sendMessageBinary(ByteBuffer msg, boolean last) throws WsIOException {
         if (binaryMsgHandler instanceof WrappedMessageHandler) {
@@ -650,6 +703,17 @@ public abstract class WsFrameBase {
     }
 
 
+    /**
+     * Converts a byte array segment to a long value.
+     *
+     * @param b     The byte array
+     * @param start The start index
+     * @param len   The length
+     *
+     * @return the long value
+     *
+     * @throws IOException If the length exceeds 8 bytes
+     */
     protected static long byteArrayToLong(byte[] b, int start, int len) throws IOException {
         if (len > 8) {
             throw new IOException(sm.getString("wsFrame.byteToLongFail", Long.valueOf(len)));
@@ -664,11 +728,21 @@ public abstract class WsFrameBase {
     }
 
 
+    /**
+     * Returns whether the connection is open.
+     *
+     * @return {@code true} if open
+     */
     protected boolean isOpen() {
         return open;
     }
 
 
+    /**
+     * Returns the transformation applied to this frame.
+     *
+     * @return the transformation
+     */
     protected Transformation getTransformation() {
         return transformation;
     }
@@ -734,11 +808,29 @@ public abstract class WsFrameBase {
      * </pre>
      */
     protected enum ReadState {
+        /**
+         * Waiting for data.
+         */
         WAITING(false),
+        /**
+         * Processing data.
+         */
         PROCESSING(false),
+        /**
+         * Suspending and waiting.
+         */
         SUSPENDING_WAIT(true),
+        /**
+         * Suspending while processing.
+         */
         SUSPENDING_PROCESS(true),
+        /**
+         * Suspended.
+         */
         SUSPENDED(true),
+        /**
+         * Closing.
+         */
         CLOSING(false);
 
         private final boolean isSuspended;
@@ -747,11 +839,18 @@ public abstract class WsFrameBase {
             this.isSuspended = isSuspended;
         }
 
+        /**
+         * Checks if reading is currently suspended.
+         * @return true if suspended
+         */
         public boolean isSuspended() {
             return isSuspended;
         }
     }
 
+    /**
+     * Suspends processing of this frame.
+     */
     public void suspend() {
         while (true) {
             switch (readState) {
@@ -800,6 +899,9 @@ public abstract class WsFrameBase {
         }
     }
 
+    /**
+     * Resumes processing of this frame after suspension.
+     */
     public void resume() {
         while (true) {
             switch (readState) {
@@ -845,18 +947,41 @@ public abstract class WsFrameBase {
         }
     }
 
+    /**
+     * Returns whether this frame is currently suspended.
+     *
+     * @return {@code true} if suspended
+     */
     protected boolean isSuspended() {
         return readState.isSuspended();
     }
 
+    /**
+     * Returns the current read state.
+     *
+     * @return the read state
+     */
     protected ReadState getReadState() {
         return readState;
     }
 
+    /**
+     * Changes the read state to the new state.
+     *
+     * @param newState The new read state
+     */
     protected void changeReadState(ReadState newState) {
         READ_STATE_UPDATER.set(this, newState);
     }
 
+    /**
+     * Atomically changes the read state if it matches the expected old state.
+     *
+     * @param oldState   The expected old state
+     * @param newState   The new state
+     *
+     * @return {@code true} if the state was changed
+     */
     protected boolean changeReadState(ReadState oldState, ReadState newState) {
         return READ_STATE_UPDATER.compareAndSet(this, oldState, newState);
     }

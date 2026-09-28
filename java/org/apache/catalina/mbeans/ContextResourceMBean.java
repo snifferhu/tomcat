@@ -22,6 +22,8 @@ import javax.management.MBeanException;
 import javax.management.ReflectionException;
 import javax.management.RuntimeOperationsException;
 
+import org.apache.juli.logging.Log;
+import org.apache.juli.logging.LogFactory;
 import org.apache.tomcat.util.descriptor.web.ContextResource;
 import org.apache.tomcat.util.descriptor.web.NamingResources;
 import org.apache.tomcat.util.res.StringManager;
@@ -32,6 +34,13 @@ import org.apache.tomcat.util.res.StringManager;
  */
 public class ContextResourceMBean extends BaseCatalinaMBean<ContextResource> {
 
+    /**
+     * Default constructor for ContextResourceMBean.
+     */
+    public ContextResourceMBean() {
+    }
+
+    private static final Log log = LogFactory.getLog(ContextResourceMBean.class);
     private static final StringManager sm = StringManager.getManager(ContextResourceMBean.class);
 
     @Override
@@ -90,16 +99,19 @@ public class ContextResourceMBean extends BaseCatalinaMBean<ContextResource> {
         switch (name) {
             case "auth" -> cr.setAuth((String) value);
             case "description" -> cr.setDescription((String) value);
-            case "name" -> cr.setName((String) value);
+            // Updating the name actually needs removing and adding back the component under the new name
+            case "name" -> log.info(sm.getString("mBean.nameChange"));
             case "scope" -> cr.setScope((String) value);
             case "type" -> cr.setType((String) value);
-            default -> cr.setProperty(name, "" + value);
+            default -> cr.setProperty(name, value == null ? null : value.toString());
         }
 
         // cannot use side effects. It's removed and added back each time
         // there is a modification in a resource.
         NamingResources nr = cr.getNamingResources();
-        nr.removeResource(cr.getName());
-        nr.addResource(cr);
+        if (nr != null) {
+            nr.removeResource(cr.getName());
+            nr.addResource(cr);
+        }
     }
 }

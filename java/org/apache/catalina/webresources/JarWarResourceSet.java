@@ -69,7 +69,7 @@ public class JarWarResourceSet extends AbstractArchiveResourceSet {
             try {
                 start();
             } catch (LifecycleException e) {
-                throw new IllegalStateException(e);
+                throw new IllegalStateException(sm.getString("jarWarResourceSet.startFail"), e);
             }
         }
     }
@@ -96,6 +96,12 @@ public class JarWarResourceSet extends AbstractArchiveResourceSet {
                 try {
                     warFile = openJarFile();
                     JarEntry jarFileInWar = warFile.getJarEntry(archivePath);
+                    if (jarFileInWar == null) {
+                        // Should never happen
+                        archiveEntries = null;
+                        throw new IllegalStateException(
+                                sm.getString("jarWarResourceSet.jarNotFound", archivePath, getBase()));
+                    }
                     jarFileIs = warFile.getInputStream(jarFileInWar);
 
                     try (TomcatJarInputStream jarIs = new TomcatJarInputStream(jarFileIs)) {
@@ -133,7 +139,8 @@ public class JarWarResourceSet extends AbstractArchiveResourceSet {
                 } catch (IOException ioe) {
                     // Should never happen
                     archiveEntries = null;
-                    throw new IllegalStateException(ioe);
+                    throw new IllegalStateException(
+                            sm.getString("jarWarResourceSet.archiveEntriesFail", archivePath, getBase()), ioe);
                 } finally {
                     if (warFile != null) {
                         closeJarFile();
@@ -175,6 +182,9 @@ public class JarWarResourceSet extends AbstractArchiveResourceSet {
     }
 
 
+    /**
+     * Process archive entries for multi-release JAR support.
+     */
     protected void processArchivesEntriesForMultiRelease() {
 
         int targetVersion = Runtime.version().feature();
@@ -247,19 +257,24 @@ public class JarWarResourceSet extends AbstractArchiveResourceSet {
 
         try (JarFile warFile = new JarFile(getBase())) {
             JarEntry jarFileInWar = warFile.getJarEntry(archivePath);
+            if (jarFileInWar == null) {
+                throw new LifecycleException(
+                        sm.getString("jarWarResourceSet.jarNotFound", archivePath, getBase()));
+            }
             InputStream jarFileIs = warFile.getInputStream(jarFileInWar);
 
             try (JarInputStream jarIs = new JarInputStream(jarFileIs)) {
                 setManifest(jarIs.getManifest());
             }
         } catch (IOException ioe) {
-            throw new IllegalArgumentException(ioe);
+            throw new LifecycleException(
+                    sm.getString("jarWarResourceSet.manifestFail", archivePath, getBase()), ioe);
         }
 
         try {
             setBaseUrl(UriUtil.buildJarSafeUrl(new File(getBase())));
         } catch (IOException ioe) {
-            throw new IllegalArgumentException(ioe);
+            throw new LifecycleException(sm.getString("jarWarResourceSet.baseUrlFail", getBase()), ioe);
         }
     }
 

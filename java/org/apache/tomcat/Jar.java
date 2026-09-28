@@ -19,6 +19,7 @@ package org.apache.tomcat;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URL;
+import java.net.URLConnection;
 import java.util.jar.Manifest;
 
 /**
@@ -32,6 +33,8 @@ import java.util.jar.Manifest;
 public interface Jar extends AutoCloseable {
 
     /**
+     * Returns the URL for accessing the JAR file.
+     *
      * @return The URL for accessing the JAR file.
      */
     URL getJarFileURL();
@@ -46,6 +49,31 @@ public interface Jar extends AutoCloseable {
      * @throws IOException if an I/O error occurs while processing the JAR file
      */
     InputStream getInputStream(String name) throws IOException;
+
+    /**
+     * Obtain the last modified time for the JAR.
+     *
+     * @return The time (in the same format as {@link System#currentTimeMillis()}) that the JAR was last modified.
+     *
+     * @throws IOException if an I/O error occurs while processing the JAR file
+     */
+    default long getLastModified() throws IOException {
+        URL jarUrl = getJarFileURL();
+        URLConnection urlConn = null;
+        try {
+            // Note: this cannot use CloseableURLConnection due to Tomcat JAR packaging
+            urlConn = jarUrl.openConnection();
+            return urlConn.getLastModified();
+        } finally {
+            if (urlConn != null) {
+                try {
+                    urlConn.getInputStream().close();
+                } catch (IOException ignore) {
+                    // Ignore
+                }
+            }
+        }
+    }
 
     /**
      * Obtain the last modified time for the given resource in the JAR.
@@ -99,8 +127,8 @@ public interface Jar extends AutoCloseable {
 
     /**
      * Obtain, in String form, the URL for an entry in this JAR. Note that for JARs nested in WAR files, the Tomcat
-     * specific war:file:... form will not be used, rather the jar:jar:file:... form (that the JRE does not understand
-     * will be used). Note that this means that any code using these URLs will need to understand the jar:jar:file:...
+     * specific war:file:... form will not be used, rather the jar:jar:file:... form (that the JRE does not understand)
+     * will be used. Note that this means that any code using these URLs will need to understand the jar:jar:file:...
      * form and use the {@link org.apache.tomcat.util.scan.JarFactory} to ensure resources are accessed correctly.
      *
      * @param entry The entry to generate the URL for

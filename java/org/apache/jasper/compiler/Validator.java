@@ -329,7 +329,7 @@ class Validator {
         /*
          * Compares page encodings specified in various places, and throws exception in case of page encoding mismatch.
          *
-         * @param thePageDirEnc The value of the pageEncoding attribute of the page directive @param pageDir The page
+         * @param thePageDirEnc The value of the pageEncoding attribute of the tag directive @param pageDir The tag
          * directive node
          *
          * @throws JasperException in case of page encoding mismatch
@@ -1130,10 +1130,10 @@ class Validator {
             // valid attribute value in xml).
 
             if (value != null) {
-                if (n.getRoot().isXmlSyntax() && value.startsWith("%=")) {
+                if (n.getRoot().isXmlSyntax() && value.startsWith("%=") && value.length() >= 3) {
                     result = new Node.JspAttribute(tai, qName, uri, localName, value.substring(2, value.length() - 1),
                             true, null, dynamic);
-                } else if (!n.getRoot().isXmlSyntax() && value.startsWith("<%=")) {
+                } else if (!n.getRoot().isXmlSyntax() && value.startsWith("<%=") && value.length() >= 5) {
                     result = new Node.JspAttribute(tai, qName, uri, localName, value.substring(3, value.length() - 2),
                             true, null, dynamic);
                 } else {
@@ -1516,9 +1516,9 @@ class Validator {
             TagInfo tagInfo = n.getTagInfo();
             if (tagInfo == null) {
                 err.jspError(n, "jsp.error.missing.tagInfo", n.getQName());
+                return;
             }
 
-            @SuppressWarnings("null") // tagInfo can't be null here
             ValidationMessage[] errors = tagInfo.validate(n.getTagData());
             if (errors != null && errors.length != 0) {
                 StringBuilder errMsg = new StringBuilder();

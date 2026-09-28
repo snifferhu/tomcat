@@ -27,6 +27,26 @@ import org.apache.tomcat.util.res.StringManager;
 public class SSISet implements SSICommand {
     private static final StringManager sm = StringManager.getManager(SSISet.class);
 
+    /**
+     * Default constructor.
+     */
+    public SSISet() {
+    }
+
+    /**
+     * Process the SSI #set command.
+     *
+     * @param ssiMediator  the SSI mediator
+     * @param commandName  the command name
+     * @param paramNames   the parameter names
+     * @param paramValues  the parameter values
+     * @param writer       the print writer for output
+     *
+     * @return the current time (in milliseconds) if a variable was set, or
+     *         zero if no variable was set
+     *
+     * @throws SSIStopProcessingException if processing should stop
+     */
     @Override
     public long process(SSIMediator ssiMediator, String commandName, String[] paramNames, String[] paramValues,
             PrintWriter writer) throws SSIStopProcessingException {

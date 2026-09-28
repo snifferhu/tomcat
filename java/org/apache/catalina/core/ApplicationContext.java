@@ -60,7 +60,6 @@ import jakarta.servlet.http.HttpSessionListener;
 
 import org.apache.catalina.Container;
 import org.apache.catalina.Context;
-import org.apache.catalina.Engine;
 import org.apache.catalina.Globals;
 import org.apache.catalina.LifecycleState;
 import org.apache.catalina.Service;
@@ -96,7 +95,7 @@ public class ApplicationContext implements ServletContext {
     public ApplicationContext(StandardContext context) {
         super();
         this.context = context;
-        this.service = ((Engine) context.getParent().getParent()).getService();
+        this.service = Container.getService(context);
         this.sessionCookieConfig = new ApplicationSessionCookieConfig(context);
 
         // Populate session tracking modes
@@ -373,8 +372,11 @@ public class ApplicationContext implements ServletContext {
         // Remove path parameters
         String uriToMap = org.apache.catalina.util.RequestUtil.stripPathParams(uri, null);
 
+        boolean pathIsEncoded =
+                getContext().getDispatchersUseEncodedPaths() || AsyncContextImpl.uriEncoded.get().booleanValue();
+
         // Decode only if the uri derived from the provided path is expected to be encoded
-        if (getContext().getDispatchersUseEncodedPaths()) {
+        if (pathIsEncoded) {
             uriToMap = UDecoder.URLDecode(uriToMap, StandardCharsets.UTF_8, context.getEncodedSolidusHandlingEnum(),
                     context.getEncodedReverseSolidusHandlingEnum());
         }
@@ -392,7 +394,7 @@ public class ApplicationContext implements ServletContext {
          * getRequestURI() which returns encoded values. getContextPath() returns a decoded value. uri may be encoded or
          * not. Need to prepend the context path to uri and ensure the result is correctly encoded.
          */
-        if (getContext().getDispatchersUseEncodedPaths()) {
+        if (pathIsEncoded) {
             uri = URLEncoder.DEFAULT.encode(getContextPath(), StandardCharsets.UTF_8) + uri;
         } else {
             uri = URLEncoder.DEFAULT.encode(getContextPath() + uri, StandardCharsets.UTF_8);
@@ -1154,6 +1156,12 @@ public class ApplicationContext implements ServletContext {
 
 
     // -------------------------------------------------------- Package Methods
+
+    /**
+     * Returns the underlying StandardContext.
+     *
+     * @return the StandardContext
+     */
     protected StandardContext getContext() {
         return this.context;
     }
@@ -1176,6 +1184,8 @@ public class ApplicationContext implements ServletContext {
 
 
     /**
+     * Returns the ServletContext facade.
+     *
      * @return the facade associated with this ApplicationContext.
      */
     protected ServletContext getFacade() {
@@ -1195,6 +1205,11 @@ public class ApplicationContext implements ServletContext {
     }
 
 
+    /**
+     * Sets whether new ServletContextListeners are allowed.
+     *
+     * @param allowed {@code true} to allow new listeners
+     */
     protected void setNewServletContextListenerAllowed(boolean allowed) {
         this.newServletContextListenerAllowed = allowed;
     }

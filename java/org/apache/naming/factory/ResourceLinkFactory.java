@@ -16,7 +16,6 @@
  */
 package org.apache.naming.factory;
 
-import java.util.HashMap;
 import java.util.Hashtable;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -36,9 +35,17 @@ import org.apache.naming.StringManager;
  * </p>
  */
 public class ResourceLinkFactory implements ObjectFactory {
+    /**
+     * Default constructor.
+     */
+    public ResourceLinkFactory() {
+    }
 
     // ------------------------------------------------------- Static Variables
 
+    /**
+     * The string manager for this package.
+     */
     protected static final StringManager sm = StringManager.getManager(ResourceLinkFactory.class);
 
     /**
@@ -51,7 +58,7 @@ public class ResourceLinkFactory implements ObjectFactory {
     // --------------------------------------------------------- Public Methods
 
     /**
-     * Set the global context (note: can only be used once).
+     * Set the global context (the last value set is used).
      *
      * @param newGlobalContext new global context value
      */
@@ -60,15 +67,26 @@ public class ResourceLinkFactory implements ObjectFactory {
     }
 
 
+    /**
+     * Register access to a global resource for the current web application.
+     *
+     * @param globalContext The global naming context
+     * @param localName     The local name of the resource
+     * @param globalName    The global name of the resource
+     */
     public static void registerGlobalResourceAccess(Context globalContext, String localName, String globalName) {
         validateGlobalContext(globalContext);
         ClassLoader cl = Thread.currentThread().getContextClassLoader();
-        // Web application initialization is single threaded so this is
-        // safe.
-        globalResourceRegistrations.computeIfAbsent(cl, k -> new HashMap<>()).put(localName, globalName);
+        globalResourceRegistrations.computeIfAbsent(cl, k -> new ConcurrentHashMap<>()).put(localName, globalName);
     }
 
 
+    /**
+     * Deregister access to a specific global resource for the current web application.
+     *
+     * @param globalContext The global naming context
+     * @param localName     The local name of the resource
+     */
     public static void deregisterGlobalResourceAccess(Context globalContext, String localName) {
         validateGlobalContext(globalContext);
         ClassLoader cl = Thread.currentThread().getContextClassLoader();
@@ -79,6 +97,11 @@ public class ResourceLinkFactory implements ObjectFactory {
     }
 
 
+    /**
+     * Deregister all global resource access for the current web application.
+     *
+     * @param globalContext The global naming context
+     */
     public static void deregisterGlobalResourceAccess(Context globalContext) {
         validateGlobalContext(globalContext);
         ClassLoader cl = Thread.currentThread().getContextClassLoader();
@@ -117,7 +140,8 @@ public class ResourceLinkFactory implements ObjectFactory {
      *
      * @return the object instance
      *
-     * @throws NamingException if an error occur creating the instance
+     * @throws IllegalArgumentException if the type of the reference is missing or does not match the type of the
+     *                                  global resource
      */
     @Override
     public Object getObjectInstance(Object obj, Name name, Context nameCtx, Hashtable<?,?> environment)
@@ -140,6 +164,9 @@ public class ResourceLinkFactory implements ObjectFactory {
                 return null;
             }
             Object result = globalContext.lookup(globalName);
+            if (result == null) {
+                return null;
+            }
             // Check the expected type
             String expectedClassName = ref.getClassName();
             if (expectedClassName == null) {

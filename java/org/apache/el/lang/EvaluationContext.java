@@ -27,8 +27,10 @@ import jakarta.el.FunctionMapper;
 import jakarta.el.ImportHandler;
 import jakarta.el.VariableMapper;
 
-import org.apache.el.util.MessageFactory;
-
+/**
+ * Extended EL context that wraps an existing ELContext and provides additional
+ * functionality for lambda expression evaluation.
+ */
 public final class EvaluationContext extends ELContext {
 
     private final ELContext elContext;
@@ -39,12 +41,24 @@ public final class EvaluationContext extends ELContext {
 
     private LambdaExpressionNestedState lambdaExpressionNestedState;
 
+    /**
+     * Creates a new EvaluationContext wrapping the given ELContext.
+     *
+     * @param elContext The underlying ELContext to wrap
+     * @param fnMapper  The function mapper
+     * @param varMapper The variable mapper
+     */
     public EvaluationContext(ELContext elContext, FunctionMapper fnMapper, VariableMapper varMapper) {
         this.elContext = elContext;
         this.fnMapper = fnMapper;
         this.varMapper = varMapper;
     }
 
+    /**
+     * Returns the underlying wrapped ELContext.
+     *
+     * @return the wrapped ELContext
+     */
     public ELContext getELContext() {
         return elContext;
     }
@@ -155,6 +169,12 @@ public final class EvaluationContext extends ELContext {
     }
 
 
+    /**
+     * Returns the lambda expression nested state, if this context or its wrapped
+     * context is associated with a nested lambda expression.
+     *
+     * @return the lambda expression nested state, or {@code null} if none
+     */
     public LambdaExpressionNestedState getLambdaExpressionNestedState() {
         // State is stored in the EvaluationContext instance associated with the
         // outermost lambda expression of a set of nested expressions.
@@ -176,12 +196,14 @@ public final class EvaluationContext extends ELContext {
     }
 
 
+    /**
+     * Sets the lambda expression nested state for this context. Any existing state is replaced. This happens when a
+     * sibling lambda expression (one that is not nested inside the lambda expression that created the existing state)
+     * is evaluated during the same evaluation.
+     *
+     * @param lambdaExpressionNestedState The lambda expression nested state
+     */
     public void setLambdaExpressionNestedState(LambdaExpressionNestedState lambdaExpressionNestedState) {
-        if (this.lambdaExpressionNestedState != null) {
-            // Should never happen
-            throw new IllegalStateException(MessageFactory.get("error.lambda.wrongNestedState"));
-        }
-
         this.lambdaExpressionNestedState = lambdaExpressionNestedState;
     }
 }

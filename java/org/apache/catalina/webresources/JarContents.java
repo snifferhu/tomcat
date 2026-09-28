@@ -122,8 +122,9 @@ public final class JarContents {
      * Simple hashcode of a portion of the string. Typically we would use substring, but memory and runtime speed are
      * critical.
      *
-     * @param content  Wrapping String.
-     * @param startPos First character in the range.
+     * @param content   Wrapping String.
+     * @param startPos  First character in the range.
+     * @param hashPrime The prime used to compute the hashcode.
      *
      * @return hashcode of the range.
      */
@@ -136,20 +137,16 @@ public final class JarContents {
         for (int i = startPos; i < endPos; i++) {
             h = hashPrime * h + content.charAt(i);
         }
-
-        if (h < 0) {
-            h = h * -1;
-        }
-        return h;
+        // Use bitwise AND to ensure non-negative result, handles Integer.MIN_VALUE
+        return h & Integer.MAX_VALUE;
     }
 
 
     /**
      * Method that identifies whether a given path <b>MIGHT</b> be in this jar. Uses the Bloom filter mechanism.
      *
-     * @param path       Requested path. Sometimes starts with "/WEB-INF/classes".
-     * @param webappRoot The value of the webapp location, which can be stripped from the path. Typically it is
-     *                       "/WEB-INF/classes".
+     * @param path       Requested path, including any internal path of the resource set.
+     * @param webappRoot The web application mount point of the resource set, which can be stripped from the path.
      *
      * @return Whether the prefix of the path is known to be in this jar.
      */
@@ -158,10 +155,11 @@ public final class JarContents {
         if (path.startsWith(webappRoot)) {
             startPos = webappRoot.length();
         }
-
-        if (path.charAt(startPos) == '/') {
-            // ignore leading slash
+        while (startPos < path.length() && path.charAt(startPos) == '/') {
             startPos++;
+        }
+        if (startPos == path.length()) {
+            return true; // archive root: cannot rule out
         }
 
         // calculate the hash lazily and return a boolean value for this path

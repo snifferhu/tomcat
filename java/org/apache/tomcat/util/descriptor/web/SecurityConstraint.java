@@ -18,7 +18,6 @@ package org.apache.tomcat.util.descriptor.web;
 
 import java.io.Serial;
 import java.io.Serializable;
-import java.nio.charset.Charset;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -46,12 +45,19 @@ import org.apache.tomcat.util.res.StringManager;
  * single thread, before the instance is made visible to the remainder of the application. After that, only read access
  * is expected. Therefore, none of the read and write access within this class is synchronized.
  */
-public class SecurityConstraint extends XmlEncodingBase implements Serializable {
+public class SecurityConstraint implements Serializable {
 
     @Serial
     private static final long serialVersionUID = 1L;
 
+    /**
+     * Wildcard value that represents all roles.
+     */
     public static final String ROLE_ALL_ROLES = "*";
+
+    /**
+     * Wildcard value that represents all authenticated users.
+     */
     public static final String ROLE_ALL_AUTHENTICATED_USERS = "**";
 
     private static final StringManager sm = StringManager.getManager(Constants.PACKAGE_NAME);
@@ -166,7 +172,9 @@ public class SecurityConstraint extends XmlEncodingBase implements Serializable 
 
 
     /**
-     * @return the display name of this security constraint.
+     * Get the display name of this security constraint.
+     *
+     * @return the display name of this security constraint
      */
     public String getDisplayName() {
 
@@ -260,15 +268,6 @@ public class SecurityConstraint extends XmlEncodingBase implements Serializable 
     }
 
 
-    @Override
-    public void setCharset(Charset charset) {
-        super.setCharset(charset);
-        for (SecurityCollection collection : collections) {
-            collection.setCharset(getCharset());
-        }
-    }
-
-
     /**
      * Add a new web resource collection to those protected by this security constraint.
      *
@@ -279,8 +278,6 @@ public class SecurityConstraint extends XmlEncodingBase implements Serializable 
         if (collection == null) {
             return;
         }
-
-        collection.setCharset(getCharset());
 
         SecurityCollection[] results = Arrays.copyOf(collections, collections.length + 1);
         results[collections.length] = collection;
@@ -314,8 +311,9 @@ public class SecurityConstraint extends XmlEncodingBase implements Serializable 
 
     /**
      * Return the set of roles that are permitted access to the resources protected by this security constraint. If none
-     * have been defined, a zero-length array is returned (which implies that all authenticated users are permitted
-     * access).
+     * have been defined, a zero-length array is returned. A zero-length array implies that all authenticated users are
+     * permitted access only if {@link #getAuthConstraint()} returns {@code false}; if it returns {@code true}, a
+     * zero-length array means that no user is permitted access.
      *
      * @return the roles array
      */
@@ -610,6 +608,14 @@ public class SecurityConstraint extends XmlEncodingBase implements Serializable 
     }
 
 
+    /**
+     * Find HTTP methods that are not covered by the given security constraints.
+     *
+     * @param constraints The existing security constraints
+     * @param denyUncoveredHttpMethods Whether to automatically create constraints for uncovered methods
+     * @param log The log to use for reporting uncovered methods
+     * @return New security constraints for uncovered methods, or an empty array if all methods are covered
+     */
     public static SecurityConstraint[] findUncoveredHttpMethods(SecurityConstraint[] constraints,
             boolean denyUncoveredHttpMethods, Log log) {
 
@@ -687,7 +693,7 @@ public class SecurityConstraint extends XmlEncodingBase implements Serializable 
                     for (String method : methods) {
                         collection.addOmittedMethod(method);
                     }
-                    collection.addPatternDecoded(pattern);
+                    collection.addPattern(pattern);
                     collection.setName("deny-uncovered-http-methods");
                     SecurityConstraint constraint = new SecurityConstraint();
                     constraint.setAuthConstraint(true);
@@ -734,7 +740,7 @@ public class SecurityConstraint extends XmlEncodingBase implements Serializable 
                 for (String method : omittedMethods) {
                     collection.addMethod(method);
                 }
-                collection.addPatternDecoded(pattern);
+                collection.addPattern(pattern);
                 collection.setName("deny-uncovered-http-methods");
                 SecurityConstraint constraint = new SecurityConstraint();
                 constraint.setAuthConstraint(true);

@@ -24,9 +24,15 @@ import java.util.concurrent.atomic.AtomicInteger;
 import jakarta.servlet.FilterConfig;
 
 /**
- * Base implementation of {@link RateLimiter}, provides runtime data maintenance mechanism monitor.
+ * Base implementation of {@link RateLimiter}, provides a runtime data maintenance mechanism and monitor.
  */
 public abstract class RateLimiterBase implements RateLimiter {
+
+    /**
+     * Default constructor.
+     */
+    public RateLimiterBase() {
+    }
 
     private static final AtomicInteger index = new AtomicInteger();
 
@@ -131,7 +137,7 @@ public abstract class RateLimiterBase implements RateLimiter {
     public void setFilterConfig(FilterConfig filterConfig) {
 
         ScheduledExecutorService executorService = (ScheduledExecutorService) filterConfig.getServletContext()
-                .getAttribute(ScheduledThreadPoolExecutor.class.getName());
+                .getAttribute(org.apache.tomcat.util.threads.ScheduledThreadPoolExecutor.class.getName());
 
         if (executorService == null) {
             internalExecutorService = new java.util.concurrent.ScheduledThreadPoolExecutor(1);

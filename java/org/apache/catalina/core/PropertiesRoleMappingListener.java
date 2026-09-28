@@ -50,10 +50,16 @@ public class PropertiesRoleMappingListener implements LifecycleListener {
     /**
      * The string manager for this package.
      */
-    private static final StringManager sm = StringManager.getManager(ContextNamingInfoListener.class);
+    private static final StringManager sm = StringManager.getManager(PropertiesRoleMappingListener.class);
 
     private String roleMappingFile = WEBAPP_PROTOCOL + "/WEB-INF/role-mapping.properties";
     private String keyPrefix;
+
+    /**
+     * Creates a new instance of the {@code PropertiesRoleMappingListener}.
+     */
+    public PropertiesRoleMappingListener() {
+    }
 
     /**
      * Sets the path to the role mapping properties file. You can use protocol {@code webapp:} and whatever

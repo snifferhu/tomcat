@@ -23,19 +23,22 @@ import org.apache.catalina.Host;
 import org.apache.catalina.Server;
 import org.apache.catalina.Service;
 
+/**
+ * Interface for storing Catalina configuration to XML.
+ */
 public interface IStoreConfig {
 
     /**
      * Get Configuration Registry
      *
-     * @return aRegistry that handle the store operations
+     * @return the registry that handles the store operations
      */
     StoreRegistry getRegistry();
 
     /**
      * Set Configuration Registry
      *
-     * @param aRegistry aregistry that handle the store operations
+     * @param aRegistry the registry that handles the store operations
      */
     void setRegistry(StoreRegistry aRegistry);
 

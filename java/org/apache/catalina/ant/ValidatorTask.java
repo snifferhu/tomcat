@@ -35,6 +35,12 @@ import org.xml.sax.InputSource;
  */
 public class ValidatorTask extends BaseRedirectorHelperTask {
 
+    /**
+     * Constructs a new ValidatorTask.
+     */
+    public ValidatorTask() {
+    }
+
 
     // ----------------------------------------------------- Instance Variables
 
@@ -47,10 +53,20 @@ public class ValidatorTask extends BaseRedirectorHelperTask {
      */
     protected String path = null;
 
+    /**
+     * Returns the path to the webapp directory.
+     *
+     * @return the path
+     */
     public String getPath() {
         return this.path;
     }
 
+    /**
+     * Sets the path to the webapp directory.
+     *
+     * @param path The path to the webapp directory
+     */
     public void setPath(String path) {
         this.path = path;
     }
@@ -81,7 +97,6 @@ public class ValidatorTask extends BaseRedirectorHelperTask {
         ClassLoader oldCL = currentThread.getContextClassLoader();
         currentThread.setContextClassLoader(ValidatorTask.class.getClassLoader());
 
-        // Called through trusted manager interface.
         Digester digester = DigesterFactory.newDigester(true, true, null, false);
         try (InputStream stream = new BufferedInputStream(new FileInputStream(file.getCanonicalFile()))) {
             InputSource is = new InputSource(file.toURI().toURL().toExternalForm());

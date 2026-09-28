@@ -74,6 +74,9 @@ public class LimitLatch {
      * @param limit - maximum number of concurrent acquisitions of this latch
      */
     public LimitLatch(long limit) {
+        if (limit < 0) {
+            throw new IllegalArgumentException(sm.getString("limitLatch.badLimit", String.valueOf(limit)));
+        }
         this.limit = limit;
         this.count = new AtomicLong(0);
         this.sync = new Sync();
@@ -108,12 +111,15 @@ public class LimitLatch {
      * @param limit The new limit
      */
     public void setLimit(long limit) {
+        if (limit < 0) {
+            throw new IllegalArgumentException(sm.getString("limitLatch.badLimit", String.valueOf(limit)));
+        }
         this.limit = limit;
     }
 
 
     /**
-     * Acquires a shared latch if one is available or waits for one if no shared latch is current available.
+     * Acquires a shared latch if one is available or waits for one if no shared latch is currently available.
      *
      * @throws InterruptedException If the current thread is interrupted
      */
@@ -139,7 +145,9 @@ public class LimitLatch {
     }
 
     /**
-     * Releases all waiting threads and causes the {@link #limit} to be ignored until {@link #reset()} is called.
+     * Releases all waiting threads and causes the {@link #limit} to be ignored until {@link #reset()} is called. Note
+     * that this method also decrements the acquisition counter by one as a side effect, so {@link #reset()} should be
+     * called (or a new {@link LimitLatch} used) before the limit is enforced again.
      *
      * @return <code>true</code> if release was done
      */

@@ -23,6 +23,11 @@ import java.util.concurrent.ConcurrentHashMap;
  * Handles the access control on the JNDI contexts.
  */
 public class ContextAccessController {
+    /**
+     * Constructs a new ContextAccessController instance.
+     */
+    public ContextAccessController() {
+    }
 
     // -------------------------------------------------------------- Variables
 
@@ -47,8 +52,8 @@ public class ContextAccessController {
      * @param token Security token
      */
     public static void setSecurityToken(Object name, Object token) {
-        if ((!securityTokens.containsKey(name)) && (token != null)) {
-            securityTokens.put(name, token);
+        if (token != null) {
+            securityTokens.putIfAbsent(name, token);
         }
     }
 
@@ -95,7 +100,7 @@ public class ContextAccessController {
 
 
     /**
-     * Set whether or not a Catalina context is writable.
+     * Mark a Catalina context as read-only.
      *
      * @param name Name of the Catalina context
      */
@@ -105,7 +110,7 @@ public class ContextAccessController {
 
 
     /**
-     * Is the context is writable?
+     * Is the context writable?
      *
      * @param name Name of the Catalina context
      *

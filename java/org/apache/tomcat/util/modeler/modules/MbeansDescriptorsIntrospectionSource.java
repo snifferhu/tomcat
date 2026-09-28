@@ -38,7 +38,19 @@ import org.apache.tomcat.util.modeler.ParameterInfo;
 import org.apache.tomcat.util.modeler.Registry;
 import org.apache.tomcat.util.res.StringManager;
 
+/**
+ * Source for creating MBean descriptors through introspection.
+ */
 public class MbeansDescriptorsIntrospectionSource extends ModelerSource {
+    /**
+     * Default constructor.
+     */
+    public MbeansDescriptorsIntrospectionSource() {
+    }
+
+    /**
+     * The log instance for this class.
+     */
     private static final Log log = LogFactory.getLog(MbeansDescriptorsIntrospectionSource.class);
     private static final StringManager sm = StringManager.getManager(MbeansDescriptorsIntrospectionSource.class);
 
@@ -46,6 +58,11 @@ public class MbeansDescriptorsIntrospectionSource extends ModelerSource {
     private String type;
     private final List<ObjectName> mbeans = new ArrayList<>();
 
+    /**
+     * Set the registry.
+     *
+     * @param reg the registry to set
+     */
     public void setRegistry(Registry reg) {
         this.registry = reg;
     }
@@ -59,6 +76,11 @@ public class MbeansDescriptorsIntrospectionSource extends ModelerSource {
         this.type = type;
     }
 
+    /**
+     * Set the source.
+     *
+     * @param source the source to set
+     */
     public void setSource(Object source) {
         this.source = source;
     }
@@ -72,7 +94,10 @@ public class MbeansDescriptorsIntrospectionSource extends ModelerSource {
         return mbeans;
     }
 
-    public void execute() throws Exception {
+    /**
+     * Execute the descriptor loading. Errors are logged and not propagated.
+     */
+    public void execute() {
         if (registry == null) {
             registry = Registry.getRegistry(null);
         }
@@ -243,8 +268,7 @@ public class MbeansDescriptorsIntrospectionSource extends ModelerSource {
     }
 
     /**
-     * XXX Find if the 'className' is the name of the MBean or the real class ( I suppose first ) XXX Read (optional)
-     * descriptions from a .properties, generated from source XXX Deal with constructors
+     * Analyze the given class and create the ManagedBean descriptor for it.
      *
      * @param registry  The Bean registry (not used)
      * @param domain    The bean domain (not used)

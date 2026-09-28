@@ -20,6 +20,9 @@ import jakarta.servlet.SessionCookieConfig;
 
 import org.apache.catalina.Context;
 
+/**
+ * Utility class for managing session configuration.
+ */
 public class SessionConfig {
 
     private static final String DEFAULT_SESSION_COOKIE_NAME = "JSESSIONID";
@@ -74,10 +77,13 @@ public class SessionConfig {
      *
      * @param context The context
      *
-     * @return the parameter name for the session
+     * @return the cookie path for the session
      */
     public static String getSessionCookiePath(Context context) {
 
+        if (context == null) {
+            return null;
+        }
         SessionCookieConfig scc = context.getServletContext().getSessionCookieConfig();
 
         String contextPath = context.getSessionCookiePath();

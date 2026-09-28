@@ -45,6 +45,12 @@ import org.apache.tomcat.util.res.StringManager;
  */
 public class CallbackHandlerImpl implements CallbackHandler, Contained {
 
+    /**
+     * Default constructor.
+     */
+    public CallbackHandlerImpl() {
+    }
+
     private static final StringManager sm = StringManager.getManager(CallbackHandlerImpl.class);
     private final Log log = LogFactory.getLog(CallbackHandlerImpl.class); // must not be static
 
@@ -105,7 +111,8 @@ public class CallbackHandlerImpl implements CallbackHandler, Contained {
                 if (name != null) {
                     // If the Principal has been cached in the session, just return it.
                     if (principal instanceof GenericPrincipal) {
-                        // Duplicates are unlikely and will be handled in AuthenticatorBase.getPrincipal()
+                        // Duplicates are unlikely and are not merged; if present, AuthenticatorBase.getPrincipal()
+                        // returns an arbitrary element of the set of credentials
                         subject.getPrivateCredentials().add(principal);
                     } else {
                         /*

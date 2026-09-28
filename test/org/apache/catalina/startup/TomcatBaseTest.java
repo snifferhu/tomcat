@@ -22,6 +22,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.PrintWriter;
+import java.io.Serial;
 import java.net.HttpURLConnection;
 import java.net.InetAddress;
 import java.net.URI;
@@ -92,7 +93,7 @@ import org.apache.tomcat.util.scan.StandardJarScanner;
 public abstract class TomcatBaseTest extends LoggingBaseTest {
 
     // Used by parameterized tests. Defined here to reduce duplication.
-    protected static final Boolean[] booleans = new Boolean[] { Boolean.FALSE, Boolean.TRUE };
+    public static final Boolean[] booleans = new Boolean[] { Boolean.FALSE, Boolean.TRUE };
 
     protected static final int DEFAULT_CLIENT_TIMEOUT_MS = 300_000;
 
@@ -466,6 +467,7 @@ public abstract class TomcatBaseTest extends LoggingBaseTest {
      */
     public static final class SnoopServlet extends HttpServlet {
 
+        @Serial
         private static final long serialVersionUID = 1L;
 
         @Override
@@ -481,7 +483,7 @@ public abstract class TomcatBaseTest extends LoggingBaseTest {
             response.setCharacterEncoding("UTF-8");
 
             ServletContext ctx = this.getServletContext();
-            HttpSession session = request.getSession(false);
+            HttpSession session = request.getSession("true".equals(request.getParameter("createSession")));
             PrintWriter out = response.getWriter();
 
             out.println("CONTEXT-NAME: " + ctx.getServletContextName());
@@ -558,7 +560,7 @@ public abstract class TomcatBaseTest extends LoggingBaseTest {
                     e.hasMoreElements();) {
                 name = e.nextElement();
                 value = new StringBuilder();
-                String values[] = request.getParameterValues(name);
+                String[] values = request.getParameterValues(name);
                 int m = values.length;
                 for (int j = 0; j < m; j++) {
                     value.append(values[j]);
@@ -597,7 +599,7 @@ public abstract class TomcatBaseTest extends LoggingBaseTest {
             }
 
             int bodySize = 0;
-            if (Method.PUT.equals(request.getMethod())) {
+            if (Method.PUT.equals(request.getMethod()) || Method.POST.equals(request.getMethod())) {
                 InputStream is = request.getInputStream();
                 int read = 0;
                 byte[] buffer = new byte[8192];

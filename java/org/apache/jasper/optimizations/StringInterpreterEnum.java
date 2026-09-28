@@ -22,12 +22,19 @@ import org.apache.juli.logging.Log;
 import org.apache.juli.logging.LogFactory;
 
 /**
- * Provides an optimised conversion of string values to Enums. It bypasses the check for registered PropertyEditor.
+ * Provides an optimised conversion of string values to Enums. It bypasses the PropertyEditorManager lookup for a
+ * registered PropertyEditor.
  */
 public class StringInterpreterEnum extends DefaultStringInterpreter {
 
+    /**
+     * Constructs a new StringInterpreterEnum.
+     */
+    public StringInterpreterEnum() {
+    }
+
     // Can't be static
-    private final Log log = LogFactory.getLog(ELInterpreterTagSetters.class);
+    private final Log log = LogFactory.getLog(StringInterpreterEnum.class);
 
     @Override
     protected String coerceToOtherType(Class<?> c, String s, boolean isNamedAttribute) {

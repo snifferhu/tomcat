@@ -22,14 +22,17 @@ import java.io.BufferedInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.ObjectInputStream;
+import java.util.concurrent.locks.ReadWriteLock;
 
 import org.apache.catalina.LifecycleException;
 import org.apache.catalina.LifecycleState;
 import org.apache.catalina.Manager;
+import org.apache.catalina.Session;
 import org.apache.catalina.Store;
 import org.apache.catalina.util.CustomObjectInputStream;
 import org.apache.catalina.util.LifecycleBase;
 import org.apache.catalina.util.ToStringUtil;
+import org.apache.tomcat.util.concurrent.KeyedReentrantReadWriteLock;
 import org.apache.tomcat.util.res.StringManager;
 
 /**
@@ -38,10 +41,17 @@ import org.apache.tomcat.util.res.StringManager;
  */
 public abstract class StoreBase extends LifecycleBase implements Store {
 
+    /**
+     * Default constructor.
+     */
+    public StoreBase() {
+    }
+
     // ----------------------------------------------------- Instance Variables
 
     /**
-     * Name to register for this Store, used for logging.
+     * The default store name, used for logging by the default {@link #getStoreName()} implementation. Concrete store
+     * implementations typically shadow this with their own name and override {@link #getStoreName()}.
      */
     protected static final String storeName = "StoreBase";
 
@@ -60,11 +70,18 @@ public abstract class StoreBase extends LifecycleBase implements Store {
      */
     protected Manager manager;
 
+    /*
+     * Locks used to control concurrent access to session for persistence
+     */
+    private KeyedReentrantReadWriteLock sessionLocksById = new KeyedReentrantReadWriteLock();
+
 
     // ------------------------------------------------------------- Properties
 
     /**
-     * @return the name for this Store, used for logging.
+     * Return the name for this Store, used for logging.
+     *
+     * @return the store name
      */
     public String getStoreName() {
         return storeName;
@@ -87,6 +104,12 @@ public abstract class StoreBase extends LifecycleBase implements Store {
     // --------------------------------------------------------- Public Methods
 
     @Override
+    public ReadWriteLock getSessionStoreLock(String sessionId) {
+        return sessionLocksById.getLock(sessionId);
+    }
+
+
+    @Override
     public void addPropertyChangeListener(PropertyChangeListener listener) {
         support.addPropertyChangeListener(listener);
     }
@@ -97,9 +120,10 @@ public abstract class StoreBase extends LifecycleBase implements Store {
     }
 
     /**
-     * Get only those keys of sessions, that are saved in the Store and are to be expired.
+     * Get the keys of sessions that are to be expired. The default implementation returns all keys that are saved in
+     * the Store. Subclasses may override this to return only the keys of sessions that are actually to be expired.
      *
-     * @return array of session keys, that are to be expired
+     * @return array of session keys
      *
      * @throws IOException if an input-/output error occurred
      */
@@ -133,12 +157,13 @@ public abstract class StoreBase extends LifecycleBase implements Store {
 
         for (String key : keys) {
             try {
-                StandardSession session = (StandardSession) load(key);
+                Session session = load(key);
                 if (session == null) {
                     continue;
                 }
                 int timeIdle = (int) ((timeNow - session.getThisAccessedTime()) / 1000L);
-                if (timeIdle < session.getMaxInactiveInterval()) {
+                int maxInactive = session.getMaxInactiveInterval();
+                if (maxInactive <= 0 || timeIdle < maxInactive) {
                     continue;
                 }
                 if (manager.getContext().getLogger().isTraceEnabled()) {

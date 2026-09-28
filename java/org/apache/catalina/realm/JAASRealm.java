@@ -120,6 +120,12 @@ public class JAASRealm extends RealmBase {
 
     private static final Log log = LogFactory.getLog(JAASRealm.class);
 
+    /**
+     * Constructs a new JAASRealm.
+     */
+    public JAASRealm() {
+    }
+
     // ----------------------------------------------------- Instance Variables
 
 
@@ -154,7 +160,14 @@ public class JAASRealm extends RealmBase {
      */
     protected String configFile;
 
+    /**
+     * The loaded JAAS Configuration instance.
+     */
     protected volatile Configuration jaasConfiguration;
+
+    /**
+     * Flag indicating whether the JAAS configuration has been loaded.
+     */
     protected volatile boolean jaasConfigurationLoaded = false;
 
     /**
@@ -168,7 +181,9 @@ public class JAASRealm extends RealmBase {
     // ------------------------------------------------------------- Properties
 
     /**
-     * @return the path of the JAAS configuration file.
+     * Get the path of the JAAS configuration file.
+     *
+     * @return the path of the JAAS configuration file
      */
     public String getConfigFile() {
         return configFile;
@@ -193,7 +208,9 @@ public class JAASRealm extends RealmBase {
     }
 
     /**
-     * @return the application name.
+     * Get the JAAS application name.
+     *
+     * @return the application name
      */
     public String getAppName() {
         return appName;
@@ -232,6 +249,11 @@ public class JAASRealm extends RealmBase {
      */
     protected String roleClassNames = null;
 
+    /**
+     * Get the comma-delimited list of role class names.
+     *
+     * @return the role class names
+     */
     public String getRoleClassNames() {
         return this.roleClassNames;
     }
@@ -289,6 +311,11 @@ public class JAASRealm extends RealmBase {
      */
     protected String userClassNames = null;
 
+    /**
+     * Get the comma-delimited list of user class names.
+     *
+     * @return the user class names
+     */
     public String getUserClassNames() {
         return this.userClassNames;
     }
@@ -335,10 +362,6 @@ public class JAASRealm extends RealmBase {
 
         // Establish a LoginContext to use for authentication
         try {
-            if (appName == null) {
-                appName = "Tomcat";
-            }
-
             if (log.isTraceEnabled()) {
                 log.trace(sm.getString("jaasRealm.beginLogin", username, appName));
             }
@@ -386,8 +409,9 @@ public class JAASRealm extends RealmBase {
                 invocationSuccess = true;
                 if (subject == null) {
                     if (log.isDebugEnabled()) {
-                        log.debug(sm.getString("jaasRealm.failedLogin", username));
+                        log.debug(sm.getString("jaasRealm.nullSubject", username));
                     }
+                    silentLogout(loginContext);
                     return null;
                 }
             } catch (AccountExpiredException e) {
@@ -439,6 +463,7 @@ public class JAASRealm extends RealmBase {
                 if (log.isDebugEnabled()) {
                     log.debug(sm.getString("jaasRealm.authenticateFailure", username));
                 }
+                silentLogout(loginContext);
                 return null;
             }
             if (log.isTraceEnabled()) {
@@ -451,6 +476,16 @@ public class JAASRealm extends RealmBase {
             // JAAS throws exception different from LoginException so mark the realm as unavailable
             invocationSuccess = false;
             return null;
+        }
+    }
+
+
+    private void silentLogout(LoginContext loginContext) {
+        try {
+            loginContext.logout();
+        } catch (Throwable t) {
+            ExceptionUtils.handleThrowable(t);
+            // Ignore anything else. Caller should have created any necessary log entries.
         }
     }
 
@@ -593,6 +628,9 @@ public class JAASRealm extends RealmBase {
                     jaasConfigurationLoaded = true;
                     return null;
                 }
+                if (jaasConfigurationLoaded) {
+                    return jaasConfiguration;
+                }
                 @SuppressWarnings("unchecked")
                 Class<Configuration> sunConfigFile =
                         (Class<Configuration>) Class.forName("com.sun.security.auth.login.ConfigFile");
@@ -603,20 +641,19 @@ public class JAASRealm extends RealmBase {
                     try (ConfigurationSource.Resource configFileResource =
                             ConfigFileLoader.getSource().getResource(configFile)) {
                         config = constructor.newInstance(configFileResource.getURI());
-                        this.jaasConfigurationLoaded = true;
                     } catch (IOException ioe) {
                         throw new RuntimeException(sm.getString("jaasRealm.configFileNotFound", configFile));
                     }
                 } else {
                     URI uri = resource.toURI();
                     config = constructor.newInstance(uri);
-                    this.jaasConfigurationLoaded = true;
                 }
                 this.jaasConfiguration = config;
+                this.jaasConfigurationLoaded = true;
                 return this.jaasConfiguration;
             }
         } catch (InvocationTargetException ex) {
-            throw new RuntimeException(ex.getCause());
+            throw new RuntimeException(ExceptionUtils.unwrapInvocationTargetException(ex));
         } catch (SecurityException | URISyntaxException | ReflectiveOperationException | IllegalArgumentException ex) {
             throw new RuntimeException(ex);
         }

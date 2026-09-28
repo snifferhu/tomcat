@@ -42,6 +42,7 @@ import java.util.Comparator;
 import java.util.Enumeration;
 import java.util.List;
 import java.util.Locale;
+import java.util.TreeSet;
 import java.util.function.Function;
 
 import javax.xml.transform.Source;
@@ -129,6 +130,12 @@ import org.apache.tomcat.util.security.Escape;
  * </p>
  */
 public class DefaultServlet extends HttpServlet {
+
+    /**
+     * Default constructor.
+     */
+    public DefaultServlet() {
+    }
 
     @Serial
     private static final long serialVersionUID = 1L;
@@ -443,6 +450,13 @@ public class DefaultServlet extends HttpServlet {
         return getRelativePath(request, false);
     }
 
+    /**
+     * Get the relative path from the request, with option to allow empty path.
+     *
+     * @param request The HTTP servlet request
+     * @param allowEmptyPath Whether to allow an empty path
+     * @return the relative path
+     */
     protected String getRelativePath(HttpServletRequest request, boolean allowEmptyPath) {
         // IMPORTANT: DefaultServlet can be mapped to '/' or '/path/*' but always
         // serves resources from the web app root with context rooted paths.
@@ -490,11 +504,21 @@ public class DefaultServlet extends HttpServlet {
     }
 
 
+    /**
+     * Check if directory listings are enabled.
+     *
+     * @return true if directory listings are enabled
+     */
     protected boolean isListings() {
         return listings;
     }
 
 
+    /**
+     * Check if read-only mode is enabled.
+     *
+     * @return true if read-only mode is enabled
+     */
     protected boolean isReadOnly() {
         return readOnly || resources.isReadOnly();
     }
@@ -579,6 +603,13 @@ public class DefaultServlet extends HttpServlet {
     }
 
 
+    /**
+     * Send a method not allowed response to the client.
+     *
+     * @param req The HTTP servlet request
+     * @param resp The HTTP servlet response
+     * @throws IOException if an input/output error occurs
+     */
     protected void sendNotAllowed(HttpServletRequest req, HttpServletResponse resp) throws IOException {
         resp.addHeader("Allow", determineMethodsAllowed(req));
         resp.sendError(HttpServletResponse.SC_METHOD_NOT_ALLOWED);
@@ -1283,9 +1314,11 @@ public class DefaultServlet extends HttpServlet {
         // Look for 4-byte BOMs
         int b3 = bom[3] & 0xFF;
         if (b0 == 0x00 && b1 == 0x00 && b2 == 0xFE && b3 == 0xFF) {
+            skip(is, 4, stripBom);
             return Charset.forName("UTF-32BE");
         }
         if (b0 == 0xFF && b1 == 0xFE && b2 == 0x00 && b3 == 0x00) {
+            skip(is, 4, stripBom);
             return Charset.forName("UTF-32LE");
         }
 
@@ -1321,43 +1354,67 @@ public class DefaultServlet extends HttpServlet {
     }
 
     private static boolean validate(Ranges ranges, long length) {
-        List<long[]> rangeContext = new ArrayList<>();
-        int overlapCount = 0;
+        /*
+         * Looking for overlapping ranges.
+         *
+         * Where the start or end (never both as that would be invalid) is -1, update the start and/or end as
+         * appropriate to the actual start and end points in the file.
+         *
+         * Then process the ranges in order. If range starts before the largest observed end so far, it must overlap.
+         */
+        TreeSet<Ranges.Entry> orderedRanges = new TreeSet<>();
         for (Ranges.Entry range : ranges.getEntries()) {
-            long start = getStart(range, length);
-            long end = getEnd(range, length);
-            if (start < 0 || start > end) {
+            // Adjusted values depend on both original values so calculate both adjusted values first then update range.
+            long adjustedStart = getStart(range, length);
+            long adjustedEnd = getEnd(range, length);
+            if (adjustedStart > adjustedEnd) {
                 // Invalid range
                 return false;
             }
-            /*
-             * See https://www.rfc-editor.org/rfc/rfc9110.html#name-range and
-             * https://www.rfc-editor.org/rfc/rfc9110.html#status.416
-             *
-             * The server MAY ignore or reject Range headers with:
-             *
-             * - "Many" (undefined) small ranges not in ascending order - not currently enforced.
-             *
-             * - More than two overlapping ranges (enforced)
-             */
-            for (long[] r : rangeContext) {
-                long s2 = r[0];
-                long e2 = r[1];
-                // Given valid [s1,e1] and [s2,e2]
-                // If { s1>e2 || s2>e1 } then no overlap
-                // equivalent to
-                // If not { s1>e2 || s2>e1 } then overlap
-                // De Morgan's law
-                if (start <= e2 && s2 <= end) {
-                    overlapCount++;
-                    // Off by one is deliberate. There is 1 more overlapping range than there are overlaps.
-                    if (overlapCount > 1) {
-                        return false;
-                    }
-                }
-            }
-            rangeContext.add(new long[] { start, end });
+            Ranges.Entry adjustedRange = new Ranges.Entry(adjustedStart, adjustedEnd);
+
+            orderedRanges.add(adjustedRange);
         }
+
+        // Short-cut if two ranges or less (can't have more than 2 overlapping ranges)
+        if (ranges.getEntries().size() < 3) {
+            return true;
+        }
+
+        int overlapCount = ranges.getEntries().size() - orderedRanges.size();
+        // This only detected duplicate ranges. Each duplicate is equivalent to 1 overlap.
+        // Off by one is deliberate. There is 1 more overlapping range than there are overlaps.
+        if (overlapCount > 1) {
+            return false;
+        }
+
+        /*
+         * See https://www.rfc-editor.org/rfc/rfc9110.html#name-range and
+         * https://www.rfc-editor.org/rfc/rfc9110.html#status.416
+         *
+         * The server MAY ignore or reject Range headers with:
+         *
+         * - "Many" (undefined) small ranges not in ascending order - not currently enforced.
+         *
+         * - More than two overlapping ranges (enforced)
+         */
+        long latestObservedEnd = -1;
+        for (Ranges.Entry range : orderedRanges) {
+            if (range.getStart() <= latestObservedEnd) {
+                overlapCount++;
+            }
+
+
+            if (range.getEnd() > latestObservedEnd) {
+                latestObservedEnd = range.getEnd();
+            }
+
+            // Off by one is deliberate. There is 1 more overlapping range than there are overlaps.
+            if (overlapCount > 1) {
+                return false;
+            }
+        }
+
         return true;
     }
 
@@ -1657,10 +1714,10 @@ public class DefaultServlet extends HttpServlet {
         sb.append("<?xml version=\"1.0\"?>");
         sb.append("<listing ");
         sb.append(" contextPath='");
-        sb.append(contextPath);
+        sb.append(Escape.xml(contextPath));
         sb.append('\'');
         sb.append(" directory='");
-        sb.append(resource.getName());
+        sb.append(Escape.xml(resource.getName()));
         sb.append("' ");
         sb.append(" hasParent='").append(!resource.getName().equals("/"));
         sb.append("'>");
@@ -1691,7 +1748,7 @@ public class DefaultServlet extends HttpServlet {
 
             sb.append("<entry");
             sb.append(" type='").append(childResource.isDirectory() ? "dir" : "file").append('\'');
-            sb.append(" urlPath='").append(rewrittenContextPath)
+            sb.append(" urlPath='").append(Escape.xml(rewrittenContextPath))
                     .append(Escape.xml(rewriteUrl(directoryWebappPath + entry)))
                     .append(childResource.isDirectory() ? "/" : "").append('\'');
             if (childResource.isFile()) {
@@ -1701,7 +1758,7 @@ public class DefaultServlet extends HttpServlet {
             sb.append(" longDate='").append(childResource.getLastModified()).append('\'');
 
             sb.append('>');
-            sb.append(Escape.htmlElementContent(entry));
+            sb.append(Escape.xml(entry));
             if (childResource.isDirectory()) {
                 sb.append('/');
             }
@@ -1769,6 +1826,7 @@ public class DefaultServlet extends HttpServlet {
         StringManager sm = StringManager.getManager(DefaultServlet.class.getPackageName(), request.getLocales());
 
         String directoryWebappPath = resource.getWebappPath();
+        String escapedDirectoryWebappPath = Escape.htmlElementContent(directoryWebappPath);
         WebResource[] entries = resources.listResources(directoryWebappPath);
 
         // rewriteUrl(contextPath) is expensive. cache result for later reuse
@@ -1779,7 +1837,7 @@ public class DefaultServlet extends HttpServlet {
         sb.append("<html lang=\"").append(sm.getLocale().getLanguage()).append("\">\r\n");
         sb.append("<head>\r\n");
         sb.append("<title>");
-        sb.append(sm.getString("defaultServlet.directory.title", directoryWebappPath));
+        sb.append(sm.getString("defaultServlet.directory.title", escapedDirectoryWebappPath));
         sb.append("</title>\r\n");
         sb.append("<style>");
         sb.append(org.apache.catalina.util.TomcatCSS.TOMCAT_CSS);
@@ -1787,7 +1845,7 @@ public class DefaultServlet extends HttpServlet {
         sb.append("</head>\r\n");
         sb.append("<body>\r\n");
         sb.append("<h1>");
-        sb.append(sm.getString("defaultServlet.directory.title", directoryWebappPath));
+        sb.append(sm.getString("defaultServlet.directory.title", escapedDirectoryWebappPath));
 
         // Render the link to our parent (if required)
         String parentDirectory = directoryWebappPath;
@@ -1808,7 +1866,7 @@ public class DefaultServlet extends HttpServlet {
             }
             sb.append("\">");
             sb.append("<b>");
-            sb.append(sm.getString("defaultServlet.directory.parent", parent));
+            sb.append(sm.getString("defaultServlet.directory.parent", Escape.htmlElementContent(parent)));
             sb.append("</b>");
             sb.append("</a>");
         }
@@ -1996,7 +2054,7 @@ public class DefaultServlet extends HttpServlet {
                     } else {
                         reader = new InputStreamReader(is);
                     }
-                    IOException e = copyRange(reader, new PrintWriter(buffer));
+                    IOException e = copyNoThrow(reader, new PrintWriter(buffer));
                     if (debug > 10) {
                         log("readme '" + readmeFile + "' output error: " + ((e != null) ? e.getMessage() : ""));
                     }
@@ -2071,8 +2129,12 @@ public class DefaultServlet extends HttpServlet {
                     log(sm.getString("defaultServlet.globalXSLTTooBig", f.getAbsolutePath()));
                 } else {
                     try (FileInputStream fis = new FileInputStream(f)) {
-                        byte[] b = new byte[(int) f.length()];
-                        IOTools.readFully(fis, b);
+                        int xsltLength = (int) globalXsltFileSize;
+                        byte[] b = new byte[xsltLength];
+                        if (xsltLength != IOTools.readFully(fis, b)) {
+                            log(sm.getString("defaultServlet.truncatedXSLT", f.getAbsolutePath()));
+                            return null;
+                        }
                         return new StreamSource(new ByteArrayInputStream(b));
                     }
                 }
@@ -2493,8 +2555,8 @@ public class DefaultServlet extends HttpServlet {
 
 
     /**
-     * Copy the contents of the specified input stream to the specified output stream, and ensure that both streams are
-     * closed before returning (even in the face of an exception).
+     * Copy the contents of the specified input stream to the specified output stream, and ensure that the input stream
+     * is closed before returning (even in the face of an exception).
      *
      * @param is      The input stream to read the source resource from
      * @param ostream The output stream to write to
@@ -2506,7 +2568,7 @@ public class DefaultServlet extends HttpServlet {
         InputStream istream = new BufferedInputStream(is, input);
 
         // Copy the input stream to the output stream
-        IOException exception = copyRange(istream, ostream);
+        IOException exception = copyNoThrow(istream, ostream);
 
         // Clean up the input stream
         istream.close();
@@ -2519,8 +2581,8 @@ public class DefaultServlet extends HttpServlet {
 
 
     /**
-     * Copy the contents of the specified input stream to the specified output stream, and ensure that both streams are
-     * closed before returning (even in the face of an exception).
+     * Copy the contents of the specified input stream to the specified output stream, and ensure that the input stream
+     * is closed before returning (even in the face of an exception).
      *
      * @param is       The input stream to read the source resource from
      * @param writer   The writer to write to
@@ -2538,7 +2600,7 @@ public class DefaultServlet extends HttpServlet {
         }
 
         // Copy the input stream to the output stream
-        IOException exception = copyRange(reader, writer);
+        IOException exception = copyNoThrow(reader, writer);
 
         // Clean up the reader
         reader.close();
@@ -2551,8 +2613,7 @@ public class DefaultServlet extends HttpServlet {
 
 
     /**
-     * Copy the contents of the specified input stream to the specified output stream, and ensure that both streams are
-     * closed before returning (even in the face of an exception).
+     * Copy the contents of the specified resource to the specified output stream.
      *
      * @param resource The source resource
      * @param length   the resource length
@@ -2566,7 +2627,7 @@ public class DefaultServlet extends HttpServlet {
 
         InputStream resourceInputStream = resource.getInputStream();
         InputStream istream = new BufferedInputStream(resourceInputStream, input);
-        IOException exception = copyRange(istream, ostream, getStart(range, length), getEnd(range, length));
+        IOException exception = copyNoThrow(istream, ostream, getStart(range, length), getEnd(range, length));
 
         // Clean up the input stream
         istream.close();
@@ -2580,8 +2641,7 @@ public class DefaultServlet extends HttpServlet {
 
 
     /**
-     * Copy the contents of the specified input stream to the specified output stream, and ensure that both streams are
-     * closed before returning (even in the face of an exception).
+     * Copy the selected contents of the specified resource to the specified output stream.
      *
      * @param resource    The source resource
      * @param length      the resource length
@@ -2615,7 +2675,7 @@ public class DefaultServlet extends HttpServlet {
                 ostream.println();
 
                 // Printing content
-                exception = copyRange(istream, ostream, start, end);
+                exception = copyNoThrow(istream, ostream, start, end);
             }
         }
 
@@ -2631,15 +2691,15 @@ public class DefaultServlet extends HttpServlet {
 
 
     /**
-     * Copy the contents of the specified input stream to the specified output stream, and ensure that both streams are
-     * closed before returning (even in the face of an exception).
+     * Copy the contents of the specified input stream to the specified output stream and return, rather than throw, any
+     * IOException that occurs.
      *
      * @param istream The input stream to read from
      * @param ostream The output stream to write to
      *
      * @return Exception which occurred during processing
      */
-    protected IOException copyRange(InputStream istream, ServletOutputStream ostream) {
+    protected IOException copyNoThrow(InputStream istream, ServletOutputStream ostream) {
 
         // Copy the input stream to the output stream
         IOException exception = null;
@@ -2662,16 +2722,15 @@ public class DefaultServlet extends HttpServlet {
 
 
     /**
-     * Copy the contents of the specified input stream to the specified output stream, and ensure that both streams are
-     * closed before returning (even in the face of an exception).
+     * Copy the contents of the specified reader to the specified writer and return, rather than throw, any IOException
+     * that occurs.
      *
      * @param reader The reader to read from
      * @param writer The writer to write to
      *
      * @return Exception which occurred during processing
      */
-    protected IOException copyRange(Reader reader, PrintWriter writer) {
-
+    protected IOException copyNoThrow(Reader reader, PrintWriter writer) {
         // Copy the input stream to the output stream
         IOException exception = null;
         char[] buffer = new char[input];
@@ -2693,8 +2752,8 @@ public class DefaultServlet extends HttpServlet {
 
 
     /**
-     * Copy the contents of the specified input stream to the specified output stream, and ensure that both streams are
-     * closed before returning (even in the face of an exception).
+     * Copy the selected contents of the specified input stream to the specified output stream, and return, rather than
+     * throw, any IOException that occurs.
      *
      * @param istream The input stream to read from
      * @param ostream The output stream to write to
@@ -2703,7 +2762,7 @@ public class DefaultServlet extends HttpServlet {
      *
      * @return Exception which occurred during processing
      */
-    protected IOException copyRange(InputStream istream, ServletOutputStream ostream, long start, long end) {
+    protected IOException copyNoThrow(InputStream istream, ServletOutputStream ostream, long start, long end) {
 
         if (debug > 10) {
             log("Serving bytes: " + start + "-" + end);
@@ -2745,6 +2804,12 @@ public class DefaultServlet extends HttpServlet {
     }
 
 
+    /**
+     * Represents a compression format with an associated file extension and encoding.
+     *
+     * @param extension The file extension
+     * @param encoding The encoding type
+     */
     protected record CompressionFormat(String extension, String encoding) implements Serializable {
         @Serial
         private static final long serialVersionUID = 1L;
@@ -2854,10 +2919,22 @@ public class DefaultServlet extends HttpServlet {
             }
         }
 
+        /**
+         * Get the comparator for the given order string.
+         *
+         * @param order The order string
+         * @return the comparator
+         */
         public Comparator<WebResource> getComparator(String order) {
             return getComparator(getOrder(order));
         }
 
+        /**
+         * Get the comparator for the given order.
+         *
+         * @param order The order specification
+         * @return the comparator
+         */
         public Comparator<WebResource> getComparator(Order order) {
             if (null == order) {
                 return defaultResourceComparator;
@@ -2953,22 +3030,57 @@ public class DefaultServlet extends HttpServlet {
             return Order.DEFAULT;
         }
 
+        /**
+         * Order specification for directory listing sorting.
+         */
         public static class Order {
             final char column;
             final boolean ascending;
 
+            /**
+             * Create a new Order.
+             *
+             * @param column The column identifier
+             * @param ascending Whether to sort in ascending order
+             */
             Order(char column, boolean ascending) {
                 this.column = column;
                 this.ascending = ascending;
             }
 
+            /**
+             * Sort by name descending.
+             */
             public static final Order NAME = new Order('N', false);
+
+            /**
+             * Sort by name ascending.
+             */
             public static final Order NAME_ASC = new Order('N', true);
+
+            /**
+             * Sort by size descending.
+             */
             public static final Order SIZE = new Order('S', false);
+
+            /**
+             * Sort by size ascending.
+             */
             public static final Order SIZE_ASC = new Order('S', true);
+
+            /**
+             * Sort by last modified descending.
+             */
             public static final Order LAST_MODIFIED = new Order('M', false);
+
+            /**
+             * Sort by last modified ascending.
+             */
             public static final Order LAST_MODIFIED_ASC = new Order('M', true);
 
+            /**
+             * Default sort order (name descending).
+             */
             public static final Order DEFAULT = NAME;
         }
     }

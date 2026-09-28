@@ -51,7 +51,9 @@ import org.apache.juli.logging.LogFactory;
  * groups automatically when members are discovered that weren't part of the
  * </p>
  * <p>
- * This algorithm is non blocking meaning it allows for transactions while the coordination phase is going on
+ * This algorithm is non blocking meaning it allows for transactions while the coordination phase is going on. Note
+ * that {@link #startElection(boolean)} itself blocks its caller for up to 15 seconds while waiting for an election
+ * request from a higher priority member.
  * </p>
  * <p>
  * This implementation is based on a home brewed algorithm that uses the AbsoluteOrder of a membership to pass a token
@@ -116,22 +118,13 @@ import org.apache.juli.logging.LogFactory;
  * <p>
  * Ideally, the interceptor below this one would be the TcpFailureDetector to ensure correct memberships
  * </p>
- * <p>
- * The example above, of course can be simplified with a finite statemachine:<br>
- * But I suck at writing state machines, my head gets all confused. One day I will document this algorithm though.<br>
- * Maybe I'll do a state diagram :)
- * </p>
- * <h2>State Diagrams</h2>
- * <a href="https://people.apache.org/~fhanik/tribes/docs/leader-election-initiate-election.jpg">Initiate an
- * election</a><br>
- * <br>
- * <a href="https://people.apache.org/~fhanik/tribes/docs/leader-election-message-arrives.jpg">Receive an election
- * message</a><br>
- * <br>
  */
 public class NonBlockingCoordinator extends ChannelInterceptorBase {
 
     private static final Log log = LogFactory.getLog(NonBlockingCoordinator.class);
+    /**
+     * String manager for internationalization.
+     */
     protected static final StringManager sm = StringManager.getManager(NonBlockingCoordinator.class);
 
     /**
@@ -179,15 +172,33 @@ public class NonBlockingCoordinator extends ChannelInterceptorBase {
      * indicates that we are running an election and this is the one we are running
      */
     protected UniqueId suggestedviewId;
+    /**
+     * The suggested view during an election.
+     */
     protected volatile Membership suggestedView;
 
+    /**
+     * Whether this interceptor has been started.
+     */
     protected volatile boolean started = false;
+    /**
+     * Start service command value.
+     */
     protected final int startsvc = 0xFFFF;
 
+    /**
+     * Mutex for election operations.
+     */
     protected final Object electionMutex = new Object();
 
+    /**
+     * Flag indicating whether a coordination message has been received.
+     */
     protected final AtomicBoolean coordMsgReceived = new AtomicBoolean(false);
 
+    /**
+     * Constructs a new NonBlockingCoordinator.
+     */
     public NonBlockingCoordinator() {
         super();
     }
@@ -196,6 +207,12 @@ public class NonBlockingCoordinator extends ChannelInterceptorBase {
     // COORDINATION HANDLING
     // ============================================================================================================
 
+    /**
+     * Starts an election to determine the coordinator.
+     *
+     * @param force Whether to force a new election even if one is in progress
+     * @throws ChannelException if an error occurs during the election
+     */
     public void startElection(boolean force) throws ChannelException {
         synchronized (electionMutex) {
             Member local = getLocalMember(false);
@@ -280,12 +297,27 @@ public class NonBlockingCoordinator extends ChannelInterceptorBase {
                 COORD_REQUEST);
     }
 
+    /**
+     * Sends an election message to the next member in the ring.
+     *
+     * @param local The local member
+     * @param next The next member to send the message to
+     * @param msg The coordination message to send
+     * @throws ChannelException if sending fails
+     */
     protected void sendElectionMsg(Member local, Member next, CoordinationMessage msg) throws ChannelException {
         fireInterceptorEvent(new CoordinationEvent(CoordinationEvent.EVT_SEND_MSG, this,
                 "Sending election message to(" + next.getName() + ")"));
         super.sendMessage(new Member[] { next }, createData(msg, local), null);
     }
 
+    /**
+     * Sends an election message to the next member inline, retrying on failure.
+     *
+     * @param local The local member
+     * @param msg The coordination message to send
+     * @throws ChannelException if sending fails to all members
+     */
     protected void sendElectionMsgToNextInline(Member local, CoordinationMessage msg) throws ChannelException {
         int next = Arrays.nextIndex(local, msg.getMembers());
         int current = next;
@@ -306,6 +338,13 @@ public class NonBlockingCoordinator extends ChannelInterceptorBase {
         }
     }
 
+    /**
+     * Creates a ChannelData object from a coordination message.
+     *
+     * @param msg The coordination message
+     * @param local The local member
+     * @return The channel data containing the message
+     */
     public ChannelData createData(CoordinationMessage msg, Member local) {
         msg.write();
         ChannelData data = new ChannelData(true);
@@ -316,10 +355,23 @@ public class NonBlockingCoordinator extends ChannelInterceptorBase {
         return data;
     }
 
+    /**
+     * Checks if a member is alive using the default timeout.
+     *
+     * @param mbr The member to check
+     * @return true if the member is alive
+     */
     protected boolean alive(Member mbr) {
         return memberAlive(mbr, waitForCoordMsgTimeout);
     }
 
+    /**
+     * Checks if a member is alive by attempting a socket connection.
+     *
+     * @param mbr The member to check
+     * @param conTimeout The connection timeout in milliseconds
+     * @return true if the member is alive
+     */
     protected boolean memberAlive(Member mbr, long conTimeout) {
         // could be a shutdown notification
         if (Arrays.equals(mbr.getCommand(), Member.SHUTDOWN_PAYLOAD)) {
@@ -339,6 +391,12 @@ public class NonBlockingCoordinator extends ChannelInterceptorBase {
         return false;
     }
 
+    /**
+     * Merges the incoming coordination message members with the current membership.
+     *
+     * @param msg The coordination message
+     * @return The merged membership
+     */
     protected Membership mergeOnArrive(CoordinationMessage msg) {
         fireInterceptorEvent(new CoordinationEvent(CoordinationEvent.EVT_PRE_MERGE, this, "Pre merge"));
         Member local = getLocalMember(false);
@@ -357,6 +415,12 @@ public class NonBlockingCoordinator extends ChannelInterceptorBase {
         return merged;
     }
 
+    /**
+     * Processes an incoming coordination message.
+     *
+     * @param msg The coordination message to process
+     * @throws ChannelException if processing fails
+     */
     protected void processCoordMessage(CoordinationMessage msg) throws ChannelException {
         if (!coordMsgReceived.get()) {
             coordMsgReceived.set(true);
@@ -372,6 +436,13 @@ public class NonBlockingCoordinator extends ChannelInterceptorBase {
         }
     }
 
+    /**
+     * Handles a coordination token, routing to the appropriate handler based on source.
+     *
+     * @param msg The coordination message
+     * @param merged The merged membership
+     * @throws ChannelException if handling fails
+     */
     protected void handleToken(CoordinationMessage msg, Membership merged) throws ChannelException {
         Member local = getLocalMember(false);
         if (local.equals(msg.getSource())) {
@@ -382,6 +453,14 @@ public class NonBlockingCoordinator extends ChannelInterceptorBase {
         }
     }
 
+    /**
+     * Handles a coordination token that originated from the local member.
+     *
+     * @param local The local member
+     * @param msg The coordination message
+     * @param merged The merged membership
+     * @throws ChannelException if handling fails
+     */
     protected void handleMyToken(Member local, CoordinationMessage msg, Membership merged) throws ChannelException {
         if (local.equals(msg.getLeader())) {
             // no leadership change
@@ -406,6 +485,14 @@ public class NonBlockingCoordinator extends ChannelInterceptorBase {
         }
     }
 
+    /**
+     * Handles a coordination token from another member.
+     *
+     * @param local The local member
+     * @param msg The coordination message
+     * @param merged The merged membership
+     * @throws ChannelException if handling fails
+     */
     protected void handleOtherToken(Member local, CoordinationMessage msg, Membership merged) throws ChannelException {
         if (local.equals(msg.getLeader())) {
             // I am the new leader
@@ -416,6 +503,13 @@ public class NonBlockingCoordinator extends ChannelInterceptorBase {
         }
     }
 
+    /**
+     * Handles a view confirmation message.
+     *
+     * @param msg The coordination message
+     * @param merged The merged membership
+     * @throws ChannelException if handling fails
+     */
     protected void handleViewConf(CoordinationMessage msg, Membership merged) throws ChannelException {
         if (viewId != null && msg.getId().equals(viewId)) {
             return;// we already have this view
@@ -442,10 +536,23 @@ public class NonBlockingCoordinator extends ChannelInterceptorBase {
         }
     }
 
+    /**
+     * Checks if a coordination message is a view confirmation.
+     *
+     * @param msg The coordination message
+     * @return true if the message is a view confirmation
+     */
     protected boolean isViewConf(CoordinationMessage msg) {
         return Arrays.contains(msg.getType(), 0, COORD_CONF, 0, COORD_CONF.length);
     }
 
+    /**
+     * Checks if the complete membership has a higher priority leader than the local membership.
+     *
+     * @param complete The complete membership
+     * @param local The local membership
+     * @return true if the complete membership has higher priority
+     */
     protected boolean hasHigherPriority(Member[] complete, Member[] local) {
         if (local == null || local.length == 0) {
             return false;
@@ -469,10 +576,20 @@ public class NonBlockingCoordinator extends ChannelInterceptorBase {
         return (view != null && view.hasMembers()) ? view.getMembers()[0] : null;
     }
 
+    /**
+     * Returns the current view of members.
+     *
+     * @return The array of members in the current view
+     */
     public Member[] getView() {
         return (view != null && view.hasMembers()) ? view.getMembers() : new Member[0];
     }
 
+    /**
+     * Returns the current view ID.
+     *
+     * @return The view ID
+     */
     public UniqueId getViewId() {
         return viewId;
     }
@@ -577,6 +694,12 @@ public class NonBlockingCoordinator extends ChannelInterceptorBase {
         memberAdded(member, true);
     }
 
+    /**
+     * Handles the addition of a new member to the group.
+     *
+     * @param member The member that was added
+     * @param elect Whether to trigger an election
+     */
     public void memberAdded(Member member, boolean elect) {
         if (membership == null) {
             setupMembership();
@@ -597,19 +720,27 @@ public class NonBlockingCoordinator extends ChannelInterceptorBase {
 
     @Override
     public void memberDisappeared(Member member) {
+        if (membership == null) {
+            setupMembership();
+        }
         membership.removeMember(member);
         super.memberDisappeared(member);
         try {
             fireInterceptorEvent(new CoordinationEvent(CoordinationEvent.EVT_MBR_DEL, this,
                     "Member remove(" + member.getName() + ")"));
             if (started && (isCoordinator() || isHighest())) {
-                startElection(true); // to do, if a member disappears, only the coordinator can start
+                startElection(true);
             }
         } catch (ChannelException x) {
             log.error(sm.getString("nonBlockingCoordinator.memberDisappeared.failed"), x);
         }
     }
 
+    /**
+     * Checks if this member has the highest priority in the membership.
+     *
+     * @return true if this member has the highest priority
+     */
     public boolean isHighest() {
         Member local = getLocalMember(false);
         if (membership.getMembers().length == 0) {
@@ -619,6 +750,11 @@ public class NonBlockingCoordinator extends ChannelInterceptorBase {
         }
     }
 
+    /**
+     * Checks if this member is the current coordinator.
+     *
+     * @return true if this member is the coordinator
+     */
     public boolean isCoordinator() {
         Member coord = getCoordinator();
         return coord != null && getLocalMember(false).equals(coord);
@@ -670,6 +806,9 @@ public class NonBlockingCoordinator extends ChannelInterceptorBase {
         return local;
     }
 
+    /**
+     * Initializes the membership if not already set up.
+     */
     protected synchronized void setupMembership() {
         if (membership == null) {
             membership = new Membership(super.getLocalMember(true), AbsoluteOrder.comp, false);
@@ -682,20 +821,56 @@ public class NonBlockingCoordinator extends ChannelInterceptorBase {
     // ============================================================================================================
 
 
+    /**
+     * Represents a coordination message used in the election protocol.
+     */
     public static class CoordinationMessage {
-        // X{A-ldr, A-src, mbrs-A,B,C,D}
+         // Message format: X{A-ldr, A-src, mbrs-A,B,C,D}
+         // X{A-ldr, A-src, mbrs-A,B,C,D}
+         /**
+          * The byte buffer for the message.
+          */
         protected final XByteBuffer buf;
+        /**
+         * The leader member.
+         */
         protected Member leader;
+        /**
+         * The source member.
+         */
         protected Member source;
+        /**
+         * The member view.
+         */
         protected Member[] view;
+        /**
+         * The message ID.
+         */
         protected UniqueId id;
+        /**
+         * The message type.
+         */
         protected byte[] type;
 
+        /**
+         * Constructs a CoordinationMessage from a buffer.
+         *
+         * @param buf The byte buffer containing the message
+         */
         public CoordinationMessage(XByteBuffer buf) {
             this.buf = buf;
             parse();
         }
 
+        /**
+         * Constructs a CoordinationMessage with the given parameters.
+         *
+         * @param leader The leader member
+         * @param source The source member
+         * @param view The member view
+         * @param id The message ID
+         * @param type The message type
+         */
         public CoordinationMessage(Member leader, Member source, Member[] view, UniqueId id, byte[] type) {
             this.buf = new XByteBuffer(4096, false);
             this.leader = leader;
@@ -707,10 +882,20 @@ public class NonBlockingCoordinator extends ChannelInterceptorBase {
         }
 
 
+        /**
+         * Returns the coordination message header.
+         *
+         * @return The header bytes
+         */
         public byte[] getHeader() {
             return COORD_HEADER;
         }
 
+        /**
+         * Returns the leader member.
+         *
+         * @return The leader member
+         */
         public Member getLeader() {
             if (leader == null) {
                 parse();
@@ -718,6 +903,11 @@ public class NonBlockingCoordinator extends ChannelInterceptorBase {
             return leader;
         }
 
+        /**
+         * Returns the source member.
+         *
+         * @return The source member
+         */
         public Member getSource() {
             if (source == null) {
                 parse();
@@ -725,6 +915,11 @@ public class NonBlockingCoordinator extends ChannelInterceptorBase {
             return source;
         }
 
+        /**
+         * Returns the message ID.
+         *
+         * @return The message ID
+         */
         public UniqueId getId() {
             if (id == null) {
                 parse();
@@ -732,6 +927,11 @@ public class NonBlockingCoordinator extends ChannelInterceptorBase {
             return id;
         }
 
+        /**
+         * Returns the member view.
+         *
+         * @return The array of members
+         */
         public Member[] getMembers() {
             if (view == null) {
                 parse();
@@ -739,6 +939,11 @@ public class NonBlockingCoordinator extends ChannelInterceptorBase {
             return view;
         }
 
+        /**
+         * Returns the message type.
+         *
+         * @return The type bytes
+         */
         public byte[] getType() {
             if (type == null) {
                 parse();
@@ -746,10 +951,18 @@ public class NonBlockingCoordinator extends ChannelInterceptorBase {
             return type;
         }
 
+        /**
+         * Returns the message buffer.
+         *
+         * @return The byte buffer
+         */
         public XByteBuffer getBuffer() {
             return this.buf;
         }
 
+        /**
+         * Parses the message from the buffer.
+         */
         public void parse() {
             // header
             int offset = 16;
@@ -788,8 +1001,11 @@ public class NonBlockingCoordinator extends ChannelInterceptorBase {
 
         }
 
+        /**
+         * Writes the message to the buffer.
+         */
         public void write() {
-            buf.reset();
+            buf.clear();
             // header
             buf.append(COORD_HEADER, 0, COORD_HEADER.length);
             // leader
@@ -826,29 +1042,61 @@ public class NonBlockingCoordinator extends ChannelInterceptorBase {
         }
     }
 
+    /**
+     * Represents a coordination event in the election protocol.
+     */
     public static class CoordinationEvent implements InterceptorEvent {
+         // Event type constants for coordination events.
+         /** Event for coordinator start. */
         public static final int EVT_START = 1;
+        /** Event for member add. */
         public static final int EVT_MBR_ADD = 2;
+        /** Event for member delete. */
         public static final int EVT_MBR_DEL = 3;
+        /** Event for election start. */
         public static final int EVT_START_ELECT = 4;
+        /** Event for election processing. */
         public static final int EVT_PROCESS_ELECT = 5;
+        /** Event for message arrival. */
         public static final int EVT_MSG_ARRIVE = 6;
+        /** Event for pre-merge. */
         public static final int EVT_PRE_MERGE = 7;
+        /** Event for post-merge. */
         public static final int EVT_POST_MERGE = 8;
+        /** Event for waiting for message. */
         public static final int EVT_WAIT_FOR_MSG = 9;
+        /** Event for sending message. */
         public static final int EVT_SEND_MSG = 10;
+        /** Event for coordinator stop. */
         public static final int EVT_STOP = 11;
+        /** Event for confirmation received. */
         public static final int EVT_CONF_RX = 12;
+        /** Event for election abandoned. */
         public static final int EVT_ELECT_ABANDONED = 13;
 
+        // Event fields: type, interceptor, coord, mbrs, info, view, and suggestedView.
+         /** Event type. */
         final int type;
+        /** Channel interceptor. */
         final ChannelInterceptor interceptor;
+        /** Coordinator member. */
         final Member coord;
+        /** Member array. */
         final Member[] mbrs;
+        /** Event info string. */
         final String info;
+        /** Current view. */
         final Membership view;
+        /** Suggested view. */
         final Membership suggestedView;
 
+        /**
+         * Constructs a CoordinationEvent.
+         *
+         * @param type The event type
+         * @param interceptor The channel interceptor
+         * @param info Additional information about the event
+         */
         public CoordinationEvent(int type, ChannelInterceptor interceptor, String info) {
             this.type = type;
             this.interceptor = interceptor;

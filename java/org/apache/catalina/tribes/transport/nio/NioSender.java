@@ -47,25 +47,68 @@ import org.apache.juli.logging.LogFactory;
 public class NioSender extends AbstractSender {
 
     private static final Log log = LogFactory.getLog(NioSender.class);
+    /**
+     * String manager for this class.
+     */
     protected static final StringManager sm = StringManager.getManager(NioSender.class);
 
 
+    /**
+     * The NIO selector for multiplexing channels.
+     */
     protected Selector selector;
+
+    /**
+     * The TCP socket channel.
+     */
     protected SocketChannel socketChannel = null;
+
+    /**
+     * The UDP datagram channel.
+     */
     protected DatagramChannel dataChannel = null;
 
     /*
      * STATE VARIABLES *
      */
+    /**
+     * Buffer for reading from the channel.
+     */
     protected ByteBuffer readbuf = null;
+
+    /**
+     * Buffer for writing to the channel.
+     */
     protected ByteBuffer writebuf = null;
+
+    /**
+     * Current message being processed.
+     */
     protected volatile byte[] current = null;
+
+    /**
+     * Acknowledgment buffer.
+     */
     protected final XByteBuffer ackbuf = new XByteBuffer(128, true);
+
+    /**
+     * Number of remaining bytes to send.
+     */
     protected int remaining = 0;
+
+    /**
+     * Flag indicating send completion.
+     */
     protected boolean complete;
 
+    /**
+     * Flag indicating connection in progress.
+     */
     protected boolean connecting = false;
 
+    /**
+     * Default constructor.
+     */
     public NioSender() {
         super();
 
@@ -143,7 +186,6 @@ public class NioSender extends AbstractSender {
             socketChannel.socket().setSendBufferSize(getTxBufSize());
             socketChannel.socket().setReceiveBufferSize(getRxBufSize());
             socketChannel.socket().setSoTimeout((int) getTimeout());
-            socketChannel.socket().setSoLinger(getSoLingerOn(), getSoLingerOn() ? getSoLingerTime() : 0);
             socketChannel.socket().setTcpNoDelay(getTcpNoDelay());
             socketChannel.socket().setKeepAlive(getSoKeepAlive());
             socketChannel.socket().setReuseAddress(getSoReuseAddress());
@@ -169,6 +211,14 @@ public class NioSender extends AbstractSender {
     }
 
 
+    /**
+     * Reads acknowledgment data from the channel.
+     *
+     * @return {@code true} if the read phase is complete (acknowledgment received, or there was nothing to read),
+     *             {@code false} if more data is still needed
+     *
+     * @throws IOException If an I/O error occurs
+     */
     protected boolean read() throws IOException {
         // if there is no message here, we are done
         if (current == null) {
@@ -198,6 +248,13 @@ public class NioSender extends AbstractSender {
     }
 
 
+    /**
+     * Writes the current message to the channel.
+     *
+     * @return {@code true} if the message was fully written
+     *
+     * @throws IOException If an I/O error occurs
+     */
     protected boolean write() throws IOException {
         if ((!isConnected()) || (this.socketChannel == null && this.dataChannel == null)) {
             throw new IOException(sm.getString("nioSender.not.connected"));
@@ -315,6 +372,9 @@ public class NioSender extends AbstractSender {
         }
     }
 
+    /**
+     * Resets the sender state for reuse.
+     */
     public void reset() {
         if (isConnected() && readbuf == null) {
             readbuf = getReadBuffer();
@@ -356,9 +416,22 @@ public class NioSender extends AbstractSender {
         setMessage(data, 0, data.length);
     }
 
+    /**
+     * Sets the message to be sent.
+     *
+     * @param data The message data
+     * @param offset The offset in the data array
+     * @param length The length of the data to send
+     *
+     * @throws IOException If an I/O error occurs
+     */
     public void setMessage(byte[] data, int offset, int length) throws IOException {
         if (data != null) {
-            current = data;
+            if (offset == 0 && length == data.length) {
+                current = data;
+            } else {
+                current = Arrays.copyOfRange(data, offset, offset + length);
+            }
             remaining = length;
             ackbuf.clear();
             if (writebuf != null) {
@@ -369,8 +442,6 @@ public class NioSender extends AbstractSender {
             if (writebuf.capacity() < length) {
                 writebuf = getBuffer(length);
             }
-
-            // TODO use ByteBuffer.wrap to avoid copying the data.
             writebuf.put(data, offset, length);
             writebuf.flip();
             if (isConnected()) {
@@ -383,24 +454,49 @@ public class NioSender extends AbstractSender {
         }
     }
 
+    /**
+     * Returns the current message being sent.
+     *
+     * @return the current message byte array
+     */
     public byte[] getMessage() {
         return current;
     }
 
 
+    /**
+     * Checks if the send operation is complete.
+     *
+     * @return {@code true} if the send is complete
+     */
     public boolean isComplete() {
         return complete;
     }
 
+    /**
+     * Returns the NIO selector.
+     *
+     * @return the selector
+     */
     public Selector getSelector() {
         return selector;
     }
 
+    /**
+     * Sets the NIO selector.
+     *
+     * @param selector the selector
+     */
     public void setSelector(Selector selector) {
         this.selector = selector;
     }
 
 
+    /**
+     * Sets the completion flag.
+     *
+     * @param complete the completion status
+     */
     public void setComplete(boolean complete) {
         this.complete = complete;
     }

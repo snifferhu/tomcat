@@ -16,8 +16,6 @@
  */
 package org.apache.catalina.ha.backend;
 
-/* for MBean to read ready and busy */
-
 import java.util.Set;
 
 import javax.management.MBeanServer;
@@ -27,19 +25,21 @@ import javax.management.ObjectName;
 import org.apache.tomcat.util.modeler.Registry;
 import org.apache.tomcat.util.res.StringManager;
 
-/*
- * Listener to provide information to mod_heartbeat.c
- * *msg_format = "v=%u&ready=%u&busy=%u"; (message to send).
- * send the multicast message using the format...
- * what about the bind(IP. port) only IP makes sense (for the moment).
- * BTW:v  = version :-)
+/**
+ * Collected information class.
  */
 public class CollectedInfo {
 
     private static final StringManager sm = StringManager.getManager(CollectedInfo.class);
 
+    /**
+     * The MBean server used to collect information.
+     */
     /* Collect info via JMX */
     protected MBeanServer mBeanServer = null;
+    /**
+     * The object name of the thread pool MBean.
+     */
     protected ObjectName objName = null;
 
     int ready;
@@ -48,10 +48,26 @@ public class CollectedInfo {
     int port = 0;
     String host = null;
 
+    /**
+     * Creates a new CollectedInfo instance and initializes it with the specified host and port.
+     *
+     * @param host the host
+     * @param port the port
+     *
+     * @throws Exception if initialization fails
+     */
     public CollectedInfo(String host, int port) throws Exception {
         init(host, port);
     }
 
+    /**
+     * Initializes the collected info by looking up the thread pool MBean for the given host and port.
+     *
+     * @param host the host (may be null to match any host)
+     * @param port the port (0 to match any port)
+     *
+     * @throws Exception if no matching connector is found
+     */
     public void init(String host, int port) throws Exception {
         int iport = 0;
         String shost = null;
@@ -76,7 +92,12 @@ public class CollectedInfo {
             // ajp-nio-10.36.116.209-8009
             String[] elenames = name.split("-");
             String sport = elenames[elenames.length - 1];
-            iport = Integer.parseInt(sport);
+            try {
+                iport = Integer.parseInt(sport);
+            } catch (NumberFormatException e) {
+                objName = null;
+                continue;
+            }
             if (elenames.length == 4) {
                 shost = elenames[2];
             }
@@ -102,6 +123,11 @@ public class CollectedInfo {
 
     }
 
+    /**
+     * Refreshes the ready and busy thread counts from the thread pool MBean.
+     *
+     * @throws Exception if not initialized or MBean access fails
+     */
     public void refresh() throws Exception {
         if (mBeanServer == null || objName == null) {
             throw new Exception(sm.getString("collectedInfo.notInitialized"));
@@ -114,6 +140,6 @@ public class CollectedInfo {
         Integer ibusy = (Integer) mBeanServer.getAttribute(objName, "currentThreadsBusy");
 
         busy = ibusy.intValue();
-        ready = imax.intValue() - ibusy.intValue();
+        ready = Math.max(imax.intValue() - ibusy.intValue(), 0);
     }
 }

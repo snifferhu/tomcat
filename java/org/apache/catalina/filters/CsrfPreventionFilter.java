@@ -19,6 +19,10 @@ package org.apache.catalina.filters;
 import java.io.IOException;
 import java.io.Serial;
 import java.io.Serializable;
+import java.net.MalformedURLException;
+import java.net.URI;
+import java.net.URISyntaxException;
+import java.net.URL;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -40,6 +44,7 @@ import jakarta.servlet.http.HttpServletResponse;
 import jakarta.servlet.http.HttpServletResponseWrapper;
 import jakarta.servlet.http.HttpSession;
 
+import org.apache.catalina.util.RequestUtil;
 import org.apache.juli.logging.Log;
 import org.apache.juli.logging.LogFactory;
 import org.apache.tomcat.util.http.Method;
@@ -49,7 +54,7 @@ import org.apache.tomcat.util.http.Method;
  * <ul>
  * <li>The filter is mapped to /*</li>
  * <li>{@link HttpServletResponse#encodeRedirectURL(String)} and {@link HttpServletResponse#encodeURL(String)} are used
- * to encode all URLs returned to the client
+ * to encode all URLs returned to the client</li>
  * </ul>
  * <p>
  * CSRF protection is enabled by generating random nonce values which are stored in the client's HTTP session. Each URL
@@ -62,9 +67,15 @@ import org.apache.tomcat.util.http.Method;
  * configured with the <code>entryPoints</code> filter <code>init-param</code>.
  * </p>
  * <p>
- * Some URLs should not have nonce parameters added to them at all
+ * Some URLs should not have nonce parameters added to them at all.
  */
 public class CsrfPreventionFilter extends CsrfPreventionFilterBase {
+
+    /**
+     * Default constructor.
+     */
+    public CsrfPreventionFilter() {
+    }
 
     /**
      * The default set of URL patterns for which nonces will not be appended.
@@ -235,6 +246,12 @@ public class CsrfPreventionFilter extends CsrfPreventionFilterBase {
         private final ServletContext context;
         private final Predicate<String> predicate;
 
+        /**
+         * Construct a new MimePredicate.
+         *
+         * @param context   The servlet context
+         * @param predicate The delegate predicate for matching MIME types
+         */
         public MimePredicate(ServletContext context, Predicate<String> predicate) {
             this.context = context;
             this.predicate = predicate;
@@ -249,6 +266,11 @@ public class CsrfPreventionFilter extends CsrfPreventionFilterBase {
             return predicate.test(mimeType);
         }
 
+        /**
+         * Get the delegate predicate.
+         *
+         * @return The delegate predicate
+         */
         public Predicate<String> getPredicate() {
             return predicate;
         }
@@ -260,6 +282,11 @@ public class CsrfPreventionFilter extends CsrfPreventionFilterBase {
     protected static class PrefixPredicate implements Predicate<String> {
         private final String prefix;
 
+        /**
+         * Construct a new PrefixPredicate.
+         *
+         * @param prefix The prefix to match
+         */
         public PrefixPredicate(String prefix) {
             this.prefix = prefix;
         }
@@ -276,6 +303,11 @@ public class CsrfPreventionFilter extends CsrfPreventionFilterBase {
     protected static class SuffixPredicate implements Predicate<String> {
         private final String suffix;
 
+        /**
+         * Construct a new SuffixPredicate.
+         *
+         * @param suffix The suffix to match
+         */
         public SuffixPredicate(String suffix) {
             this.suffix = suffix;
         }
@@ -292,6 +324,11 @@ public class CsrfPreventionFilter extends CsrfPreventionFilterBase {
     protected static class PatternPredicate implements Predicate<String> {
         private final Pattern pattern;
 
+        /**
+         * Construct a new PatternPredicate.
+         *
+         * @param regex The regular expression pattern to match
+         */
         public PatternPredicate(String regex) {
             this.pattern = Pattern.compile(regex);
         }
@@ -422,7 +459,7 @@ public class CsrfPreventionFilter extends CsrfPreventionFilterBase {
                 // requiring the use of response.encodeURL.
                 request.setAttribute(Constants.CSRF_NONCE_REQUEST_ATTR_NAME, newNonce);
 
-                wResponse = new CsrfResponseWrapper(res, nonceRequestParameterName, newNonce, noNoncePredicates);
+                wResponse = new CsrfResponseWrapper(req, res, nonceRequestParameterName, newNonce, noNoncePredicates);
             }
         }
 
@@ -430,9 +467,10 @@ public class CsrfPreventionFilter extends CsrfPreventionFilterBase {
     }
 
     /**
-     * Check to see if the request and path should be enforced or only observed and reported. Note that the
-     * <code>requestedPath</code> parameter is purely a performance optimization to avoid calling
-     * {@link #getRequestedPath(HttpServletRequest)} multiple times.
+     * Check to see if the request and path should be enforced or only observed and reported. The
+     * <code>requestedPath</code> parameter can be used as a performance optimization to avoid calling
+     * {@link #getRequestedPath(HttpServletRequest)} multiple times. The default implementation only considers
+     * {@link #isEnforce()} and ignores both parameters.
      *
      * @param req           The request.
      * @param requestedPath The path of the request being evaluated.
@@ -444,6 +482,13 @@ public class CsrfPreventionFilter extends CsrfPreventionFilterBase {
         return isEnforce();
     }
 
+    /**
+     * Determine whether the nonce check should be skipped for the given request.
+     *
+     * @param request The HTTP servlet request
+     *
+     * @return {@code true} if the nonce check should be skipped
+     */
     protected boolean skipNonceCheck(HttpServletRequest request) {
         if (!Method.GET.equals(request.getMethod())) {
             return false;
@@ -528,15 +573,29 @@ public class CsrfPreventionFilter extends CsrfPreventionFilterBase {
         return nonceCache;
     }
 
+    /**
+     * Wrapper for {@link HttpServletResponse} that adds CSRF nonces to encoded URLs.
+     */
     protected static class CsrfResponseWrapper extends HttpServletResponseWrapper {
 
+        private final HttpServletRequest request;
         private final String nonceRequestParameterName;
         private final String nonce;
         private final Collection<Predicate<String>> noNoncePatterns;
 
-        public CsrfResponseWrapper(HttpServletResponse response, String nonceRequestParameterName, String nonce,
-                Collection<Predicate<String>> noNoncePatterns) {
+        /**
+         * Construct a new CsrfResponseWrapper.
+         *
+         * @param request                   The associated request
+         * @param response                  The wrapped response
+         * @param nonceRequestParameterName The name of the nonce request parameter
+         * @param nonce                     The current nonce value
+         * @param noNoncePatterns           The patterns for URLs that should not have nonces added
+         */
+        public CsrfResponseWrapper(HttpServletRequest request, HttpServletResponse response,
+                String nonceRequestParameterName, String nonce, Collection<Predicate<String>> noNoncePatterns) {
             super(response);
+            this.request = request;
             this.nonceRequestParameterName = nonceRequestParameterName;
             this.nonce = nonce;
             this.noNoncePatterns = noNoncePatterns;
@@ -544,6 +603,10 @@ public class CsrfPreventionFilter extends CsrfPreventionFilterBase {
 
         @Override
         public String encodeRedirectURL(String url) {
+            if (url == null) {
+                return url;
+            }
+
             url = removeQueryParameters(url, nonceRequestParameterName);
 
             if (shouldAddNonce(url)) {
@@ -555,6 +618,10 @@ public class CsrfPreventionFilter extends CsrfPreventionFilterBase {
 
         @Override
         public String encodeURL(String url) {
+            if (url == null) {
+                return url;
+            }
+
             url = removeQueryParameters(url, nonceRequestParameterName);
 
             if (shouldAddNonce(url)) {
@@ -564,18 +631,27 @@ public class CsrfPreventionFilter extends CsrfPreventionFilterBase {
             }
         }
 
-        private boolean shouldAddNonce(String url) {
-            if (null == noNoncePatterns || noNoncePatterns.isEmpty()) {
-                return true;
-            }
-
-            for (Predicate<String> p : noNoncePatterns) {
-                if (p.test(url)) {
-                    return false;
+        private boolean shouldAddNonce(String location) {
+            if (null != noNoncePatterns && !noNoncePatterns.isEmpty()) {
+                for (Predicate<String> p : noNoncePatterns) {
+                    if (p.test(location)) {
+                        return false;
+                    }
                 }
             }
 
-            return true;
+            URL urlLocation;
+            try {
+                URI locationUri = new URI(location);
+                URI requestUri = new URI(request.getRequestURL().toString());
+                locationUri = requestUri.resolve(locationUri);
+                urlLocation = locationUri.toURL();
+            } catch (MalformedURLException | URISyntaxException | IllegalArgumentException e) {
+                // Invalid location - don't try and add nonce
+                return false;
+            }
+
+            return RequestUtil.isSameWebApplication(request, urlLocation);
         }
 
         /**
@@ -697,9 +773,26 @@ public class CsrfPreventionFilter extends CsrfPreventionFilterBase {
     }
 
 
+    /**
+     * Interface for a cache of nonces used for CSRF protection.
+     *
+     * @param <T> The type of nonce stored in the cache
+     */
     protected interface NonceCache<T> extends Serializable {
+        /**
+         * Add a nonce to the cache.
+         *
+         * @param nonce The nonce to add
+         */
         void add(T nonce);
 
+        /**
+         * Check if the cache contains the given nonce.
+         *
+         * @param nonce The nonce to check
+         *
+         * @return {@code true} if the nonce is in the cache
+         */
         boolean contains(T nonce);
     }
 
@@ -717,8 +810,16 @@ public class CsrfPreventionFilter extends CsrfPreventionFilterBase {
 
         // Although the internal implementation uses a Map, this cache
         // implementation is only concerned with the keys.
+        /**
+         * The internal cache map.
+         */
         private final Map<T,T> cache;
 
+        /**
+         * Construct a new LruCache.
+         *
+         * @param cacheSize The maximum number of entries in the cache
+         */
         public LruCache(final int cacheSize) {
             cache = new LinkedHashMap<>() {
                 @Serial

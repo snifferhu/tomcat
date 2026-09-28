@@ -67,8 +67,14 @@ public class McastService extends MembershipServiceBase implements MessageListen
     private int mcastSoTimeout;
     private int mcastTTL;
 
+    /**
+     * The payload for multicast messages.
+     */
     protected byte[] payload;
 
+    /**
+     * The domain for multicast messages.
+     */
     protected byte[] domain;
 
     /**
@@ -88,14 +94,17 @@ public class McastService extends MembershipServiceBase implements MessageListen
      * Sets the properties for the membership service.
      *
      * @param properties <br>
-     *                       All are required<br>
+     *                       All of the following are required before {@code start()} is called<br>
      *                       1. mcastPort - the port to listen to<BR>
      *                       2. mcastAddress - the mcast group address<BR>
-     *                       4. bindAddress - the bind address if any - only one that can be null<BR>
-     *                       5. memberDropTime - the time a member is gone before it is considered gone.<BR>
-     *                       6. mcastFrequency - the frequency of sending messages<BR>
-     *                       7. tcpListenPort - the port this member listens to<BR>
-     *                       8. tcpListenHost - the bind address of this member<BR>
+     *                       3. memberDropTime - the time a member is gone before it is considered gone.<BR>
+     *                       4. mcastFrequency - the frequency of sending messages<BR>
+     *                       5. tcpListenPort - the port this member listens to<BR>
+     *                       6. tcpListenHost - the bind address of this member<BR>
+     *                       7. tcpSecurePort - the secure port of this member<BR>
+     *                       8. udpListenPort - the UDP port of this member<BR>
+     *                       Optionally:<BR>
+     *                       mcastBindAddress - the multicast bind address, if any<BR>
      *
      * @exception java.lang.IllegalArgumentException if a property is missing.
      */
@@ -152,6 +161,10 @@ public class McastService extends MembershipServiceBase implements MessageListen
         }
     }
 
+    /**
+     * Set the multicast address.
+     * @param addr the address
+     */
     public void setAddress(String addr) {
         properties.setProperty("mcastAddress", addr);
     }
@@ -161,10 +174,18 @@ public class McastService extends MembershipServiceBase implements MessageListen
         return properties.getProperty("mcastAddress");
     }
 
+    /**
+     * Set the multicast bind address.
+     * @param bindaddr the bind address
+     */
     public void setMcastBindAddress(String bindaddr) {
         setBind(bindaddr);
     }
 
+    /**
+     * Set the bind address.
+     * @param bindaddr the bind address
+     */
     public void setBind(String bindaddr) {
         properties.setProperty("mcastBindAddress", bindaddr);
     }
@@ -174,10 +195,18 @@ public class McastService extends MembershipServiceBase implements MessageListen
         return properties.getProperty("mcastBindAddress");
     }
 
+    /**
+     * Set the multicast port.
+     * @param port the port
+     */
     public void setPort(int port) {
         properties.setProperty("mcastPort", String.valueOf(port));
     }
 
+    /**
+     * Set the recovery counter.
+     * @param recoveryCounter the recovery counter
+     */
     public void setRecoveryCounter(int recoveryCounter) {
         properties.setProperty("recoveryCounter", String.valueOf(recoveryCounter));
     }
@@ -191,6 +220,10 @@ public class McastService extends MembershipServiceBase implements MessageListen
         return -1;
     }
 
+    /**
+     * Set whether recovery is enabled.
+     * @param recoveryEnabled whether recovery is enabled
+     */
     public void setRecoveryEnabled(boolean recoveryEnabled) {
         properties.setProperty("recoveryEnabled", String.valueOf(recoveryEnabled));
     }
@@ -204,6 +237,10 @@ public class McastService extends MembershipServiceBase implements MessageListen
         return false;
     }
 
+    /**
+     * Set the recovery sleep time.
+     * @param recoverySleepTime the recovery sleep time
+     */
     public void setRecoverySleepTime(long recoverySleepTime) {
         properties.setProperty("recoverySleepTime", String.valueOf(recoverySleepTime));
     }
@@ -217,6 +254,10 @@ public class McastService extends MembershipServiceBase implements MessageListen
         return -1;
     }
 
+    /**
+     * Set whether local loopback is disabled.
+     * @param localLoopbackDisabled whether local loopback is disabled
+     */
     public void setLocalLoopbackDisabled(boolean localLoopbackDisabled) {
         properties.setProperty("localLoopbackDisabled", String.valueOf(localLoopbackDisabled));
     }
@@ -236,6 +277,10 @@ public class McastService extends MembershipServiceBase implements MessageListen
         return Integer.parseInt(p);
     }
 
+    /**
+     * Set the heartbeat frequency.
+     * @param time the frequency in milliseconds
+     */
     public void setFrequency(long time) {
         properties.setProperty("mcastFrequency", String.valueOf(time));
     }
@@ -246,10 +291,18 @@ public class McastService extends MembershipServiceBase implements MessageListen
         return Long.parseLong(p);
     }
 
+    /**
+     * Set the multicast drop time.
+     * @param time the drop time in milliseconds
+     */
     public void setMcastDropTime(long time) {
         setDropTime(time);
     }
 
+    /**
+     * Set the member drop time.
+     * @param time the drop time in milliseconds
+     */
     public void setDropTime(long time) {
         properties.setProperty("memberDropTime", String.valueOf(time));
     }
@@ -377,10 +430,17 @@ public class McastService extends MembershipServiceBase implements MessageListen
         }
     }
 
+    /**
+     * Set the message listener.
+     * @param listener the listener
+     */
     public void setMessageListener(MessageListener listener) {
         this.msglistener = listener;
     }
 
+    /**
+     * Remove the message listener.
+     */
     public void removeMessageListener() {
         this.msglistener = null;
     }
@@ -399,6 +459,7 @@ public class McastService extends MembershipServiceBase implements MessageListen
 
     @Override
     public void broadcast(ChannelMessage message) throws ChannelException {
+        McastServiceImpl impl = this.impl;
         if (impl == null || (impl.startLevel & Channel.MBR_TX_SEQ) != Channel.MBR_TX_SEQ) {
             throw new ChannelException(sm.getString("mcastService.noStart"));
         }
@@ -421,6 +482,10 @@ public class McastService extends MembershipServiceBase implements MessageListen
         return mcastSoTimeout;
     }
 
+    /**
+     * Set the socket timeout.
+     * @param mcastSoTimeout the timeout in milliseconds
+     */
     public void setSoTimeout(int mcastSoTimeout) {
         this.mcastSoTimeout = mcastSoTimeout;
         properties.setProperty("mcastSoTimeout", String.valueOf(mcastSoTimeout));
@@ -431,6 +496,10 @@ public class McastService extends MembershipServiceBase implements MessageListen
         return mcastTTL;
     }
 
+    /**
+     * Get the payload.
+     * @return the payload
+     */
     public byte[] getPayload() {
         return payload;
     }
@@ -440,6 +509,10 @@ public class McastService extends MembershipServiceBase implements MessageListen
         return domain;
     }
 
+    /**
+     * Set the TTL.
+     * @param mcastTTL the TTL value
+     */
     public void setTtl(int mcastTTL) {
         this.mcastTTL = mcastTTL;
         properties.setProperty("mcastTTL", String.valueOf(mcastTTL));
@@ -451,6 +524,7 @@ public class McastService extends MembershipServiceBase implements MessageListen
         if (localMember != null) {
             localMember.setPayload(payload);
             try {
+                McastServiceImpl impl = this.impl;
                 if (impl != null) {
                     impl.send(false);
                 }
@@ -466,6 +540,7 @@ public class McastService extends MembershipServiceBase implements MessageListen
         if (localMember != null) {
             localMember.setDomain(domain);
             try {
+                McastServiceImpl impl = this.impl;
                 if (impl != null) {
                     impl.send(false);
                 }
@@ -475,6 +550,10 @@ public class McastService extends MembershipServiceBase implements MessageListen
         }
     }
 
+    /**
+     * Set the domain from a string.
+     * @param domain the domain string
+     */
     public void setDomain(String domain) {
         if (domain == null) {
             return;
@@ -491,6 +570,10 @@ public class McastService extends MembershipServiceBase implements MessageListen
         return impl;
     }
 
+    /**
+     * Set default property values.
+     * @param properties the properties
+     */
     protected void setDefaults(Properties properties) {
         // default values
         if (properties.getProperty("mcastPort") == null) {

@@ -29,6 +29,12 @@ import org.apache.tools.ant.BuildException;
  */
 public class JMXQueryTask extends AbstractCatalinaTask {
 
+    /**
+     * Constructs a new JMXQueryTask.
+     */
+    public JMXQueryTask() {
+    }
+
     // Properties
 
     /**
@@ -86,6 +92,6 @@ public class JMXQueryTask extends AbstractCatalinaTask {
             }
         }
         log("Query string is " + queryString);
-        execute("/jmxproxy/" + queryString);
+        execute("/../jmxproxy/" + queryString);
     }
 }

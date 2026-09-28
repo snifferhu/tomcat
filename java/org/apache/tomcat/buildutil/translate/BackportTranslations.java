@@ -25,11 +25,25 @@ import java.util.Properties;
  */
 public class BackportTranslations extends BackportBase {
 
+    /**
+     * Entry point for the translations back-port tool.
+     *
+     * @param args command line arguments; a single argument specifying the target directory
+     *
+     * @throws IOException if an I/O error occurs
+     */
     public static void main(String... args) throws IOException {
         BackportTranslations backport = new BackportTranslations(args);
         backport.execute();
     }
 
+    /**
+     * Constructs a BackportTranslations instance.
+     *
+     * @param args command line arguments; a single argument specifying the target directory
+     *
+     * @throws IOException if an I/O error occurs
+     */
     protected BackportTranslations(String[] args) throws IOException {
         super(args);
     }
@@ -44,6 +58,10 @@ public class BackportTranslations extends BackportBase {
             }
 
             Properties sourceTranslated = sourceTranslations.get(language);
+            if (sourceTranslated == null) {
+                sourceTranslated = new Properties();
+                sourceTranslations.put(language, sourceTranslated);
+            }
             Properties targetTranslated = targetTranslations.get(language);
             if (targetTranslated == null) {
                 targetTranslated = new Properties();
@@ -52,7 +70,6 @@ public class BackportTranslations extends BackportBase {
 
             for (Object key : targetEnglish.keySet()) {
                 if (sourceTranslated.containsKey(key) && targetEnglish.get(key).equals(sourceEnglish.get(key))) {
-
                     targetTranslated.put(key, sourceTranslated.get(key));
                 }
             }

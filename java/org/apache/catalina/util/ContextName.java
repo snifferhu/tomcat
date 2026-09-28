@@ -19,11 +19,16 @@ package org.apache.catalina.util;
 import java.util.Locale;
 import java.util.Objects;
 
+import org.apache.tomcat.util.http.RequestUtil;
+
 /**
  * Utility class to manage context names so there is one place where the conversions between baseName, path and version
  * take place.
  */
 public final class ContextName {
+    /**
+     * The name used for the root context.
+     */
     public static final String ROOT_NAME = "ROOT";
     private static final String VERSION_MARKER = "##";
     private static final char FWD_SLASH_REPLACEMENT = '#';
@@ -95,7 +100,9 @@ public final class ContextName {
     /**
      * Construct an instance from a path and version.
      *
-     * @param path    Context path to use
+     * @param path    Context path to use, which must not contain a version marker. May be <code>null</code>,
+     *                 <code>""</code>, <code>"/"</code> or <code>"/ROOT"</code> to represent the root context. Any
+     *                 other value must start with <code>"/"</code>
      * @param version Context version to use
      */
     public ContextName(String path, String version) {
@@ -130,22 +137,47 @@ public final class ContextName {
         this.baseName = tmp.toString();
     }
 
+    /**
+     * Returns the base name of this context.
+     *
+     * @return the base name
+     */
     public String getBaseName() {
         return baseName;
     }
 
+    /**
+     * Returns the path of this context.
+     *
+     * @return the context path
+     */
     public String getPath() {
         return path;
     }
 
+    /**
+     * Returns the version of this context.
+     *
+     * @return the context version
+     */
     public String getVersion() {
         return version;
     }
 
+    /**
+     * Returns the name of this context.
+     *
+     * @return the context name
+     */
     public String getName() {
         return name;
     }
 
+    /**
+     * Returns the display name of this context.
+     *
+     * @return the display name
+     */
     public String getDisplayName() {
         StringBuilder tmp = new StringBuilder();
         if ("".equals(path)) {
@@ -165,6 +197,23 @@ public final class ContextName {
     @Override
     public String toString() {
         return getDisplayName();
+    }
+
+
+    /**
+     * Checks if the path for this instance is valid.
+     *
+     * @return {@code true} if the path given/calculated for this instance is valid, otherwise {@code false}
+     */
+    public boolean isPathValid() {
+        // No need to test for null since path can never be null (see constructors)
+        //
+        // Therefore, just need to check:
+        // - empty or start with /
+        // - normalized and no attempt to escape the root
+        //
+        // Note: Normalize check on empty path would fail
+        return path.isEmpty() || (path.startsWith("/") && path.equals(RequestUtil.normalize(path)));
     }
 
 

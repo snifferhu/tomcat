@@ -25,30 +25,56 @@ import java.util.concurrent.TimeUnit;
 import org.apache.tomcat.util.res.StringManager;
 
 /**
- * As task queue specifically designed to run with a thread pool executor. The task queue is optimised to properly
- * utilize threads within a thread pool executor. If you use a normal queue, the executor will spawn threads when there
- * are idle threads and you won't be able to force items onto the queue itself.
+ * A task queue specifically designed to run with a thread pool executor. The task queue is optimised to properly
+ * utilize threads within a thread pool executor. A normal queue causes the executor to queue tasks first and only
+ * create new threads once the queue is full. This queue instead refuses to queue a task while all existing threads
+ * are busy and the pool size is below its maximum, so the executor creates a new thread for the task instead. It also
+ * supports forcing items onto the queue via {@link #force(Runnable)}.
  */
 public class TaskQueue extends LinkedBlockingQueue<Runnable> implements RetryableQueue<Runnable> {
 
     @Serial
     private static final long serialVersionUID = 1L;
+    /**
+     * The string manager for this package.
+     */
     protected static final StringManager sm = StringManager.getManager(TaskQueue.class);
 
+    /**
+     * The parent thread pool executor.
+     */
     private transient volatile ThreadPoolExecutor parent = null;
 
+    /**
+     * Constructs a new TaskQueue with default capacity.
+     */
     public TaskQueue() {
         super();
     }
 
+    /**
+     * Constructs a new TaskQueue with the given capacity.
+     *
+     * @param capacity the queue capacity
+     */
     public TaskQueue(int capacity) {
         super(capacity);
     }
 
+    /**
+     * Constructs a new TaskQueue containing the elements in the given collection.
+     *
+     * @param c the collection of initial elements
+     */
     public TaskQueue(Collection<? extends Runnable> c) {
         super(c);
     }
 
+    /**
+     * Sets the parent thread pool executor for this queue.
+     *
+     * @param tp the parent executor
+     */
     public void setParent(ThreadPoolExecutor tp) {
         parent = tp;
     }
@@ -86,6 +112,18 @@ public class TaskQueue extends LinkedBlockingQueue<Runnable> implements Retryabl
     }
 
 
+    /**
+     * Removes and returns the head of this queue, waiting up to the specified wait time if necessary for an element to
+     * become available.
+     *
+     * @param timeout the maximum time to wait
+     * @param unit    the time unit of the timeout argument
+     *
+     * @return the head of this queue, or {@code null} if the specified waiting time elapses before an element becomes
+     *             available
+     * @throws InterruptedException if interrupted while waiting
+     * @throws StopPooledThreadException if the current thread is due to be stopped by the parent executor
+     */
     @Override
     public Runnable poll(long timeout, TimeUnit unit) throws InterruptedException {
         Runnable runnable = super.poll(timeout, unit);

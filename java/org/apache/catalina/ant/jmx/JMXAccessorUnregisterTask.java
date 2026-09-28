@@ -24,7 +24,7 @@ import org.apache.tools.ant.BuildException;
 /**
  * unregister an MBean at <em>JMX</em> JSR 160 MBeans Server.
  * <ul>
- * <li>unregister Mbeans</li>
+ * <li>unregister MBean</li>
  * </ul>
  * <p>
  * Examples: <br>
@@ -37,11 +37,12 @@ import org.apache.tools.ant.BuildException;
  *           name="Catalina:type=MBeanFactory" /&gt;
  * </pre>
  * <p>
- * <b>WARNING</b>Not all Tomcat MBeans can successfully unregister remotely. The mbean unregistration don't remove
+ * <b>WARNING</b>Not all Tomcat MBeans can successfully unregister remotely. The MBean unregistration does not remove
  * valves, realm, .. from parent class. Please, use the MBeanFactory operation to remove valves and realms.
  * </p>
  * <p>
- * First call to a remote MBeanserver save the JMXConnection a reference <em>jmx.server</em>
+ * As with the other JMX accessor tasks, the first call to a remote MBean server saves the JMXConnection under the
+ * reference <em>jmx.server</em> as a side effect of the shared connection handling in the parent class.
  * </p>
  * These tasks require Ant 1.6 or later interface.
  *
@@ -49,15 +50,23 @@ import org.apache.tools.ant.BuildException;
  */
 public class JMXAccessorUnregisterTask extends JMXAccessorTask {
 
+    /**
+     * Constructs a new JMXAccessorUnregisterTask.
+     */
+    public JMXAccessorUnregisterTask() {
+    }
+
     // ------------------------------------------------------ protected Methods
 
     @Override
     public String jmxExecute(MBeanServerConnection jmxServerConnection) throws Exception {
-
         if (getName() == null) {
             throw new BuildException("Must specify a 'name'");
         }
-        return jmxUuregister(jmxServerConnection, getName());
+        if (jmxServerConnection == null) {
+            throw new BuildException("Must open a connection!");
+        }
+        return jmxUnregister(jmxServerConnection, getName());
     }
 
 
@@ -71,7 +80,7 @@ public class JMXAccessorUnregisterTask extends JMXAccessorTask {
      *
      * @throws Exception An error occurred
      */
-    protected String jmxUuregister(MBeanServerConnection jmxServerConnection, String name) throws Exception {
+    protected String jmxUnregister(MBeanServerConnection jmxServerConnection, String name) throws Exception {
         if (isEcho()) {
             handleOutput("Unregister MBean " + name);
         }

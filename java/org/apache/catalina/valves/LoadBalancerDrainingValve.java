@@ -70,19 +70,22 @@ public class LoadBalancerDrainingValve extends ValveBase {
     private int _redirectStatusCode = HttpServletResponse.SC_TEMPORARY_REDIRECT;
 
     /**
-     * The name of the cookie which can be set to ignore the "draining" action of this Filter. This will allow a client
+     * The name of the cookie which can be set to ignore the "draining" action of this Valve. This will allow a client
      * to contact the server without being re-balanced to another server. The expected cookie value can be set in the
      * {@link #_ignoreCookieValue}. The cookie name and value must match to avoid being re-balanced.
      */
     private String _ignoreCookieName;
 
     /**
-     * The value of the cookie which can be set to ignore the "draining" action of this Filter. This will allow a client
+     * The value of the cookie which can be set to ignore the "draining" action of this Valve. This will allow a client
      * to contact the server without being re-balanced to another server. The expected cookie name can be set in the
      * {@link #_ignoreCookieName}. The cookie name and value must match to avoid being re-balanced.
      */
     private String _ignoreCookieValue;
 
+    /**
+     * Default constructor.
+     */
     public LoadBalancerDrainingValve() {
         super(true); // Supports async
     }
@@ -208,11 +211,11 @@ public class LoadBalancerDrainingValve extends ValveBase {
                 response.addCookie(sessionCookie);
             }
 
+            String uri = collapseLeadingSlashes(request.getRequestURI());
             // Re-write the URI if it contains a ;jsessionid parameter
-            String uri = request.getRequestURI();
             String sessionURIParamName = SessionConfig.getSessionUriParamName(request.getContext());
             if (uri.contains(";" + sessionURIParamName + "=")) {
-                uri = uri.replaceFirst(";" + sessionURIParamName + "=[^&?]*", "");
+                uri = uri.replaceFirst(";" + sessionURIParamName + "=[^;/]*", "");
             }
 
             String queryString = request.getQueryString();
@@ -223,10 +226,32 @@ public class LoadBalancerDrainingValve extends ValveBase {
 
             // NOTE: Do not call response.encodeRedirectURL or the bad
             // sessionid will be restored
-            response.setHeader("Location", uri);
-            response.setStatus(_redirectStatusCode);
+            response.sendRedirect(uri, _redirectStatusCode);
         } else {
             getNext().invoke(request, response);
         }
+    }
+
+    private static String collapseLeadingSlashes(String s) {
+        final int len = s.length();
+        int i = 0;
+
+        // Find the last consecutive / character
+        while (i < len && s.charAt(i) == '/') {
+            i++;
+        }
+
+        // No leading slashes
+        if (i == 0) {
+            return s;
+        }
+
+        // Nothing but slashes
+        if (i == len) {
+            return "/";
+        }
+
+        // Multiple; remove all but one
+        return s.substring(i - 1);
     }
 }

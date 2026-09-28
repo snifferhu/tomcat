@@ -27,7 +27,7 @@ import org.xml.sax.Attributes;
  * </p>
  * <ul>
  * <li>from an attribute of the current element See {@link #CallParamRule(int paramIndex, String attributeName)}
- * <li>from current the element body See {@link #CallParamRule(int paramIndex)}
+ * <li>from the element body See {@link #CallParamRule(int paramIndex)}
  * </ul>
  */
 public class CallParamRule extends Rule {
@@ -131,8 +131,10 @@ public class CallParamRule extends Rule {
         // if this CallParamRule is reused in subsequent nesting.
 
         if (param != null) {
-            Object[] parameters = (Object[]) digester.peekParams();
-            parameters[paramIndex] = param;
+            Object obj = digester.peekParams();
+            if (obj instanceof Object[] parameters && parameters.length > paramIndex) {
+                parameters[paramIndex] = param;
+            }
         }
     }
 
@@ -167,8 +169,10 @@ public class CallParamRule extends Rule {
     public void end(String namespace, String name) {
         if (bodyTextStack != null && !bodyTextStack.empty()) {
             // what we do now is push one parameter onto the top set of parameters
-            Object[] parameters = (Object[]) digester.peekParams();
-            parameters[paramIndex] = bodyTextStack.pop();
+            Object obj = digester.peekParams();
+            if (obj instanceof Object[] parameters && parameters.length > paramIndex) {
+                parameters[paramIndex] = bodyTextStack.pop();
+            }
         }
     }
 

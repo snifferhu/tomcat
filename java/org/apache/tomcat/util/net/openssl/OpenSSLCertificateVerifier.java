@@ -23,8 +23,12 @@ import javax.net.ssl.X509TrustManager;
 import org.apache.juli.logging.Log;
 import org.apache.juli.logging.LogFactory;
 import org.apache.tomcat.jni.CertificateVerifier;
+import org.apache.tomcat.jni.SSL;
 import org.apache.tomcat.util.res.StringManager;
 
+/**
+ * Certificate verifier that wraps an X509TrustManager for OpenSSL.
+ */
 public class OpenSSLCertificateVerifier implements CertificateVerifier {
 
     private static final Log log = LogFactory.getLog(OpenSSLCertificateVerifier.class);
@@ -32,6 +36,11 @@ public class OpenSSLCertificateVerifier implements CertificateVerifier {
 
     private final X509TrustManager x509TrustManager;
 
+    /**
+     * Constructs a new OpenSSLCertificateVerifier with the given trust manager.
+     *
+     * @param x509TrustManager The X509 trust manager to use for verification
+     */
     public OpenSSLCertificateVerifier(X509TrustManager x509TrustManager) {
         this.x509TrustManager = x509TrustManager;
     }
@@ -41,6 +50,7 @@ public class OpenSSLCertificateVerifier implements CertificateVerifier {
         X509Certificate[] peerCerts = certificates(chain);
         try {
             x509TrustManager.checkClientTrusted(peerCerts, auth);
+            SSL.markPostHandshakeAuthComplete(ssl);
             return true;
         } catch (Exception e) {
             if (log.isDebugEnabled()) {

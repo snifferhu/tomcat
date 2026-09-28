@@ -36,6 +36,9 @@ import java.util.Arrays;
 import java.util.Base64;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 import javax.net.ssl.KeyManager;
 import javax.net.ssl.SSLEngine;
@@ -52,6 +55,7 @@ import static org.apache.tomcat.util.openssl.openssl_h_Compatibility.*;
 import static org.apache.tomcat.util.openssl.openssl_h_Macros.*;
 import org.apache.juli.logging.Log;
 import org.apache.juli.logging.LogFactory;
+import org.apache.tomcat.util.ExceptionUtils;
 import org.apache.tomcat.util.file.ConfigFileLoader;
 import org.apache.tomcat.util.file.ConfigurationSource.Resource;
 import org.apache.tomcat.util.net.Constants;
@@ -59,9 +63,11 @@ import org.apache.tomcat.util.net.SSLHostConfig;
 import org.apache.tomcat.util.net.SSLHostConfig.CertificateVerification;
 import org.apache.tomcat.util.net.SSLHostConfigCertificate;
 import org.apache.tomcat.util.net.SSLHostConfigCertificate.Type;
+import org.apache.tomcat.util.net.SSLHostConfigPreSharedKey;
 import org.apache.tomcat.util.net.SSLUtilBase;
 import org.apache.tomcat.util.net.openssl.OpenSSLConf;
 import org.apache.tomcat.util.net.openssl.OpenSSLConfCmd;
+import org.apache.tomcat.util.net.openssl.OpenSSLPreSharedKeySelector;
 import org.apache.tomcat.util.net.openssl.OpenSSLStatus;
 import org.apache.tomcat.util.net.openssl.OpenSSLUtil;
 import org.apache.tomcat.util.net.openssl.ciphers.Group;
@@ -69,6 +75,10 @@ import org.apache.tomcat.util.openssl.SSL_CTX_set_alpn_select_cb$cb;
 import org.apache.tomcat.util.openssl.SSL_CTX_set_cert_verify_callback$cb;
 import org.apache.tomcat.util.openssl.SSL_CTX_set_tmp_dh_callback$dh;
 import org.apache.tomcat.util.openssl.SSL_CTX_set_verify$callback;
+import org.apache.tomcat.util.openssl.SSL_psk_client_cb_func;
+import org.apache.tomcat.util.openssl.SSL_psk_find_session_cb_func;
+import org.apache.tomcat.util.openssl.SSL_psk_server_cb_func;
+import org.apache.tomcat.util.openssl.SSL_psk_use_session_cb_func;
 import org.apache.tomcat.util.openssl.openssl_h;
 import org.apache.tomcat.util.openssl.openssl_h_Compatibility;
 import org.apache.tomcat.util.openssl.pem_password_cb;
@@ -96,7 +106,7 @@ public class OpenSSLContext implements org.apache.tomcat.util.net.SSLContext {
     static final int OPTIONAL_NO_CA = 3;
 
     private static final String BEGIN_KEY = "-----BEGIN PRIVATE KEY-----\n";
-    private static final Object END_KEY = "\n-----END PRIVATE KEY-----";
+    private static final String END_KEY = "\n-----END PRIVATE KEY-----";
 
     private static final byte[] HTTP_11_PROTOCOL = new byte[] { 'h', 't', 't', 'p', '/', '1', '.', '1' };
 
@@ -113,6 +123,7 @@ public class OpenSSLContext implements org.apache.tomcat.util.net.SSLContext {
 
     private final SSLHostConfig sslHostConfig;
     private final SSLHostConfigCertificate certificate;
+    private final boolean clientMode;
     private final boolean alpn;
     private final int minTlsVersion;
     private final int maxTlsVersion;
@@ -123,6 +134,10 @@ public class OpenSSLContext implements org.apache.tomcat.util.net.SSLContext {
     private boolean initialized = false;
 
     private boolean noOcspCheck = false;
+    private boolean ocspSoftFail = true;
+    // 15s default - same as JSSE
+    private int ocspTimeout = 15000;
+    private int ocspVerifyFlags = 0;
     private X509TrustManager x509TrustManager;
 
     private final ContextState state;
@@ -145,7 +160,11 @@ public class OpenSSLContext implements org.apache.tomcat.util.net.SSLContext {
     }
 
     public OpenSSLContext(SSLHostConfigCertificate certificate, List<String> negotiableProtocols) throws SSLException {
+        this(certificate, negotiableProtocols, false);
+    }
 
+    public OpenSSLContext(SSLHostConfigCertificate certificate, List<String> negotiableProtocols, boolean clientMode)
+            throws SSLException {
         // Check that OpenSSL was initialized
         if (!OpenSSLStatus.isInitialized()) {
             try {
@@ -157,6 +176,7 @@ public class OpenSSLContext implements org.apache.tomcat.util.net.SSLContext {
 
         this.sslHostConfig = certificate.getSSLHostConfig();
         this.certificate = certificate;
+        this.clientMode = clientMode;
         contextArena = Arena.ofAuto();
 
         MemorySegment sslCtx = MemorySegment.NULL;
@@ -183,14 +203,12 @@ public class OpenSSLContext implements org.apache.tomcat.util.net.SSLContext {
             }
 
             // SSL protocol
-            sslCtx = SSL_CTX_new(TLS_server_method());
+            sslCtx = SSL_CTX_new(clientMode ? TLS_client_method() : TLS_server_method());
 
             int protocol = SSL_PROTOCOL_NONE;
             for (String enabledProtocol : sslHostConfig.getEnabledProtocols()) {
                 if (Constants.SSL_PROTO_SSLv2Hello.equalsIgnoreCase(enabledProtocol)) {
                     // NO-OP. OpenSSL always supports SSLv2Hello
-                } else if (Constants.SSL_PROTO_SSLv2.equalsIgnoreCase(enabledProtocol)) {
-                    protocol |= SSL_PROTOCOL_SSLV2;
                 } else if (Constants.SSL_PROTO_SSLv3.equalsIgnoreCase(enabledProtocol)) {
                     protocol |= SSL_PROTOCOL_SSLV3;
                 } else if (Constants.SSL_PROTO_TLSv1.equalsIgnoreCase(enabledProtocol)) {
@@ -263,8 +281,8 @@ public class OpenSSLContext implements org.apache.tomcat.util.net.SSLContext {
 
             // Set server groups
             // Note: It is also possible to override setSSLParameters in OpenSSLEngine to set the final
-            //  list of groups per connection, but this is less efficient than setting the configured
-            //  group list on the SSL context and letting OpenSSL figure it out.
+            // list of groups per connection, but this is less efficient than setting the configured
+            // group list on the SSL context and letting OpenSSL figure it out.
             if (sslHostConfig.getGroupList() != null) {
                 StringBuilder sb = new StringBuilder();
                 boolean first = true;
@@ -288,7 +306,11 @@ public class OpenSSLContext implements org.apache.tomcat.util.net.SSLContext {
                 alpn = true;
                 negotiableProtocolsBytes = new ArrayList<>(negotiableProtocols.size() + 1);
                 for (String negotiableProtocol : negotiableProtocols) {
-                    negotiableProtocolsBytes.add(negotiableProtocol.getBytes(StandardCharsets.ISO_8859_1));
+                    byte[] negotiableProtocolBytes = negotiableProtocol.getBytes(StandardCharsets.UTF_8);
+                    if (negotiableProtocolBytes.length > 255) {
+                        throw new IllegalArgumentException(sm.getString("openssl.alpn.tooLong", negotiableProtocol));
+                    }
+                    negotiableProtocolsBytes.add(negotiableProtocolBytes);
                 }
                 negotiableProtocolsBytes.add(HTTP_11_PROTOCOL);
             } else {
@@ -353,7 +375,13 @@ public class OpenSSLContext implements org.apache.tomcat.util.net.SSLContext {
                 log.trace(sm.getString("opensslconf.checkCommand", name, value));
             }
             try (var localArena = Arena.ofConfined()) {
-                if (name.equals("NO_OCSP_CHECK")) {
+                if (name.equals(OpenSSLConfCmd.NO_OCSP_CHECK)) {
+                    ok = true;
+                } else if (name.equals(OpenSSLConfCmd.OCSP_SOFT_FAIL)) {
+                    ok = true;
+                } else if (name.equals(OpenSSLConfCmd.OCSP_TIMEOUT)) {
+                    ok = true;
+                } else if (name.equals(OpenSSLConfCmd.OCSP_VERIFY_FLAGS)) {
                     ok = true;
                 } else {
                     int code = SSL_CONF_cmd_value_type(state.confCtx, localArena.allocateFrom(name));
@@ -422,8 +450,17 @@ public class OpenSSLContext implements org.apache.tomcat.util.net.SSLContext {
                 log.trace(sm.getString("opensslconf.applyCommand", name, value));
             }
             try (var localArena = Arena.ofConfined()) {
-                if (name.equals("NO_OCSP_CHECK")) {
-                    noOcspCheck = Boolean.parseBoolean(value);
+                if (name.equals(OpenSSLConfCmd.NO_OCSP_CHECK)) {
+                    // Ignore - Tomcat internal - set directly
+                    rc = 1;
+                } else if (name.equals(OpenSSLConfCmd.OCSP_SOFT_FAIL)) {
+                    // Ignore - Tomcat internal - set directly
+                    rc = 1;
+                } else if (name.equals(OpenSSLConfCmd.OCSP_TIMEOUT)) {
+                    // Ignore - Tomcat internal - set directly
+                    rc = 1;
+                } else if (name.equals(OpenSSLConfCmd.OCSP_VERIFY_FLAGS)) {
+                    // Ignore - Tomcat internal - set directly
                     rc = 1;
                 } else {
                     rc = SSL_CONF_cmd(state.confCtx, localArena.allocateFrom(name), localArena.allocateFrom(value));
@@ -471,7 +508,7 @@ public class OpenSSLContext implements org.apache.tomcat.util.net.SSLContext {
             log.warn(sm.getString("openssl.doubleInit"));
             return;
         }
-        boolean success;
+        boolean success = true;
         Exception cause = null;
         try (var localArena = Arena.ofConfined()) {
             if (sslHostConfig.getInsecureRenegotiation()) {
@@ -515,14 +552,15 @@ public class OpenSSLContext implements org.apache.tomcat.util.net.SSLContext {
             }
             if (maxTlsVersion >= TLS1_3_VERSION()) {
                 try {
-                    if (SSL_CTX_set_ciphersuites(state.sslCtx, localArena.allocateFrom(sslHostConfig.getCiphers())) <= 0) {
-                        tls13Warning = sm.getString("engine.failedCipherSuite", sslHostConfig.getCiphers());
+                    if (SSL_CTX_set_ciphersuites(state.sslCtx,
+                            localArena.allocateFrom(sslHostConfig.getCipherSuites())) <= 0) {
+                        tls13Warning = sm.getString("engine.failedCipherSuite", sslHostConfig.getCipherSuites());
                     } else {
                         ciphersSet = true;
                     }
                 } catch (NoClassDefFoundError | UnsatisfiedLinkError e) {
                     // Ignore unavailable TLS 1.3 call, which might be compiled out sometimes on LibreSSL
-                    tls13Warning = sm.getString("engine.failedCipherSuite", sslHostConfig.getCiphers());
+                    tls13Warning = sm.getString("engine.failedCipherSuite", sslHostConfig.getCipherSuites());
                 }
             }
             if (!ciphersSet) {
@@ -534,12 +572,14 @@ public class OpenSSLContext implements org.apache.tomcat.util.net.SSLContext {
                 }
             }
 
-            // If there is no certificate file must be using a KeyStore so a KeyManager is required.
-            // If there is a certificate file a KeyManager is helpful but not strictly necessary.
-            certificate.setCertificateKeyManager(
-                    OpenSSLUtil.chooseKeyManager(kms, certificate.getCertificateFile() == null));
+            if (!sslHostConfig.isPreSharedKeyOnly()) {
+                // If there is no certificate file must be using a KeyStore so a KeyManager is required.
+                // If there is a certificate file a KeyManager is helpful but not strictly necessary.
+                certificate.setCertificateKeyManager(
+                        OpenSSLUtil.chooseKeyManager(kms, certificate.getCertificateFile() == null));
 
-            success = addCertificate(certificate, localArena);
+                success = addCertificate(certificate, localArena);
+            }
 
             // Client certificate verification
             int value = switch (sslHostConfig.getCertificateVerification()) {
@@ -549,9 +589,12 @@ public class OpenSSLContext implements org.apache.tomcat.util.net.SSLContext {
                 case REQUIRED -> SSL_VERIFY_FAIL_IF_NO_PEER_CERT();
             };
 
-            if (value == OPTIONAL_NO_CA) {
+            if (value == OPTIONAL_NO_CA || !sslHostConfig.getOcspEnabled()) {
                 noOcspCheck = true;
             }
+            ocspSoftFail = sslHostConfig.getOcspSoftFail();
+            ocspTimeout = sslHostConfig.getOcspTimeout();
+            ocspVerifyFlags = sslHostConfig.getOcspVerifyFlags();
 
             // Set int verify_callback(int preverify_ok, X509_STORE_CTX *x509_ctx) callback
             SSL_CTX_set_verify(state.sslCtx, value,
@@ -579,6 +622,7 @@ public class OpenSSLContext implements org.apache.tomcat.util.net.SSLContext {
                     } else if (log.isDebugEnabled()) {
                         log.debug(sm.getString("openssl.addedClientCaCert", caCert.toString()));
                     }
+                    X509_free(x509CACert);
                 }
             } else if (sslHostConfig.getCaCertificateFile() != null || sslHostConfig.getCaCertificatePath() != null) {
                 // Client certificate verification based on trusted CA files and dirs
@@ -590,7 +634,8 @@ public class OpenSSLContext implements org.apache.tomcat.util.net.SSLContext {
                         localArena
                                 .allocateFrom(SSLHostConfig.adjustRelativePath(sslHostConfig.getCaCertificatePath())) :
                         MemorySegment.NULL;
-                if (SSL_CTX_load_verify_locations(state.sslCtx, caCertificateFileNative, caCertificatePathNative) <= 0) {
+                if (SSL_CTX_load_verify_locations(state.sslCtx, caCertificateFileNative,
+                        caCertificatePathNative) <= 0) {
                     logLastError("openssl.errorConfiguringLocations");
                 } else {
                     var caCerts = SSL_CTX_get_client_CA_list(state.sslCtx);
@@ -608,6 +653,38 @@ public class OpenSSLContext implements org.apache.tomcat.util.net.SSLContext {
                     }
                     if (MemorySegment.NULL.equals(caCerts)) {
                         log.warn(sm.getString("openssl.noCACerts"));
+                    }
+                }
+            }
+
+            Set<SSLHostConfigPreSharedKey> psks = sslHostConfig.getPreSharedKeys();
+            if (!psks.isEmpty()) {
+                OpenSSLPreSharedKeySelector selector = new OpenSSLPreSharedKeySelector(psks);
+                for (String protocol : sslHostConfig.getEnabledProtocols()) {
+                    if (Constants.SSL_PROTO_TLSv1_2.equals(protocol) && clientMode) {
+                        if (openssl_h_Compatibility.LIBRESSL) {
+                            throw new SSLException(sm.getString("openssl.pskTls12Unsupported"));
+                        }
+                        SSL_CTX_set_psk_client_callback(state.sslCtx,
+                                SSL_psk_client_cb_func.allocate(new PskClientCallback(selector), contextArena));
+                    } else if (Constants.SSL_PROTO_TLSv1_3.equals(protocol) && clientMode) {
+                        if (openssl_h_Compatibility.LIBRESSL || openssl_h_Compatibility.BORINGSSL) {
+                            throw new SSLException(sm.getString("openssl.pskTls13Unsupported"));
+                        }
+                        SSL_CTX_set_psk_use_session_callback(state.sslCtx, SSL_psk_use_session_cb_func
+                                .allocate(new PskUseSessionCallback(selector, contextArena), contextArena));
+                    } else if (Constants.SSL_PROTO_TLSv1_2.equals(protocol) && !clientMode) {
+                        if (openssl_h_Compatibility.LIBRESSL) {
+                            throw new SSLException(sm.getString("openssl.pskTls12Unsupported"));
+                        }
+                        SSL_CTX_set_psk_server_callback(state.sslCtx, SSL_psk_server_cb_func
+                                .allocate(new PskServerCallback(selector), contextArena));
+                    } else if (Constants.SSL_PROTO_TLSv1_3.equals(protocol) && !clientMode) {
+                        if (openssl_h_Compatibility.LIBRESSL || openssl_h_Compatibility.BORINGSSL) {
+                            throw new SSLException(sm.getString("openssl.pskTls13Unsupported"));
+                        }
+                        SSL_CTX_set_psk_find_session_callback(state.sslCtx, SSL_psk_find_session_cb_func
+                                .allocate(new PskFindSessionCallback(selector), contextArena));
                     }
                 }
             }
@@ -665,9 +742,6 @@ public class OpenSSLContext implements org.apache.tomcat.util.net.SSLContext {
                 }
                 if ((opts & SSL_OP_NO_TLSv1_3()) == 0) {
                     enabled.add(Constants.SSL_PROTO_TLSv1_3);
-                }
-                if ((opts & SSL_OP_NO_SSLv2()) == 0) {
-                    enabled.add(Constants.SSL_PROTO_SSLv2);
                 }
                 if ((opts & SSL_OP_NO_SSLv3()) == 0) {
                     enabled.add(Constants.SSL_PROTO_SSLv3);
@@ -742,30 +816,239 @@ public class OpenSSLContext implements org.apache.tomcat.util.net.SSLContext {
                 MemorySegment inSeg = in.reinterpret(inlen, localArena, null);
                 byte[] advertisedBytes = inSeg.toArray(ValueLayout.JAVA_BYTE);
                 for (byte[] negotiableProtocolBytes : negotiableProtocols) {
-                    for (int i = 0; i <= advertisedBytes.length - negotiableProtocolBytes.length; i++) {
-                        if (advertisedBytes[i] == negotiableProtocolBytes[0]) {
-                            for (int j = 0; j < negotiableProtocolBytes.length; j++) {
-                                if (advertisedBytes[i + j] == negotiableProtocolBytes[j]) {
-                                    if (j == negotiableProtocolBytes.length - 1) {
-                                        // Match
-                                        MemorySegment outSeg =
-                                                out.reinterpret(ValueLayout.ADDRESS.byteSize(), localArena, null);
-                                        outSeg.set(ValueLayout.ADDRESS, 0, inSeg.asSlice(i));
-                                        MemorySegment outlenSeg =
-                                                outlen.reinterpret(ValueLayout.JAVA_BYTE.byteSize(), localArena, null);
-                                        outlenSeg.set(ValueLayout.JAVA_BYTE, 0, (byte) negotiableProtocolBytes.length);
-                                        return SSL_TLSEXT_ERR_OK();
-                                    }
-                                } else {
-                                    break;
-                                }
-                            }
+                    int protocolStart = 0;
+                    while (protocolStart < advertisedBytes.length) {
+                        int protocolLength = advertisedBytes[protocolStart] & 0xFF;
+                        protocolStart++;
+                        if (protocolLength == 0 || protocolLength > advertisedBytes.length - protocolStart) {
+                            return SSL_TLSEXT_ERR_NOACK();
                         }
+                        if (Arrays.equals(advertisedBytes, protocolStart, protocolStart + protocolLength,
+                                negotiableProtocolBytes, 0, negotiableProtocolBytes.length)) {
+                            MemorySegment outSeg =
+                                    out.reinterpret(ValueLayout.ADDRESS.byteSize(), localArena, null);
+                            outSeg.set(ValueLayout.ADDRESS, 0, inSeg.asSlice(protocolStart));
+                            MemorySegment outlenSeg =
+                                    outlen.reinterpret(ValueLayout.JAVA_BYTE.byteSize(), localArena, null);
+                            outlenSeg.set(ValueLayout.JAVA_BYTE, 0, (byte) negotiableProtocolBytes.length);
+                            return SSL_TLSEXT_ERR_OK();
+                        }
+                        protocolStart += protocolLength;
                     }
                 }
             }
             return SSL_TLSEXT_ERR_NOACK();
         }
+    }
+
+    private static class PskServerCallback implements SSL_psk_server_cb_func.Function {
+
+        private final OpenSSLPreSharedKeySelector selector;
+
+        PskServerCallback(OpenSSLPreSharedKeySelector selector) {
+            this.selector = selector;
+        }
+
+        @Override
+        public int apply(MemorySegment ssl, MemorySegment identity, MemorySegment psk, int maxPskLength) {
+            if (MemorySegment.NULL.equals(identity)) {
+                return 0;
+            }
+            byte[] key = selector.select(ssl.address(), identity.getString(0));
+            if (key == null || key.length == 0 || key.length > maxPskLength) {
+                return 0;
+            }
+            try (var localArena = Arena.ofConfined()) {
+                psk.reinterpret(key.length, localArena, null).copyFrom(MemorySegment.ofArray(key));
+            }
+            return key.length;
+        }
+    }
+
+    private static class PskClientCallback implements SSL_psk_client_cb_func.Function {
+
+        private final OpenSSLPreSharedKeySelector selector;
+
+        PskClientCallback(OpenSSLPreSharedKeySelector selector) {
+            this.selector = selector;
+        }
+
+        @Override
+        public int apply(MemorySegment ssl, MemorySegment hint, MemorySegment identity, int maxIdentityLength,
+                MemorySegment psk, int maxPskLength) {
+            try {
+                String[] selectedIdentity = new String[1];
+                byte[] key = selector.selectClient(ssl.address(), selectedIdentity);
+                if (key == null || selectedIdentity[0] == null) {
+                    return 0;
+                }
+                byte[] identityBytes = selectedIdentity[0].getBytes(StandardCharsets.UTF_8);
+                if (key.length == 0 || key.length > maxPskLength || identityBytes.length + 1 > maxIdentityLength) {
+                    return 0;
+                }
+                try (var localArena = Arena.ofConfined()) {
+                    MemorySegment identitySegment = identity.reinterpret(identityBytes.length + 1, localArena, null);
+                    identitySegment.copyFrom(localArena.allocateFrom(selectedIdentity[0]));
+                    psk.reinterpret(key.length, localArena, null).copyFrom(MemorySegment.ofArray(key));
+                }
+                return key.length;
+            } catch (RuntimeException e) {
+                return 0;
+            }
+        }
+    }
+
+    private static class PskFindSessionCallback implements SSL_psk_find_session_cb_func.Function {
+
+        private final OpenSSLPreSharedKeySelector selector;
+
+        PskFindSessionCallback(OpenSSLPreSharedKeySelector selector) {
+            this.selector = selector;
+        }
+
+        @Override
+        public int apply(MemorySegment ssl, MemorySegment identity, long identityLength, MemorySegment sessionPointer) {
+            try (var localArena = Arena.ofConfined()) {
+                MemorySegment sessionPointerSegment =
+                        sessionPointer.reinterpret(ValueLayout.ADDRESS.byteSize(), localArena, null);
+                sessionPointerSegment.set(ValueLayout.ADDRESS, 0, MemorySegment.NULL);
+                if (MemorySegment.NULL.equals(identity) || identityLength < 0 || identityLength > Integer.MAX_VALUE) {
+                    return 0;
+                }
+
+                byte[] identityBytes =
+                        identity.reinterpret(identityLength, localArena, null).toArray(ValueLayout.JAVA_BYTE);
+                int[] cipherSuite = new int[1];
+                byte[] key = selector.select(ssl.address(), identityBytes, cipherSuite);
+                if (key == null) {
+                    return 1;
+                }
+                if (key.length == 0 || cipherSuite[0] <= 0 || cipherSuite[0] > 0xFFFF) {
+                    return 0;
+                }
+
+                byte[] cipherId = new byte[] { (byte) (cipherSuite[0] >> 8), (byte) cipherSuite[0] };
+                MemorySegment cipher =
+                        SSL_CIPHER_find(ssl, localArena.allocateFrom(ValueLayout.JAVA_BYTE, cipherId));
+                if (MemorySegment.NULL.equals(cipher)
+                        || !Constants.SSL_PROTO_TLSv1_3.equals(SSL_CIPHER_get_version(cipher).getString(0))) {
+                    return 0;
+                }
+
+                MemorySegment session = SSL_SESSION_new();
+                if (MemorySegment.NULL.equals(session)) {
+                    return 0;
+                }
+                boolean success = false;
+                try {
+                    MemorySegment keySegment = localArena.allocateFrom(ValueLayout.JAVA_BYTE, key);
+                    try {
+                        MemorySegment sidCtxSegment =
+                                localArena.allocateFrom(ValueLayout.JAVA_BYTE, DEFAULT_SESSION_ID_CONTEXT);
+                        if (SSL_SESSION_set1_master_key(session, keySegment, key.length) == 0 ||
+                                SSL_SESSION_set_cipher(session, cipher) == 0 ||
+                                SSL_SESSION_set_protocol_version(session, TLS1_3_VERSION()) == 0 ||
+                                SSL_SESSION_set1_id_context(session, sidCtxSegment,
+                                        DEFAULT_SESSION_ID_CONTEXT.length) == 0) {
+                            return 0;
+                        }
+                    } finally {
+                        keySegment.fill((byte) 0);
+                    }
+                    sessionPointerSegment.set(ValueLayout.ADDRESS, 0, session);
+                    success = true;
+                    return 1;
+                } finally {
+                    if (!success) {
+                        SSL_SESSION_free(session);
+                    }
+                }
+            }
+        }
+    }
+
+    private static class PskUseSessionCallback implements SSL_psk_use_session_cb_func.Function {
+
+        private final OpenSSLPreSharedKeySelector selector;
+        private final Arena contextArena;
+        private final Map<String,ClientIdentity> identities = new ConcurrentHashMap<>();
+
+        PskUseSessionCallback(OpenSSLPreSharedKeySelector selector, Arena contextArena) {
+            this.selector = selector;
+            this.contextArena = contextArena;
+        }
+
+        @Override
+        public int apply(MemorySegment ssl, MemorySegment md, MemorySegment identity, MemorySegment identityLength,
+                MemorySegment sessionPointer) {
+            try (var localArena = Arena.ofConfined()) {
+                MemorySegment sessionPointerSegment =
+                        sessionPointer.reinterpret(ValueLayout.ADDRESS.byteSize(), localArena, null);
+                sessionPointerSegment.set(ValueLayout.ADDRESS, 0, MemorySegment.NULL);
+
+                String[] selectedIdentity = new String[1];
+                int[] cipherSuite = new int[1];
+                byte[] key = selector.selectClient(ssl.address(), selectedIdentity, cipherSuite);
+                if (key == null || selectedIdentity[0] == null) {
+                    return 1;
+                }
+                if (key.length == 0 || cipherSuite[0] <= 0 || cipherSuite[0] > 0xFFFF) {
+                    return 0;
+                }
+
+                byte[] cipherId = new byte[] { (byte) (cipherSuite[0] >> 8), (byte) cipherSuite[0] };
+                MemorySegment cipher =
+                        SSL_CIPHER_find(ssl, localArena.allocateFrom(ValueLayout.JAVA_BYTE, cipherId));
+                if (MemorySegment.NULL.equals(cipher)
+                        || !Constants.SSL_PROTO_TLSv1_3.equals(SSL_CIPHER_get_version(cipher).getString(0))) {
+                    return 0;
+                }
+
+                MemorySegment session = SSL_SESSION_new();
+                if (MemorySegment.NULL.equals(session)) {
+                    return 0;
+                }
+                boolean success = false;
+                try {
+                    MemorySegment keySegment = localArena.allocateFrom(ValueLayout.JAVA_BYTE, key);
+                    try {
+                        MemorySegment sidCtxSegment =
+                                localArena.allocateFrom(ValueLayout.JAVA_BYTE, DEFAULT_SESSION_ID_CONTEXT);
+                        if (SSL_SESSION_set1_master_key(session, keySegment, key.length) == 0 ||
+                                SSL_SESSION_set_cipher(session, cipher) == 0 ||
+                                SSL_SESSION_set_protocol_version(session, TLS1_3_VERSION()) == 0 ||
+                                SSL_SESSION_set1_id_context(session, sidCtxSegment,
+                                        DEFAULT_SESSION_ID_CONTEXT.length) == 0) {
+                            return 0;
+                        }
+                    } finally {
+                        keySegment.fill((byte) 0);
+                    }
+
+                    ClientIdentity clientIdentity =
+                            identities.computeIfAbsent(selectedIdentity[0], this::createIdentity);
+                    identity.reinterpret(ValueLayout.ADDRESS.byteSize(), localArena, null)
+                            .set(ValueLayout.ADDRESS, 0, clientIdentity.value());
+                    identityLength.reinterpret(ValueLayout.JAVA_LONG.byteSize(), localArena, null)
+                            .set(ValueLayout.JAVA_LONG, 0, clientIdentity.length());
+                    sessionPointerSegment.set(ValueLayout.ADDRESS, 0, session);
+                    success = true;
+                    return 1;
+                } finally {
+                    if (!success) {
+                        SSL_SESSION_free(session);
+                    }
+                }
+            }
+        }
+
+        private ClientIdentity createIdentity(String identity) {
+            byte[] bytes = identity.getBytes(StandardCharsets.UTF_8);
+            return new ClientIdentity(contextArena.allocateFrom(identity), bytes.length);
+        }
+    }
+
+    private record ClientIdentity(MemorySegment value, long length) {
     }
 
 
@@ -784,34 +1067,28 @@ public class OpenSSLContext implements org.apache.tomcat.util.net.SSLContext {
             if (MemorySegment.NULL.equals(param)) {
                 return 0;
             }
-            MemorySegment ssl = X509_STORE_CTX_get_ex_data(x509_ctx, SSL_get_ex_data_X509_STORE_CTX_idx());
-            MemorySegment /* STACK_OF(X509) */ sk = X509_STORE_CTX_get0_untrusted(x509_ctx);
-            int len = openssl_h_Compatibility.OPENSSL_sk_num(sk);
-            byte[][] certificateChain = new byte[len][];
             try (var localArena = Arena.ofConfined()) {
-                for (int i = 0; i < len; i++) {
-                    MemorySegment/* (X509*) */ x509 = openssl_h_Compatibility.OPENSSL_sk_value(sk, i);
-                    MemorySegment bufPointer = localArena.allocateFrom(ValueLayout.ADDRESS, MemorySegment.NULL);
-                    int length = i2d_X509(x509, bufPointer);
-                    if (length < 0) {
-                        certificateChain[i] = new byte[0];
-                        continue;
-                    }
-                    MemorySegment buf = bufPointer.get(ValueLayout.ADDRESS, 0);
-                    certificateChain[i] = buf.reinterpret(length, localArena, null).toArray(ValueLayout.JAVA_BYTE);
-                    OPENSSL_free(buf);
+                MemorySegment ssl = X509_STORE_CTX_get_ex_data(x509_ctx, SSL_get_ex_data_X509_STORE_CTX_idx());
+                MemorySegment /* STACK_OF(X509) */ sk = X509_STORE_CTX_get0_untrusted(x509_ctx);
+                if (MemorySegment.NULL.equals(sk)) {
+                    return 0;
+                }
+                int len = openssl_h_Compatibility.OPENSSL_sk_num(sk);
+                byte[][] certificateChain = new byte[len][];
+                if (!OpenSSLLibrary.populateCertificateChain(localArena, sk, certificateChain)) {
+                    return 0;
                 }
                 MemorySegment cipher = SSL_get_current_cipher(ssl);
                 String authMethod = (MemorySegment.NULL.equals(cipher)) ? "UNKNOWN" :
                         getCipherAuthenticationMethod(SSL_CIPHER_get_auth_nid(cipher), SSL_CIPHER_get_kx_nid(cipher));
                 X509Certificate[] peerCerts = certificates(certificateChain);
-                try {
-                    x509TrustManager.checkClientTrusted(peerCerts, authMethod);
-                    return 1;
-                } catch (Exception e) {
-                    if (log.isDebugEnabled()) {
-                        log.debug(sm.getString("openssl.certificateVerificationFailed"), e);
-                    }
+                x509TrustManager.checkClientTrusted(peerCerts, authMethod);
+                OpenSSLEngine.markPostHandshakeAuthComplete(ssl);
+                return 1;
+            } catch (Throwable t) {
+                ExceptionUtils.handleThrowable(t);
+                if (log.isDebugEnabled()) {
+                    log.debug(sm.getString("openssl.certificateVerificationFailed"), t);
                 }
             }
             return 0;
@@ -1051,17 +1328,23 @@ public class OpenSSLContext implements org.apache.tomcat.util.net.SSLContext {
                     if (MemorySegment.NULL.equals(cert)) {
                         log.error(sm.getString("openssl.errorLoadingCertificateWithError",
                                 certificate.getCertificateFile(), OpenSSLLibrary.getLastError()));
+                        EVP_PKEY_free(key);
                         return false;
                     }
                 }
                 if (SSL_CTX_use_certificate(state.sslCtx, cert) <= 0) {
                     logLastError("openssl.errorLoadingCertificate");
+                    EVP_PKEY_free(key);
+                    X509_free(cert);
                     return false;
                 }
+                X509_free(cert);
                 if (SSL_CTX_use_PrivateKey(state.sslCtx, key) <= 0) {
                     logLastError("openssl.errorLoadingPrivateKey");
+                    EVP_PKEY_free(key);
                     return false;
                 }
+                EVP_PKEY_free(key);
                 if (SSL_CTX_check_private_key(state.sslCtx) <= 0) {
                     logLastError("openssl.errorPrivateKeyCheck");
                     return false;
@@ -1159,6 +1442,7 @@ public class OpenSSLContext implements org.apache.tomcat.util.net.SSLContext {
                             if (SSL_CTX_add0_chain_cert(state.sslCtx, certChainEntry) <= 0) {
                                 log.error(sm.getString("openssl.errorLoadingCertificateWithError",
                                         certificate.getCertificateChainFile(), OpenSSLLibrary.getLastError()));
+                                X509_free(certChainEntry);
                             }
                             certChainEntry = PEM_read_bio_X509_AUX(certificateChainBIO, MemorySegment.NULL,
                                     MemorySegment.NULL, MemorySegment.NULL);
@@ -1174,29 +1458,6 @@ public class OpenSSLContext implements org.apache.tomcat.util.net.SSLContext {
                         BIO_free(certificateChainBIO);
                     }
                 }
-                // Set revocation
-                MemorySegment certificateStore = SSL_CTX_get_cert_store(state.sslCtx);
-                if (sslHostConfig.getCertificateRevocationListFile() != null) {
-                    MemorySegment x509Lookup = X509_STORE_add_lookup(certificateStore, X509_LOOKUP_file());
-                    var certificateRevocationListFileNative = localArena.allocateFrom(
-                            SSLHostConfig.adjustRelativePath(sslHostConfig.getCertificateRevocationListFile()));
-                    if (X509_LOOKUP_load_file(x509Lookup, certificateRevocationListFileNative,
-                            X509_FILETYPE_PEM()) <= 0) {
-                        log.error(sm.getString("openssl.errorLoadingCertificateRevocationListWithError",
-                                sslHostConfig.getCertificateRevocationListFile(), OpenSSLLibrary.getLastError()));
-                    }
-                }
-                if (sslHostConfig.getCertificateRevocationListPath() != null) {
-                    MemorySegment x509Lookup = X509_STORE_add_lookup(certificateStore, X509_LOOKUP_hash_dir());
-                    var certificateRevocationListPathNative = localArena.allocateFrom(
-                            SSLHostConfig.adjustRelativePath(sslHostConfig.getCertificateRevocationListPath()));
-                    if (X509_LOOKUP_add_dir(x509Lookup, certificateRevocationListPathNative,
-                            X509_FILETYPE_PEM()) <= 0) {
-                        log.error(sm.getString("openssl.errorLoadingCertificateRevocationListWithError",
-                                sslHostConfig.getCertificateRevocationListPath(), OpenSSLLibrary.getLastError()));
-                    }
-                }
-                X509_STORE_set_flags(certificateStore, X509_V_FLAG_CRL_CHECK() | X509_V_FLAG_CRL_CHECK_ALL());
             } finally {
                 BIO_free(certificateBIO);
             }
@@ -1228,16 +1489,22 @@ public class OpenSSLContext implements org.apache.tomcat.util.net.SSLContext {
                         PEM_read_bio_PrivateKey(keyBIO, MemorySegment.NULL, MemorySegment.NULL, MemorySegment.NULL);
                 if (MemorySegment.NULL.equals(privateKeyAddress)) {
                     logLastError("openssl.errorLoadingPrivateKey");
+                    X509_free(x509cert);
                     return false;
                 }
                 if (SSL_CTX_use_certificate(state.sslCtx, x509cert) <= 0) {
                     logLastError("openssl.errorLoadingCertificate");
+                    EVP_PKEY_free(privateKeyAddress);
+                    X509_free(x509cert);
                     return false;
                 }
+                X509_free(x509cert);
                 if (SSL_CTX_use_PrivateKey(state.sslCtx, privateKeyAddress) <= 0) {
                     logLastError("openssl.errorLoadingPrivateKey");
+                    EVP_PKEY_free(privateKeyAddress);
                     return false;
                 }
+                EVP_PKEY_free(privateKeyAddress);
                 if (SSL_CTX_check_private_key(state.sslCtx) <= 0) {
                     logLastError("openssl.errorPrivateKeyCheck");
                     return false;
@@ -1277,12 +1544,43 @@ public class OpenSSLContext implements org.apache.tomcat.util.net.SSLContext {
                     }
                     if (SSL_CTX_add0_chain_cert(state.sslCtx, x509certChain) <= 0) {
                         logLastError("openssl.errorAddingCertificate");
+                        X509_free(x509certChain);
                         return false;
                     }
                 }
             } finally {
                 BIO_free(keyBIO);
             }
+        }
+        // Set revocation
+        boolean crlPresent = false;
+        MemorySegment certificateStore = SSL_CTX_get_cert_store(state.sslCtx);
+        if (sslHostConfig.getCertificateRevocationListFile() != null) {
+            MemorySegment x509Lookup = X509_STORE_add_lookup(certificateStore, X509_LOOKUP_file());
+            var certificateRevocationListFileNative = localArena.allocateFrom(
+                    SSLHostConfig.adjustRelativePath(sslHostConfig.getCertificateRevocationListFile()));
+            if (X509_LOOKUP_load_file(x509Lookup, certificateRevocationListFileNative,
+                    X509_FILETYPE_PEM()) <= 0) {
+                throw new IllegalArgumentException(sm.getString(
+                        "openssl.errorLoadingCertificateRevocationListWithError",
+                        sslHostConfig.getCertificateRevocationListFile(), OpenSSLLibrary.getLastError()));
+            }
+            crlPresent = true;
+        }
+        if (sslHostConfig.getCertificateRevocationListPath() != null) {
+            MemorySegment x509Lookup = X509_STORE_add_lookup(certificateStore, X509_LOOKUP_hash_dir());
+            var certificateRevocationListPathNative = localArena.allocateFrom(
+                    SSLHostConfig.adjustRelativePath(sslHostConfig.getCertificateRevocationListPath()));
+            if (X509_LOOKUP_add_dir(x509Lookup, certificateRevocationListPathNative,
+                    X509_FILETYPE_PEM()) <= 0) {
+                throw new IllegalArgumentException(sm.getString(
+                        "openssl.errorLoadingCertificateRevocationListWithError",
+                        sslHostConfig.getCertificateRevocationListPath(), OpenSSLLibrary.getLastError()));
+            }
+            crlPresent = true;
+        }
+        if (crlPresent) {
+            X509_STORE_set_flags(certificateStore, X509_V_FLAG_CRL_CHECK() | X509_V_FLAG_CRL_CHECK_ALL());
         }
         return true;
     }
@@ -1347,9 +1645,18 @@ public class OpenSSLContext implements org.apache.tomcat.util.net.SSLContext {
 
     @Override
     public SSLEngine createSSLEngine() {
-        return new OpenSSLEngine(cleaner, state.sslCtx, defaultProtocol, false, sessionContext, alpn, initialized,
+        return new OpenSSLEngine(cleaner, state.sslCtx, defaultProtocol, clientMode, sessionContext, alpn, initialized,
                 sslHostConfig.getCertificateVerificationDepth(),
-                sslHostConfig.getCertificateVerification() == CertificateVerification.OPTIONAL_NO_CA, noOcspCheck);
+                sslHostConfig.getCertificateVerification() == CertificateVerification.OPTIONAL_NO_CA, noOcspCheck,
+                ocspSoftFail, ocspTimeout, ocspVerifyFlags);
+    }
+
+    @Override
+    public SSLEngine createSSLEngine(boolean clientMode) {
+        if (clientMode != this.clientMode) {
+            throw new IllegalArgumentException();
+        }
+        return createSSLEngine();
     }
 
     @Override

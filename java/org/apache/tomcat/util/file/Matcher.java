@@ -25,10 +25,16 @@ import java.util.Set;
  * org.apache.tools.ant.types.selectors.SelectorUtils.
  * </p>
  * <p>
- * All methods are static.
+ * All methods are static; instances of this class carry no state.
  * </p>
  */
 public final class Matcher {
+
+    /**
+     * Default constructor.
+     */
+    public Matcher() {
+    }
 
     /**
      * Tests whether or not a given file name matches any file name pattern in the given set. The match is performed
@@ -159,7 +165,7 @@ public final class Matcher {
             return allStars(patArr, patIdxStart, patIdxEnd);
         }
 
-        // process pattern between stars. padIdxStart and patIdxEnd point
+        // process pattern between stars. patIdxStart and patIdxEnd point
         // always to a '*'.
         while (patIdxStart != patIdxEnd && strIdxStart <= strIdxEnd) {
             int patIdxTmp = -1;

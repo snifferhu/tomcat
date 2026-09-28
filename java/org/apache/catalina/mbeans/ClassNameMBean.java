@@ -29,8 +29,20 @@ package org.apache.catalina.mbeans;
  */
 public class ClassNameMBean<T> extends BaseCatalinaMBean<T> {
 
+    /**
+     * Default constructor.
+     */
+    public ClassNameMBean() {
+        super();
+    }
+
     @Override
     public String getClassName() {
-        return this.resource.getClass().getName();
+        Object resource = this.resource;
+        if (resource != null) {
+            return resource.getClass().getName();
+        } else {
+            return null;
+        }
     }
 }

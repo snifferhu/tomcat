@@ -24,9 +24,15 @@ import org.apache.juli.logging.LogFactory;
 import org.apache.tomcat.util.res.StringManager;
 
 /**
- * StoreFactory saves special elements. Output was generate with StoreAppenders.
+ * StoreFactory saves special elements. Output was generated with StoreAppenders.
  */
 public class StoreFactoryBase implements IStoreFactory {
+    /**
+     * Constructs a new StoreFactoryBase with default settings.
+     */
+    public StoreFactoryBase() {
+    }
+
     private static final Log log = LogFactory.getLog(StoreFactoryBase.class);
 
     private StoreRegistry registry;
@@ -41,9 +47,12 @@ public class StoreFactoryBase implements IStoreFactory {
     /**
      * The descriptive information string for this implementation.
      */
-    private static final String info = "org.apache.catalina.config.StoreFactoryBase/1.0";
+    private static final String info = "org.apache.catalina.storeconfig.StoreFactoryBase/1.0";
 
     /**
+     * Returns descriptive information about this Factory implementation and the corresponding version number, in the
+     * format <code>&lt;description&gt;/&lt;version&gt;</code>.
+     *
      * @return descriptive information about this Factory implementation and the corresponding version number, in the
      *             format <code>&lt;description&gt;/&lt;version&gt;</code>.
      */
@@ -161,8 +170,8 @@ public class StoreFactoryBase implements IStoreFactory {
                 try {
                     storeElement(aWriter, indent, element);
                 } catch (IOException ignore) {
-                    // Ignore. Children report error themselves.
-                    // See StandardContext.storeWithBackup()
+                    // Ignore. Children do not report the error themselves (e.g.
+                    // StandardContextSF.storeWithBackup() throws without logging).
                 }
             }
         }

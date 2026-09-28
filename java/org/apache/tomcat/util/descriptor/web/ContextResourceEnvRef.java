@@ -28,17 +28,33 @@ public class ContextResourceEnvRef extends ResourceBase {
     @Serial
     private static final long serialVersionUID = 1L;
 
+    /**
+     * Default constructor for ContextResourceEnvRef.
+     */
+    public ContextResourceEnvRef() {
+    }
+
     // ------------------------------------------------------------- Properties
 
     /**
-     * Does this environment entry allow overrides by the application deployment descriptor?
+     * Does this resource-env-ref allow overrides by the application deployment descriptor?
      */
     private boolean override = true;
 
+    /**
+     * Returns whether this resource-env-ref allows overrides by the application deployment descriptor.
+     *
+     * @return true if overrides are allowed
+     */
     public boolean getOverride() {
         return this.override;
     }
 
+    /**
+     * Sets whether this resource-env-ref allows overrides by the application deployment descriptor.
+     *
+     * @param override true if overrides are allowed
+     */
     public void setOverride(boolean override) {
         this.override = override;
     }

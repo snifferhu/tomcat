@@ -30,14 +30,23 @@ import org.apache.juli.logging.Log;
 import org.apache.juli.logging.LogFactory;
 import org.apache.tomcat.util.res.StringManager;
 
-/*
- * Sender to proxies using multicast socket.
+/**
+ * TCP-based sender for sending heartbeat messages to proxy servers.
  */
 public class TcpSender implements Sender {
 
-    private static final Log log = LogFactory.getLog(HeartbeatListener.class);
+    /**
+     * Constructs a new TcpSender.
+     */
+    public TcpSender() {
+    }
+
+    private static final Log log = LogFactory.getLog(TcpSender.class);
     private static final StringManager sm = StringManager.getManager(TcpSender.class);
 
+    /**
+     * The heartbeat listener configuration.
+     */
     HeartbeatListener config = null;
 
     /**
@@ -47,16 +56,29 @@ public class TcpSender implements Sender {
 
 
     /**
-     * Active connections.
+     * Active socket connections to proxies.
      */
-
     protected Socket[] connections = null;
+
+    /**
+     * Readers for active connections.
+     */
     protected BufferedReader[] connectionReaders = null;
+
+    /**
+     * Writers for active connections.
+     */
     protected BufferedWriter[] connectionWriters = null;
 
 
     @Override
     public void init(HeartbeatListener config) throws Exception {
+        // Close any existing connections from a previous init
+        if (connections != null) {
+            for (int i = 0; i < connections.length; i++) {
+                close(i);
+            }
+        }
         this.config = config;
         StringTokenizer tok = new StringTokenizer(config.getProxyList(), ",");
         proxies = new Proxy[tok.countTokens()];
@@ -68,8 +90,8 @@ public class TcpSender implements Sender {
                 throw new Exception(sm.getString("tcpSender.invalidProxyList"));
             }
             proxies[i] = new Proxy();
-            proxies[i].port = Integer.parseInt(token.substring(pos + 1));
             try {
+                proxies[i].port = Integer.parseInt(token.substring(pos + 1));
                 proxies[i].address = InetAddress.getByName(token.substring(0, pos));
             } catch (Exception e) {
                 throw new Exception(sm.getString("tcpSender.invalidProxyList"));
@@ -140,11 +162,22 @@ public class TcpSender implements Sender {
                 close(i);
                 continue;
             } else {
-                responseStatus = responseStatus.substring(responseStatus.indexOf(' ') + 1,
-                        responseStatus.indexOf(' ', responseStatus.indexOf(' ') + 1));
-                int status = Integer.parseInt(responseStatus);
+                int firstSpace = responseStatus.indexOf(' ');
+                int secondSpace = responseStatus.indexOf(' ', firstSpace + 1);
+                if (firstSpace < 0 || secondSpace < 0 || secondSpace <= firstSpace + 1) {
+                    log.error(sm.getString("tcpSender.responseError"));
+                    close(i);
+                    continue;
+                }
+                responseStatus = responseStatus.substring(firstSpace + 1, secondSpace);
+                int status = 500;
+                try {
+                    status = Integer.parseInt(responseStatus);
+                } catch (NumberFormatException e) {
+                    // Ignore
+                }
                 if (status != 200) {
-                    log.error(sm.getString("tcpSender.responseErrorCode", Integer.valueOf(status)));
+                    log.error(sm.getString("tcpSender.responseErrorCode", responseStatus));
                     close(i);
                     continue;
                 }
@@ -152,12 +185,38 @@ public class TcpSender implements Sender {
                 // read all the headers.
                 String header = connectionReaders[i].readLine();
                 int contentLength = 0;
+                boolean contentLengthSeen = false;
                 while (header != null && !header.isEmpty()) {
                     int colon = header.indexOf(':');
-                    String headerName = header.substring(0, colon).trim();
-                    String headerValue = header.substring(colon + 1).trim();
-                    if ("content-length".equalsIgnoreCase(headerName)) {
-                        contentLength = Integer.parseInt(headerValue);
+                    if (colon >= 0) {
+                        String headerName = header.substring(0, colon).trim();
+                        String headerValue = header.substring(colon + 1).trim();
+                        if ("content-length".equalsIgnoreCase(headerName)) {
+                            if (contentLengthSeen) {
+                                log.error(sm.getString("tcpSender.duplicateContentLength"));
+                                close(i);
+                                // Clear any content length if one has been read.
+                                contentLength = 0;
+                                break;
+                            } else {
+                                contentLengthSeen = true;
+                            }
+                            try {
+                                contentLength = Integer.parseInt(headerValue);
+                            } catch (NumberFormatException e) {
+                                log.error(sm.getString("tcpSender.invalidContentLength", headerValue));
+                                close(i);
+                                // Clear any content length if one has been read.
+                                contentLength = 0;
+                                break;
+                            }
+                        }
+                    } else {
+                        log.error(sm.getString("tcpSender.invalidHeaderLine", header));
+                        close(i);
+                        // Clear any content length if one has been read.
+                        contentLength = 0;
+                        break;
                     }
                     header = connectionReaders[i].readLine();
                 }

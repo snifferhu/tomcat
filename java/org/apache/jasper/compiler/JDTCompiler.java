@@ -56,10 +56,16 @@ import org.eclipse.jdt.internal.compiler.lookup.ModuleBinding;
 import org.eclipse.jdt.internal.compiler.problem.DefaultProblemFactory;
 
 /**
- * JDT class compiler. This compiler will load source dependencies from the context classloader, reducing dramatically
+ * JDT class compiler. This compiler will load source dependencies from the JSP classloader, reducing dramatically
  * disk access during the compilation process. Based on code from Cocoon2.
  */
 public class JDTCompiler extends org.apache.jasper.compiler.Compiler {
+
+    /**
+     * Constructs a new JDTCompiler.
+     */
+    public JDTCompiler() {
+    }
 
     private final Log log = LogFactory.getLog(JDTCompiler.class); // must not be static
 
@@ -99,7 +105,7 @@ public class JDTCompiler extends org.apache.jasper.compiler.Compiler {
 
             @Override
             public char[] getContents() {
-                char[] result = null;
+                char[] result;
                 try (FileInputStream is = new FileInputStream(sourceFile);
                         InputStreamReader isr = new InputStreamReader(is, ctxt.getOptions().getJavaEncoding());
                         Reader reader = new BufferedReader(isr)) {
@@ -113,6 +119,7 @@ public class JDTCompiler extends org.apache.jasper.compiler.Compiler {
                     buf.getChars(0, result.length, result, 0);
                 } catch (IOException ioe) {
                     log.error(Localizer.getMessage("jsp.error.compilation.source", sourceFile), ioe);
+                    result = new char[0];
                 }
                 return result;
             }
@@ -311,11 +318,17 @@ public class JDTCompiler extends org.apache.jasper.compiler.Compiler {
                 case "23" -> settings.put(CompilerOptions.OPTION_Source, CompilerOptions.VERSION_23);
                 case "24" -> settings.put(CompilerOptions.OPTION_Source, CompilerOptions.VERSION_24);
                 case "25" -> settings.put(CompilerOptions.OPTION_Source, CompilerOptions.VERSION_25);
-                case "26" ->
+                case "26" -> settings.put(CompilerOptions.OPTION_Source, CompilerOptions.VERSION_26);
+                case "27" ->
                         // Constant not available in latest ECJ version shipped with
                         // Tomcat. May be supported in a snapshot build.
                         // This is checked against the actual version below.
-                        settings.put(CompilerOptions.OPTION_Source, "26");
+                        settings.put(CompilerOptions.OPTION_Source, "27");
+                case "28" ->
+                        // Constant not available in latest ECJ version shipped with
+                        // Tomcat. May be supported in a snapshot build.
+                        // This is checked against the actual version below.
+                        settings.put(CompilerOptions.OPTION_Source, "28");
                 default -> {
                     log.warn(Localizer.getMessage("jsp.warning.unknown.sourceVM", opt));
                     settings.put(CompilerOptions.OPTION_Source, CompilerOptions.VERSION_21);
@@ -421,11 +434,22 @@ public class JDTCompiler extends org.apache.jasper.compiler.Compiler {
                     settings.put(CompilerOptions.OPTION_Compliance, CompilerOptions.VERSION_25);
                 }
                 case "26" -> {
+                    settings.put(CompilerOptions.OPTION_TargetPlatform, CompilerOptions.VERSION_26);
+                    settings.put(CompilerOptions.OPTION_Compliance, CompilerOptions.VERSION_26);
+                }
+                case "27" -> {
                     // Constant not available in latest ECJ version shipped with
                     // Tomcat. May be supported in a snapshot build.
                     // This is checked against the actual version below.
-                    settings.put(CompilerOptions.OPTION_TargetPlatform, "26");
-                    settings.put(CompilerOptions.OPTION_Compliance, "26");
+                    settings.put(CompilerOptions.OPTION_TargetPlatform, "27");
+                    settings.put(CompilerOptions.OPTION_Compliance, "27");
+                }
+                case "28" -> {
+                    // Constant not available in latest ECJ version shipped with
+                    // Tomcat. May be supported in a snapshot build.
+                    // This is checked against the actual version below.
+                    settings.put(CompilerOptions.OPTION_TargetPlatform, "28");
+                    settings.put(CompilerOptions.OPTION_Compliance, "28");
                 }
                 default -> {
                     log.warn(Localizer.getMessage("jsp.warning.unknown.targetVM", opt));

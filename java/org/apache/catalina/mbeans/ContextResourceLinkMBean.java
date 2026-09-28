@@ -22,6 +22,8 @@ import javax.management.MBeanException;
 import javax.management.ReflectionException;
 import javax.management.RuntimeOperationsException;
 
+import org.apache.juli.logging.Log;
+import org.apache.juli.logging.LogFactory;
 import org.apache.tomcat.util.descriptor.web.ContextResourceLink;
 import org.apache.tomcat.util.descriptor.web.NamingResources;
 import org.apache.tomcat.util.res.StringManager;
@@ -32,6 +34,13 @@ import org.apache.tomcat.util.res.StringManager;
  */
 public class ContextResourceLinkMBean extends BaseCatalinaMBean<ContextResourceLink> {
 
+    /**
+     * Default constructor for ContextResourceLinkMBean.
+     */
+    public ContextResourceLinkMBean() {
+    }
+
+    private static final Log log = LogFactory.getLog(ContextResourceLinkMBean.class);
     private static final StringManager sm = StringManager.getManager(ContextResourceLinkMBean.class);
 
     @Override
@@ -89,15 +98,18 @@ public class ContextResourceLinkMBean extends BaseCatalinaMBean<ContextResourceL
         switch (name) {
             case "global" -> crl.setGlobal((String) value);
             case "description" -> crl.setDescription((String) value);
-            case "name" -> crl.setName((String) value);
+            // Updating the name actually needs removing and adding back the component under the new name
+            case "name" -> log.info(sm.getString("mBean.nameChange"));
             case "type" -> crl.setType((String) value);
-            default -> crl.setProperty(name, "" + value);
+            default -> crl.setProperty(name, value == null ? null : value.toString());
         }
 
         // cannot use side effects. It's removed and added back each time
         // there is a modification in a resource.
         NamingResources nr = crl.getNamingResources();
-        nr.removeResourceLink(crl.getName());
-        nr.addResourceLink(crl);
+        if (nr != null) {
+            nr.removeResourceLink(crl.getName());
+            nr.addResourceLink(crl);
+        }
     }
 }

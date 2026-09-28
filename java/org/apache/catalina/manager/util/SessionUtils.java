@@ -16,7 +16,6 @@
  */
 package org.apache.catalina.manager.util;
 
-import java.lang.reflect.Method;
 import java.security.Principal;
 import java.util.ArrayList;
 import java.util.Enumeration;
@@ -28,10 +27,9 @@ import javax.security.auth.Subject;
 import jakarta.servlet.http.HttpSession;
 
 import org.apache.catalina.Session;
-import org.apache.tomcat.util.ExceptionUtils;
 
 /**
- * Utility methods on HttpSessions.
+ * Utility methods on {@link Session} and {@link HttpSession} objects.
  */
 public class SessionUtils {
 
@@ -40,7 +38,7 @@ public class SessionUtils {
     }
 
     /**
-     * The session attributes key under which the user's selected <code>java.util.Locale</code> is stored, if any.
+     * The session attribute keys under which the user's selected <code>java.util.Locale</code> is stored, if any.
      */
     // org.apache.struts.Globals.LOCALE_KEY
     private static final String STRUTS_LOCALE_KEY = "org.apache.struts.action.LOCALE";//$NON-NLS-1$
@@ -61,18 +59,25 @@ public class SessionUtils {
             new String[] { "Login", "User", "userName", "UserName", "Utilisateur", "SPRING_SECURITY_LAST_USERNAME" };
 
     /**
-     * Try to get user locale from the session, if possible. IMPLEMENTATION NOTE: this method has explicit support for
-     * Tapestry 3, Struts 1.x and Spring JSF check the browser meta tag "accept languages" to choose what language to
-     * display.
+     * Try to get user locale from the session, if possible.
      *
      * @param in_session The session
      *
-     * @return the locale
+     * @return the locale, or {@code null} if it cannot be determined
      */
     public static Locale guessLocaleFromSession(final Session in_session) {
         return guessLocaleFromSession(in_session.getSession());
     }
 
+    /**
+     * Try to get user locale from the session, if possible. Searches for Locale objects stored under known attribute
+     * names used by common frameworks (Struts, JSTL, Spring MVC), and falls back to iterating all session attributes if
+     * exactly one Locale is found.
+     *
+     * @param in_session The HTTP session
+     *
+     * @return the locale, or {@code null} if it cannot be determined
+     */
     public static Locale guessLocaleFromSession(final HttpSession in_session) {
         if (null == in_session) {
             return null;
@@ -96,38 +101,6 @@ public class SessionUtils {
                 if (obj instanceof Locale) {
                     locale = (Locale) obj;
                     break;
-                }
-            }
-
-            if (null != locale) {
-                return locale;
-            }
-
-            // Tapestry 3.0: Engine stored in session under "org.apache.tapestry.engine:" + config.getServletName()
-            // TODO: Tapestry 4+
-            final List<Object> tapestryArray = new ArrayList<>();
-            for (Enumeration<String> enumeration = in_session.getAttributeNames(); enumeration.hasMoreElements();) {
-                String name = enumeration.nextElement();
-                if (name.contains("tapestry") && name.contains("engine") && null != in_session.getAttribute(name)) {//$NON-NLS-1$ //$NON-NLS-2$
-                    tapestryArray.add(in_session.getAttribute(name));
-                }
-            }
-            if (tapestryArray.size() == 1) {
-                // found a potential Engine! Let's call getLocale() on it.
-                Object probableEngine = tapestryArray.getFirst();
-                if (null != probableEngine) {
-                    try {
-                        Method readMethod = probableEngine.getClass().getMethod("getLocale", (Class<?>[]) null);//$NON-NLS-1$
-                        // Call the property getter and return the value
-                        Object possibleLocale = readMethod.invoke(probableEngine, (Object[]) null);
-                        if (possibleLocale instanceof Locale) {
-                            locale = (Locale) possibleLocale;
-                        }
-                    } catch (Exception e) {
-                        Throwable t = ExceptionUtils.unwrapInvocationTargetException(e);
-                        ExceptionUtils.handleThrowable(t);
-                        // stay silent
-                    }
                 }
             }
 
@@ -161,7 +134,8 @@ public class SessionUtils {
      *
      * @param in_session The session
      *
-     * @return the user
+     * @return the user, that is the name of the session principal if the session has one, otherwise a value guessed
+     *         from the session attributes, or {@code null} if it cannot be determined
      */
     public static Object guessUserFromSession(final Session in_session) {
         if (null == in_session) {
@@ -222,6 +196,13 @@ public class SessionUtils {
     }
 
 
+    /**
+     * Returns the time in milliseconds between session creation and the session's last access.
+     *
+     * @param in_session The session
+     * @return the time in milliseconds between session creation and the last access, or -1 if the session is
+     *         invalidated
+     */
     public static long getUsedTimeForSession(Session in_session) {
         try {
             return in_session.getThisAccessedTime() - in_session.getCreationTime();
@@ -231,6 +212,12 @@ public class SessionUtils {
         }
     }
 
+    /**
+     * Returns the remaining time-to-live for the session in milliseconds.
+     *
+     * @param in_session The session
+     * @return the remaining TTL in milliseconds, or -1 if the session is invalidated
+     */
     public static long getTTLForSession(Session in_session) {
         try {
             return 1000L * in_session.getMaxInactiveInterval() -
@@ -241,6 +228,12 @@ public class SessionUtils {
         }
     }
 
+    /**
+     * Returns the time in milliseconds since the session was last accessed.
+     *
+     * @param in_session The session
+     * @return the inactive time in milliseconds, or -1 if the session is invalidated
+     */
     public static long getInactiveTimeForSession(Session in_session) {
         try {
             return System.currentTimeMillis() - in_session.getThisAccessedTime();

@@ -18,9 +18,9 @@ package org.apache.catalina.core;
 
 import java.util.concurrent.Executor;
 
+import org.apache.catalina.Container;
 import org.apache.catalina.ContainerEvent;
 import org.apache.catalina.Context;
-import org.apache.catalina.Engine;
 import org.apache.catalina.Lifecycle;
 import org.apache.catalina.LifecycleEvent;
 import org.apache.catalina.LifecycleListener;
@@ -43,6 +43,12 @@ import org.apache.tomcat.util.threads.ThreadPoolExecutor;
  * This listener must only be nested within {@link Server} elements.
  */
 public class ThreadLocalLeakPreventionListener extends FrameworkListener {
+
+    /**
+     * Constructs a new ThreadLocalLeakPreventionListener.
+     */
+    public ThreadLocalLeakPreventionListener() {
+    }
 
     private static final Log log = LogFactory.getLog(ThreadLocalLeakPreventionListener.class);
 
@@ -105,8 +111,10 @@ public class ThreadLocalLeakPreventionListener extends FrameworkListener {
             return;
         }
 
-        Engine engine = (Engine) context.getParent().getParent();
-        Service service = engine.getService();
+        Service service = Container.getService(context);
+        if (service == null) {
+            return;
+        }
         Connector[] connectors = service.findConnectors();
         if (connectors != null) {
             for (Connector connector : connectors) {

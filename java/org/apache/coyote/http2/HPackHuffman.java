@@ -23,17 +23,30 @@ import java.util.Set;
 
 import org.apache.tomcat.util.res.StringManager;
 
+/**
+ * Utility class for Huffman encoding and decoding used in HPACK compression for HTTP/2 headers.
+ */
 public class HPackHuffman {
 
+    /**
+     * Private constructor to prevent instantiation.
+     */
+    private HPackHuffman() {
+    }
+
+    /**
+     * String manager for error messages.
+     */
     protected static final StringManager sm = StringManager.getManager(HPackHuffman.class);
 
     private static final HuffmanCode[] HUFFMAN_CODES;
 
     /**
-     * array based tree representation of a huffman code.
+     * Array based tree representation of the Huffman codes.
      * <p/>
-     * the high two bytes corresponds to the tree node if the bit is set, and the low two bytes for if it is clear if
-     * the high bit is set it is a terminal node, otherwise it contains the next node position.
+     * Each entry consists of two 16-bit halves: the high half is the branch to follow when the current bit is 1 and
+     * the low half is the branch to follow when the current bit is 0. Within each half, the top bit flags a terminal
+     * node and the remaining 15 bits hold either the symbol to append or the position of the next node in this array.
      */
     private static final int[] DECODING_TABLE;
 
@@ -366,13 +379,15 @@ public class HPackHuffman {
      * Decodes a huffman encoded string into the target StringBuilder. There must be enough space left in the buffer for
      * this method to succeed.
      *
-     * @param data   The byte buffer
-     * @param length The length of data from the buffer to decode
-     * @param target The target for the decompressed data
+     * @param data        The byte buffer
+     * @param length      The length of data from the buffer to decode
+     * @param target      The target for the decompressed data
      *
      * @throws HpackException If the Huffman encoded value in HPACK headers did not end with EOS padding
      */
-    public static void decode(ByteBuffer data, int length, StringBuilder target) throws HpackException {
+    public static void decode(ByteBuffer data, int length, StringBuilder target)
+            throws HpackException {
+
         assert data.remaining() >= length;
         int treePos = 0;
         boolean eosBits = true;
@@ -387,11 +402,14 @@ public class HPackHuffman {
                     if ((val & LOW_TERMINAL_BIT) == 0) {
                         treePos = val & LOW_MASK;
                         eosBits = false;
+                        // Found a zero, can't be counting EOS bits
                         eosBitCount = 0;
                     } else {
                         target.append((char) (val & LOW_MASK));
                         treePos = 0;
                         eosBits = true;
+                        // Output a character, reset eosBitCount
+                        eosBitCount = 0;
                     }
                 } else {
                     if (eosBits) {
@@ -409,6 +427,8 @@ public class HPackHuffman {
                         target.append((char) ((val >> 16) & LOW_MASK));
                         treePos = 0;
                         eosBits = true;
+                        // Output a character, reset eosBitCount
+                        eosBitCount = 0;
                     }
                 }
                 bitPos--;
@@ -427,13 +447,12 @@ public class HPackHuffman {
      * Encodes the given string into the buffer. If there is not enough space in the buffer, or the encoded version is
      * bigger than the original it will return false and not modify the buffers position.
      *
-     * @param buffer         The buffer to encode into
-     * @param toEncode       The string to encode
-     * @param forceLowercase If the string should be encoded in lower case
+     * @param buffer   The buffer to encode into
+     * @param toEncode The string to encode
      *
      * @return true if encoding succeeded
      */
-    public static boolean encode(ByteBuffer buffer, String toEncode, boolean forceLowercase) {
+    public static boolean encode(ByteBuffer buffer, String toEncode) {
         if (buffer.remaining() <= toEncode.length()) {
             return false;
         }
@@ -448,9 +467,6 @@ public class HPackHuffman {
                 throw new IllegalArgumentException(
                         sm.getString("hpack.invalidCharacter", Character.toString(c), Integer.valueOf(c)));
             }
-            if (forceLowercase) {
-                c = Hpack.toLower(c);
-            }
             HuffmanCode code = HUFFMAN_CODES[c];
             length += code.length;
         }
@@ -464,9 +480,6 @@ public class HPackHuffman {
         byte currentBufferByte = 0;
         for (int i = 0; i < toEncode.length(); ++i) {
             char c = toEncode.charAt(i);
-            if (forceLowercase) {
-                c = Hpack.toLower(c);
-            }
             HuffmanCode code = HUFFMAN_CODES[c];
             if (code.length + bytePos <= 8) {
                 // it fits in the current byte
@@ -524,6 +537,9 @@ public class HPackHuffman {
         return true;
     }
 
+    /**
+     * Represents a Huffman code with a value and bit length.
+     */
     protected static class HuffmanCode {
         /**
          * The value of the least significant bits of the code
@@ -534,15 +550,31 @@ public class HPackHuffman {
          */
         int length;
 
+        /**
+         * Creates a new Huffman code.
+         *
+         * @param value the code value
+         * @param length the code length in bits
+         */
         public HuffmanCode(int value, int length) {
             this.value = value;
             this.length = length;
         }
 
+        /**
+         * Returns the code value.
+         *
+         * @return the code value
+         */
         public int getValue() {
             return value;
         }
 
+        /**
+         * Returns the code length in bits.
+         *
+         * @return the code length in bits
+         */
         public int getLength() {
             return length;
         }

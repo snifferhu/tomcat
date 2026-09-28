@@ -46,11 +46,22 @@ public class JSSEUtil extends SSLUtilBase {
     private volatile Set<String> implementedCiphers;
 
 
+    /**
+     * Constructs an instance for the given certificate.
+     *
+     * @param certificate The certificate
+     */
     public JSSEUtil(SSLHostConfigCertificate certificate) {
         this(certificate, true);
     }
 
 
+    /**
+     * Constructs an instance for the given certificate.
+     *
+     * @param certificate The certificate
+     * @param warnOnSkip Whether to warn when skipping unsupported protocols/ciphers
+     */
     public JSSEUtil(SSLHostConfigCertificate certificate, boolean warnOnSkip) {
         super(certificate, warnOnSkip);
     }
@@ -145,6 +156,10 @@ public class JSSEUtil extends SSLUtilBase {
 
                     if (sslHostConfig.getOpenSslConf() != null) {
                         log.warn(sm.getString("jsseUtil.opensslconf.present"));
+                    }
+
+                    if (!sslHostConfig.getPreSharedKeys().isEmpty()) {
+                        log.warn(sm.getString("jsseUtil.psk.present"));
                     }
 
                     initialized = true;

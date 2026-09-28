@@ -35,7 +35,8 @@ import org.apache.tomcat.util.buf.StringUtils;
 import org.apache.tomcat.util.res.StringManager;
 
 /**
- * This listener must only be nested within {@link Server} elements.
+ * This listener should be nested within {@link Server} elements. If it is attached to any other component type, a
+ * warning is logged and the checks are still performed.
  */
 public class SecurityListener implements LifecycleListener {
 
@@ -66,6 +67,9 @@ public class SecurityListener implements LifecycleListener {
     private Integer minimumUmask = Integer.valueOf(7);
 
 
+    /**
+     * Creates a new SecurityListener instance with "root" as the default prohibited OS user.
+     */
     public SecurityListener() {
         checkedOsUsers.add("root");
     }
@@ -147,7 +151,7 @@ public class SecurityListener implements LifecycleListener {
         try {
             buildDateWarningAgeDays = Integer.parseInt(ageDays);
         } catch (NumberFormatException nfe) {
-            // Just use the default and warn the user
+            // Keep the previously configured value (or the default) and warn the user
             log.warn(sm.getString("SecurityListener.buildDateAgeUnreadable", ageDays,
                     String.valueOf(DEFAULT_BUILD_DATE_WARNING_AGE_DAYS)));
         }
@@ -172,6 +176,10 @@ public class SecurityListener implements LifecycleListener {
     }
 
 
+    /**
+     * Checks that the current operating system user is not in the list of prohibited users.
+     * Throws an Error if the user is prohibited.
+     */
     protected void checkOsUser() {
         String userName = System.getProperty("user.name");
         if (userName != null) {
@@ -185,6 +193,10 @@ public class SecurityListener implements LifecycleListener {
     }
 
 
+    /**
+     * Checks that the operating system umask meets the minimum required value.
+     * Skips the check on Windows. Throws an Error if the umask is insufficient.
+     */
     protected void checkUmask() {
         String prop = System.getProperty(UMASK_PROPERTY_NAME);
         Integer umask = null;
@@ -215,6 +227,10 @@ public class SecurityListener implements LifecycleListener {
         }
     }
 
+    /**
+     * Checks if the Tomcat build date exceeds the configured warning age threshold.
+     * Logs a warning if the build is too old or if the build date cannot be read.
+     */
     protected void checkServerBuildAge() {
         int allowedAgeDays = getBuildDateWarningAgeDays();
 

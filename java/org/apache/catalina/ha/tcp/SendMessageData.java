@@ -19,31 +19,10 @@ package org.apache.catalina.ha.tcp;
 import org.apache.catalina.tribes.Member;
 
 /**
- * @param message     The message that was sent
- * @param destination The destination of the message
- * @param exception   The exception, if any, when attempting to send the message
+ * Data about a message send operation.
+ * @param message the message that was sent
+ * @param destination the destination of the message
+ * @param exception the exception, if any, when attempting to send the message
  */
 public record SendMessageData(Object message, Member destination, Exception exception) {
-
-    /**
-     * @return the destination.
-     */
-    public Member getDestination() {
-        return destination;
-    }
-
-    /**
-     * @return the exception.
-     */
-    public Exception getException() {
-        return exception;
-    }
-
-    /**
-     * @return the message.
-     */
-    public Object getMessage() {
-        return message;
-    }
-
 }

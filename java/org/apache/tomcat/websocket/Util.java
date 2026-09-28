@@ -127,11 +127,10 @@ public class Util {
     }
 
 
-    static byte[] generateMask() {
-        // SecureRandom is not thread-safe so need to make sure only one thread
-        // uses it at a time. In theory, the pool could grow to the same size
-        // as the number of request processing threads. In reality, it will be
-        // a lot smaller.
+    static byte[] generateRandomBytes(int len) {
+        // SecureRandom is thread-safe, but creating instances is expensive, so instances are pooled and one is
+        // handed out to each concurrent user. In theory, the pool could grow to the same size as the number of
+        // request processing threads. In reality, it will be a lot smaller.
 
         // Get a SecureRandom from the pool
         SecureRandom sr = randoms.poll();
@@ -146,11 +145,11 @@ public class Util {
             }
         }
 
-        // Generate the mask
-        byte[] result = new byte[4];
+        // Generate the random byte array
+        byte[] result = new byte[len];
         sr.nextBytes(result);
 
-        // Put the SecureRandom back in the poll
+        // Put the SecureRandom back in the pool
         randoms.add(sr);
 
         return result;
@@ -271,6 +270,13 @@ public class Util {
     }
 
 
+    /**
+     * Returns whether the given class is a primitive type or its wrapper class.
+     *
+     * @param clazz The class to check
+     *
+     * @return {@code true} if the class is a primitive or wrapper type, {@code false} otherwise
+     */
     public static boolean isPrimitive(Class<?> clazz) {
         if (clazz.isPrimitive()) {
             return true;
@@ -282,6 +288,19 @@ public class Util {
     }
 
 
+    /**
+     * Coerces a string value to the specified type.
+     *
+     * @param type  The target type
+     * @param value The string value to coerce
+     *
+     * @return The coerced value
+     *
+     * @throws IllegalArgumentException            If the type is not supported
+     * @throws NumberFormatException               If the value cannot be parsed as the target numeric type
+     * @throws StringIndexOutOfBoundsException    If the target type is <code>char</code> or <code>Character</code>
+     *                                               and the value is empty
+     */
     public static Object coerceToType(Class<?> type, String value) {
         if (type.equals(String.class)) {
             return value;
@@ -449,6 +468,14 @@ public class Util {
         return decoderMatch;
     }
 
+    /**
+     * Parses a Sec-WebSocket-Extensions header value and populates the given list with the parsed extensions.
+     *
+     * @param extensions The list to populate with parsed extensions
+     * @param header     The header value to parse
+     *
+     * @throws IllegalArgumentException If the header contains invalid tokens or values
+     */
     public static void parseExtensionHeader(List<Extension> extensions, String header) {
         // The relevant ABNF for the Sec-WebSocket-Extensions is as follows:
         // extension-list = 1#extension
@@ -542,12 +569,23 @@ public class Util {
     }
 
 
+    /**
+     * Holds the result of matching decoders against a target type.
+     */
     public static class DecoderMatch {
 
         private final List<Class<? extends Decoder>> textDecoders = new ArrayList<>();
         private final List<Class<? extends Decoder>> binaryDecoders = new ArrayList<>();
         private final Class<?> target;
 
+        /**
+         * Constructs a new DecoderMatch by matching decoder entries against the target type.
+         *
+         * @param target          The target type to match decoders against
+         * @param decoderEntries  The available decoder entries
+         *
+         * @throws IllegalArgumentException If an unknown decoder type is encountered
+         */
         public DecoderMatch(Class<?> target, List<DecoderEntry> decoderEntries) {
             this.target = target;
             for (DecoderEntry decoderEntry : decoderEntries) {
@@ -580,21 +618,41 @@ public class Util {
         }
 
 
+        /**
+         * Returns the list of matched text decoders.
+         *
+         * @return the list of text decoder classes
+         */
         public List<Class<? extends Decoder>> getTextDecoders() {
             return textDecoders;
         }
 
 
+        /**
+         * Returns the list of matched binary decoders.
+         *
+         * @return the list of binary decoder classes
+         */
         public List<Class<? extends Decoder>> getBinaryDecoders() {
             return binaryDecoders;
         }
 
 
+        /**
+         * Returns the target type that decoders were matched against.
+         *
+         * @return the target type
+         */
         public Class<?> getTarget() {
             return target;
         }
 
 
+        /**
+         * Returns whether any decoders matched the target type.
+         *
+         * @return {@code true} if there are matching text or binary decoders, {@code false} otherwise
+         */
         public boolean hasMatches() {
             return (!textDecoders.isEmpty()) || (!binaryDecoders.isEmpty());
         }

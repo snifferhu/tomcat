@@ -213,11 +213,12 @@ import org.apache.tomcat.util.res.StringManager;
  *     }
  *   }
  * }}</pre>
- *
- * @since 1.5
  */
 public class ThreadPoolExecutor extends AbstractExecutorService {
 
+    /**
+     * The string manager for this package.
+     */
     protected static final StringManager sm = StringManager.getManager(ThreadPoolExecutor.class);
 
     /**
@@ -1165,8 +1166,6 @@ public class ThreadPoolExecutor extends AbstractExecutorService {
      * <p>
      * This method does not wait for previously submitted tasks to complete execution. Use {@link #awaitTermination
      * awaitTermination} to do that.
-     *
-     * @throws SecurityException {@inheritDoc}
      */
     @Override
     public void shutdown() {
@@ -1193,8 +1192,6 @@ public class ThreadPoolExecutor extends AbstractExecutorService {
      * There are no guarantees beyond best-effort attempts to stop processing actively executing tasks. This
      * implementation interrupts tasks via {@link Thread#interrupt}; any task that fails to respond to interrupts may
      * never terminate.
-     *
-     * @throws SecurityException {@inheritDoc}
      */
     @Override
     public List<Runnable> shutdownNow() {
@@ -1513,11 +1510,21 @@ public class ThreadPoolExecutor extends AbstractExecutorService {
     }
 
 
+    /**
+     * Returns the delay in milliseconds after which threads should be renewed.
+     *
+     * @return the thread renewal delay
+     */
     public long getThreadRenewalDelay() {
         return threadRenewalDelay;
     }
 
 
+    /**
+     * Sets the delay in milliseconds after which threads should be renewed.
+     *
+     * @param threadRenewalDelay the renewal delay (a negative value disables thread renewal)
+     */
     public void setThreadRenewalDelay(long threadRenewalDelay) {
         this.threadRenewalDelay = threadRenewalDelay;
     }
@@ -1581,6 +1588,10 @@ public class ThreadPoolExecutor extends AbstractExecutorService {
     }
 
 
+    /**
+     * Called when a context is stopping to trigger thread renewal for
+     * threads that were created before the context was stopped.
+     */
     public void contextStopping() {
         this.lastContextStoppedTime.set(System.currentTimeMillis());
 
@@ -1709,6 +1720,11 @@ public class ThreadPoolExecutor extends AbstractExecutorService {
     }
 
 
+    /**
+     * Returns the number of tasks that have been submitted to this pool and not yet completed.
+     *
+     * @return the submitted task count
+     */
     public int getSubmittedCount() {
         return submittedCount.get();
     }
@@ -1837,6 +1853,12 @@ public class ThreadPoolExecutor extends AbstractExecutorService {
     }
 
 
+    /**
+     * Checks whether the current thread should be stopped based on the
+     * thread renewal policy and the last context stop time.
+     *
+     * @return true if the current thread should be stopped
+     */
     protected boolean currentThreadShouldBeStopped() {
         Thread currentThread = Thread.currentThread();
         if (threadRenewalDelay >= 0 && currentThread instanceof TaskThread currentTaskThread) {
@@ -1978,6 +2000,9 @@ public class ThreadPoolExecutor extends AbstractExecutorService {
     }
 
 
+    /**
+     * Handler for tasks that cannot be executed by the thread pool.
+     */
     public interface RejectedExecutionHandler {
 
         /**

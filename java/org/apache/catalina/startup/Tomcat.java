@@ -143,10 +143,24 @@ public class Tomcat {
     // so that configuration is not lost.
     private final Map<String,Logger> pinnedLoggers = new HashMap<>();
 
+    /**
+     * The embedded Server instance.
+     */
     protected Server server;
 
+    /**
+     * The HTTP connector port.
+     */
     protected int port = 8080;
+
+    /**
+     * The default hostname.
+     */
     protected String hostname = "localhost";
+
+    /**
+     * The base directory for the embedded server.
+     */
     protected String basedir;
 
     private final Map<String,String> userPass = new HashMap<>();
@@ -155,6 +169,9 @@ public class Tomcat {
 
     private boolean addDefaultWebXmlToWebapp = true;
 
+    /**
+     * Constructs a new embedded Tomcat instance with default settings.
+     */
     public Tomcat() {
         ExceptionUtils.preload();
     }
@@ -294,7 +311,7 @@ public class Tomcat {
      * TODO: add the rest
      *
      * @param contextPath The context mapping to use, "" for root context.
-     * @param docBase     Base directory for the context, for static files. Must exist, relative to the server home
+     * @param docBase     Base directory for the context, for static files
      *
      * @return the deployed context
      */
@@ -550,6 +567,11 @@ public class Tomcat {
         }
     }
 
+    /**
+     * Returns the default Host for this embedded Tomcat instance.
+     *
+     * @return the default Host
+     */
     public Host getHost() {
         Engine engine = getEngine();
         if (engine.findChildren().length > 0) {
@@ -609,12 +631,12 @@ public class Tomcat {
     }
 
     /**
+     * Adds a new context to the specified host.
+     *
      * @param host        The host in which the context will be deployed
-     * @param contextPath The context mapping to use, "" for root context.
-     * @param dir         Base directory for the context, for static files. Must exist, relative to the server home
-     *
+     * @param contextPath The context mapping to use, "" for root context
+     * @param dir         Base directory for the context, for static files
      * @return the deployed context
-     *
      * @see #addContext(String, String)
      */
     public Context addContext(Host host, String contextPath, String dir) {
@@ -622,10 +644,12 @@ public class Tomcat {
     }
 
     /**
+     * Adds a new context to the specified host with the given context name.
+     *
      * @param host        The host in which the context will be deployed
-     * @param contextPath The context mapping to use, "" for root context.
+     * @param contextPath The context mapping to use, "" for root context
      * @param contextName The context name
-     * @param dir         Base directory for the context, for static files. Must exist, relative to the server home
+     * @param dir         Base directory for the context, for static files
      *
      * @return the deployed context
      *
@@ -665,7 +689,7 @@ public class Tomcat {
     public Context addWebapp(Host host, String contextPath, String docBase) {
         LifecycleListener listener;
         try {
-            Class<?> clazz = Class.forName(getHost().getConfigClass());
+            Class<?> clazz = Class.forName((host != null ? host : getHost()).getConfigClass());
             listener = (LifecycleListener) clazz.getConstructor().newInstance();
         } catch (ReflectiveOperationException e) {
             // Wrap in IAE since we can't easily change the method signature
@@ -735,8 +759,10 @@ public class Tomcat {
     }
 
     /**
+     * Returns a special path that disables the default web.xml.
+     *
      * @return a pathname to pass to {@link ContextConfig#setDefaultWebXml(String)} when using
-     *             {@link #getDefaultWebXmlListener()}.
+     *             {@link #getDefaultWebXmlListener()}
      */
     public String noDefaultWebXmlPath() {
         return Constants.NoDefaultWebXml;
@@ -778,6 +804,9 @@ public class Tomcat {
     }
 
 
+    /**
+     * Initializes the base directory from system properties if not already set.
+     */
     protected void initBaseDir() {
         String catalinaHome = System.getProperty(Globals.CATALINA_HOME_PROP);
         if (basedir == null) {
@@ -834,7 +863,7 @@ public class Tomcat {
         System.setProperty(Globals.CATALINA_HOME_PROP, server.getCatalinaHome().getPath());
     }
 
-    static final String[] silences = new String[] { "org.apache.coyote.http11.Http11NioProtocol",
+    private static final String[] silences = new String[] { "org.apache.coyote.http11.Http11NioProtocol",
             "org.apache.catalina.core.StandardService", "org.apache.catalina.core.StandardEngine",
             "org.apache.catalina.startup.ContextConfig", "org.apache.catalina.core.ApplicationContext",
             "org.apache.catalina.core.AprLifecycleListener", "org.apache.catalina.core.OpenSSLLifecycleListener" };
@@ -912,6 +941,8 @@ public class Tomcat {
         } else if (contextName.startsWith("##")) {
             loggerName.append('/');
             loggerName.append(contextName);
+        } else {
+            loggerName.append(contextName);
         }
         loggerName.append(']');
 
@@ -924,7 +955,8 @@ public class Tomcat {
      *
      * @param host host for which the {@link Context} should be created, or <code>null</code> if default host should be
      *                 used
-     * @param url  path of the webapp which should get the {@link Context}
+     * @param url  context path of the {@link Context} to be created (used only in the error message if the context
+     *                 class cannot be instantiated)
      *
      * @return newly created {@link Context}
      */
@@ -1017,9 +1049,9 @@ public class Tomcat {
         servlet.setOverridable(true);
 
         // Servlet mappings
-        ctx.addServletMappingDecoded("/", "default");
-        ctx.addServletMappingDecoded("*.jsp", "jsp");
-        ctx.addServletMappingDecoded("*.jspx", "jsp");
+        ctx.addServletMapping("/", "default");
+        ctx.addServletMapping("*.jsp", "jsp");
+        ctx.addServletMapping("*.jspx", "jsp");
 
         // Sessions
         ctx.setSessionTimeout(30);
@@ -1063,6 +1095,12 @@ public class Tomcat {
      */
     public static class FixContextListener implements LifecycleListener {
 
+        /**
+         * Constructs a new FixContextListener.
+         */
+        public FixContextListener() {
+        }
+
         @Override
         public void lifecycleEvent(LifecycleEvent event) {
             try {
@@ -1092,6 +1130,12 @@ public class Tomcat {
      * programmatic configuration is lost. This listener sets the equivalent of conf/web.xml when the context starts.
      */
     public static class DefaultWebXmlListener implements LifecycleListener {
+        /**
+         * Constructs a new DefaultWebXmlListener.
+         */
+        public DefaultWebXmlListener() {
+        }
+
         @Override
         public void lifecycleEvent(LifecycleEvent event) {
             if (Lifecycle.BEFORE_START_EVENT.equals(event.getType())) {
@@ -1108,6 +1152,11 @@ public class Tomcat {
     public static class ExistingStandardWrapper extends StandardWrapper {
         private final Servlet existing;
 
+        /**
+         * Wraps the given servlet.
+         *
+         * @param existing the servlet instance to wrap
+         */
         public ExistingStandardWrapper(Servlet existing) {
             this.existing = existing;
             this.asyncSupported = hasAsync(existing);
@@ -1153,6 +1202,13 @@ public class Tomcat {
         }
     }
 
+    /**
+     * Finds the web application configuration file (web.xml) for the given path.
+     *
+     * @param path the document base path
+     * @param contextName the context name
+     * @return the configuration file URL, or null if not found
+     */
     protected URL getWebappConfigFile(String path, String contextName) {
         File docBase = new File(path);
         if (docBase.isDirectory()) {

@@ -27,7 +27,16 @@ import org.apache.juli.logging.LogFactory;
 import org.apache.tomcat.util.modeler.Registry;
 import org.apache.tomcat.util.res.StringManager;
 
+/**
+ * Base implementation of MBean registration for lifecycle components.
+ */
 public abstract class LifecycleMBeanBase extends LifecycleBase implements JmxEnabled {
+
+    /**
+     * Default constructor.
+     */
+    public LifecycleMBeanBase() {
+    }
 
     private static final Log log = LogFactory.getLog(LifecycleMBeanBase.class);
 
@@ -103,7 +112,7 @@ public abstract class LifecycleMBeanBase extends LifecycleBase implements JmxEna
      * Note: This method should only be used once {@link #initInternal()} has been called and before
      * {@link #destroyInternal()} has been called.
      *
-     * @param obj                     The object the register
+     * @param obj                     The object to register
      * @param objectNameKeyProperties The key properties component of the object name to use to register the object
      *
      * @return The name used to register the object

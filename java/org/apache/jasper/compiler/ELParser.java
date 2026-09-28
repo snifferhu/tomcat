@@ -47,6 +47,12 @@ public class ELParser {
     private static final String[] reservedWords = { "and", "div", "empty", "eq", "false", "ge", "gt", "instanceof",
             "le", "lt", "mod", "ne", "not", "null", "or", "true" };
 
+    /**
+     * Creates a new EL parser for the given expression.
+     *
+     * @param expression the EL expression to parse
+     * @param isDeferredSyntaxAllowedAsLiteral whether deferred syntax is allowed as a literal
+     */
     public ELParser(String expression, boolean isDeferredSyntaxAllowedAsLiteral) {
         index = 0;
         this.expression = expression;
@@ -248,7 +254,8 @@ public class ELParser {
 
 
     /**
-     * Escape '\\', '\'' and '\"', inverting the unescaping performed in {@link #skipUntilEL()}.
+     * Escape '\\' in the input, and also the quote character when the input is a quoted string literal, inverting the
+     * unescaping performed in {@link #skipUntilEL()}.
      *
      * @param input Non-EL input to be escaped
      *
@@ -349,6 +356,7 @@ public class ELParser {
     private Token parseQuotedChars(char quote) {
         StringBuilder buf = new StringBuilder();
         buf.append(quote);
+        boolean foundQuote = false;
         while (hasNextChar()) {
             char ch = nextChar();
             if (ch == '\\') {
@@ -360,11 +368,16 @@ public class ELParser {
                             Localizer.getMessage("org.apache.jasper.compiler.ELParser.invalidQuoting", expression));
                 }
             } else if (ch == quote) {
+                foundQuote = true;
                 buf.append(ch);
                 break;
             } else {
                 buf.append(ch);
             }
+        }
+        if (!foundQuote) {
+            throw new IllegalArgumentException(
+                    Localizer.getMessage("org.apache.jasper.compiler.ELParser.missingQuote", expression));
         }
         return new QuotedString(getAndResetWhiteSpace(), buf.toString());
     }
@@ -514,6 +527,11 @@ public class ELParser {
         }
     }
 
+    /**
+     * Returns the type of the parsed EL expression.
+     *
+     * @return the expression type character
+     */
     public char getType() {
         return type;
     }

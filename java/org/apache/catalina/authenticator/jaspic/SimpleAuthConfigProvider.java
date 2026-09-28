@@ -34,8 +34,12 @@ public class SimpleAuthConfigProvider implements AuthConfigProvider {
 
     private final Map<String,Object> properties;
 
-    private volatile ServerAuthConfig serverAuthConfig;
-
+    /**
+     * Creates a new SimpleAuthConfigProvider.
+     *
+     * @param properties Properties to pass to the ServerAuthConfig
+     * @param factory    AuthConfigFactory to register this provider with, or {@code null}
+     */
     public SimpleAuthConfigProvider(Map<String,Object> properties, AuthConfigFactory factory) {
         this.properties = properties;
         if (factory != null) {
@@ -59,30 +63,33 @@ public class SimpleAuthConfigProvider implements AuthConfigProvider {
     @Override
     public ServerAuthConfig getServerAuthConfig(String layer, String appContext, CallbackHandler handler)
             throws AuthException {
-        ServerAuthConfig serverAuthConfig = this.serverAuthConfig;
-        if (serverAuthConfig == null) {
-            synchronized (this) {
-                if (this.serverAuthConfig == null) {
-                    this.serverAuthConfig = createServerAuthConfig(layer, appContext, handler, properties);
-                }
-                serverAuthConfig = this.serverAuthConfig;
-            }
-        }
-        return serverAuthConfig;
+        return createServerAuthConfig(layer, appContext, handler, properties);
     }
 
 
+    /**
+     * Creates the ServerAuthConfig. Can be overridden by subclasses to provide a custom implementation.
+     *
+     * @param layer      Message layer
+     * @param appContext Application context
+     * @param handler    Callback handler
+     * @param properties Configuration properties
+     *
+     * @return The ServerAuthConfig instance
+     */
     protected ServerAuthConfig createServerAuthConfig(String layer, String appContext, CallbackHandler handler,
             Map<String,Object> properties) {
         return new SimpleServerAuthConfig(layer, appContext, handler, properties);
     }
 
 
+    /**
+     * {@inheritDoc}
+     * <p>
+     * NO-OP for this implementation.
+     */
     @Override
     public void refresh() {
-        ServerAuthConfig serverAuthConfig = this.serverAuthConfig;
-        if (serverAuthConfig != null) {
-            serverAuthConfig.refresh();
-        }
+        // NO-OP
     }
 }

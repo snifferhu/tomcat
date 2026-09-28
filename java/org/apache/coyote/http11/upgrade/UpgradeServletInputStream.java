@@ -29,22 +29,58 @@ import org.apache.tomcat.util.net.DispatchType;
 import org.apache.tomcat.util.net.SocketWrapperBase;
 import org.apache.tomcat.util.res.StringManager;
 
+/**
+ * Input stream for an HTTP upgraded connection.
+ */
 public class UpgradeServletInputStream extends ServletInputStream {
 
     private static final Log log = LogFactory.getLog(UpgradeServletInputStream.class);
     private static final StringManager sm = StringManager.getManager(UpgradeServletInputStream.class);
 
+    /**
+     * The processor handling this connection.
+     */
     private final UpgradeProcessorBase processor;
+
+    /**
+     * The underlying socket wrapper.
+     */
     private final SocketWrapperBase<?> socketWrapper;
+
+    /**
+     * Statistics for this connection.
+     */
     private final UpgradeInfo upgradeInfo;
 
+    /**
+     * Whether the stream has been closed.
+     */
     private volatile boolean closed = false;
+
+    /**
+     * Whether end-of-file has been reached.
+     */
     private volatile boolean eof = false;
+
     // Start in blocking-mode
+    /**
+     * Whether data is ready to read.
+     */
     private volatile Boolean ready = Boolean.TRUE;
+
+    /**
+     * The async read listener.
+     */
     private volatile ReadListener listener = null;
 
 
+    /**
+     * Constructs a new UpgradeServletInputStream.
+     *
+     * @param processor the processor
+     * @param socketWrapper the socket wrapper
+     * @param upgradeInfo the statistics object
+     */
     public UpgradeServletInputStream(UpgradeProcessorBase processor, SocketWrapperBase<?> socketWrapper,
             UpgradeInfo upgradeInfo) {
         this.processor = processor;
@@ -100,7 +136,8 @@ public class UpgradeServletInputStream extends ServletInputStream {
 
         this.listener = listener;
 
-        // Container is responsible for first call to onDataAvailable().
+        // The first call to onDataAvailable() will be triggered by the poller
+        // once read interest is registered.
         Request request = processor.getRequest();
         if (request != null && request.isRequestThread()) {
             processor.addDispatch(DispatchType.NON_BLOCKING_READ);
@@ -139,7 +176,6 @@ public class UpgradeServletInputStream extends ServletInputStream {
         }
 
         if (count > 0) {
-            upgradeInfo.addBytesReceived(count);
             return count;
         } else {
             return -1;
@@ -197,7 +233,7 @@ public class UpgradeServletInputStream extends ServletInputStream {
             throw ioe;
         }
         if (result == 0) {
-            return -1;
+            throw new IllegalStateException(sm.getString("upgrade.sis.read.ise"));
         } else if (result == -1) {
             eof = true;
             return -1;

@@ -41,13 +41,19 @@ import org.apache.juli.logging.LogFactory;
  * repositories.</li>
  * <li>A set of directories containing classes and resources in JAR files. Each readable JAR file discovered in these
  * directories will be added to the class loader's repositories.</li>
- * <li><code>ClassLoader</code> instance that should become the parent of the new class loader.</li>
+ * <li>{@link java.lang.ClassLoader} instance that should become the parent of the new class loader.</li>
  * </ul>
  */
 public final class ClassLoaderFactory {
 
-
     private static final Log log = LogFactory.getLog(ClassLoaderFactory.class);
+
+
+    /**
+     * Private constructor to prevent instantiation.
+     */
+    private ClassLoaderFactory() {
+    }
 
     // --------------------------------------------------------- Public Methods
 
@@ -281,13 +287,34 @@ public final class ClassLoaderFactory {
     }
 
 
+    /**
+     * Defines the types of repositories that can be used with a class loader.
+     */
     public enum RepositoryType {
+        /**
+         * Repository is a directory.
+         */
         DIR,
+        /**
+         * Repository is a glob pattern directory.
+         */
         GLOB,
+        /**
+         * Repository is a JAR file.
+         */
         JAR,
+        /**
+         * Repository is a URL.
+         */
         URL
     }
 
+    /**
+     * Represents a repository location and its type.
+     *
+     * @param location the location string
+     * @param type the repository type
+     */
     public record Repository(String location, RepositoryType type) {
     }
 }

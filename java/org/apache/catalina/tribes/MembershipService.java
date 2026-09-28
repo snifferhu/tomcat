@@ -23,7 +23,13 @@ package org.apache.catalina.tribes;
  */
 public interface MembershipService {
 
+    /**
+     * Receive level.
+     */
     int MBR_RX = Channel.MBR_RX_SEQ;
+    /**
+     * Transmit level.
+     */
     int MBR_TX = Channel.MBR_TX_SEQ;
 
     /**
@@ -35,13 +41,15 @@ public interface MembershipService {
     void setProperties(java.util.Properties properties);
 
     /**
-     * @return the properties for the configuration used.
+     * Returns the properties used to configure the membership service.
+     *
+     * @return the properties for the configuration used
      */
     java.util.Properties getProperties();
 
     /**
      * Starts the membership service. If a membership listeners is added the listener will start to receive membership
-     * events. Performs a start level 1 and 2
+     * events. Performs a start at {@link #MBR_RX} and {@link #MBR_TX} level
      *
      * @throws Exception if the service fails to start.
      */
@@ -54,14 +62,13 @@ public interface MembershipService {
      * @param level - level MBR_RX starts listening for members, level MBR_TX starts broadcasting the server
      *
      * @throws Exception                          if the service fails to start.
-     * @throws java.lang.IllegalArgumentException if the level is incorrect.
+     * @throws java.lang.IllegalArgumentException some implementations throw this if the level is incorrect
      */
     void start(int level) throws Exception;
 
 
     /**
-     * Stops the membership service. If a membership listeners is added the listener will start to receive membership
-     * events.
+     * Stops the membership service. If a membership listener is added the listener will stop receiving membership events.
      *
      * @param level - level MBR_RX stops listening for members, level MBR_TX stops broadcasting the server
      *
@@ -70,6 +77,8 @@ public interface MembershipService {
     void stop(int level);
 
     /**
+     * Checks whether the membership group contains any members.
+     *
      * @return true if the group contains members
      */
     boolean hasMembers();
@@ -84,7 +93,9 @@ public interface MembershipService {
     Member getMember(Member mbr);
 
     /**
-     * @return an array of all the members in the cluster.
+     * Returns all members currently in the cluster.
+     *
+     * @return an array of all the members in the cluster
      */
     Member[] getMembers();
 
@@ -98,6 +109,8 @@ public interface MembershipService {
     Member getLocalMember(boolean incAliveTime);
 
     /**
+     * Returns the names of all members in the cluster.
+     *
      * @return all members by name
      */
     String[] getMembersByName();

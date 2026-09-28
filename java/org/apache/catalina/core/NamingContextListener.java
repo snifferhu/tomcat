@@ -37,13 +37,14 @@ import javax.naming.NamingException;
 import javax.naming.Reference;
 import javax.naming.StringRefAddr;
 
+import org.apache.catalina.Container;
 import org.apache.catalina.Context;
-import org.apache.catalina.Engine;
 import org.apache.catalina.Host;
 import org.apache.catalina.Lifecycle;
 import org.apache.catalina.LifecycleEvent;
 import org.apache.catalina.LifecycleListener;
 import org.apache.catalina.Server;
+import org.apache.catalina.Service;
 import org.apache.catalina.deploy.NamingResourcesImpl;
 import org.apache.juli.logging.Log;
 import org.apache.juli.logging.LogFactory;
@@ -79,7 +80,16 @@ import org.apache.tomcat.util.res.StringManager;
  */
 public class NamingContextListener implements LifecycleListener, PropertyChangeListener {
 
+    /**
+     * Default constructor.
+     */
+    public NamingContextListener() {
+    }
+
     private static final Log log = LogFactory.getLog(NamingContextListener.class);
+    /**
+     * The string manager for this class.
+     */
     protected static final StringManager sm = StringManager.getManager(NamingContextListener.class);
 
 
@@ -146,8 +156,9 @@ public class NamingContextListener implements LifecycleListener, PropertyChangeL
     // ------------------------------------------------------------- Properties
 
     /**
-     * @return whether or not an attempt to modify the JNDI context will trigger an exception or if the request will be
-     *             ignored.
+     * Return whether or not an attempt to modify the JNDI context will trigger an exception.
+     *
+     * @return whether or not an attempt to modify the JNDI context will trigger an exception
      */
     public boolean getExceptionOnFailedWrite() {
         return exceptionOnFailedWrite;
@@ -166,7 +177,9 @@ public class NamingContextListener implements LifecycleListener, PropertyChangeL
 
 
     /**
-     * @return the "name" property.
+     * Return the "name" property.
+     *
+     * @return the "name" property
      */
     public String getName() {
         return this.name;
@@ -184,7 +197,9 @@ public class NamingContextListener implements LifecycleListener, PropertyChangeL
 
 
     /**
-     * @return the naming environment context.
+     * Return the naming environment context.
+     *
+     * @return the naming environment context
      */
     public javax.naming.Context getEnvContext() {
         return this.envCtx;
@@ -1069,11 +1084,13 @@ public class NamingContextListener implements LifecycleListener, PropertyChangeL
 
     private javax.naming.Context getGlobalNamingContext() {
         if (container instanceof Context) {
-            Engine e = (Engine) ((Context) container).getParent().getParent();
-            Server s = e.getService().getServer();
-            // When the Service is an embedded Service, there is no Server
-            if (s != null) {
-                return s.getGlobalNamingContext();
+            Service service = Container.getService((Context) container);
+            if (service != null) {
+                Server s = service.getServer();
+                // When the Service is an embedded Service, there is no Server
+                if (s != null) {
+                    return s.getGlobalNamingContext();
+                }
             }
         }
         return null;
@@ -1204,8 +1221,9 @@ public class NamingContextListener implements LifecycleListener, PropertyChangeL
      */
     public void removeResourceLink(String name) {
 
+        javax.naming.Context ctx = "UserTransaction".equals(name) ? compCtx : envCtx;
         try {
-            envCtx.unbind(name);
+            ctx.unbind(name);
         } catch (NamingException e) {
             log.error(sm.getString("naming.unbindFailed", name), e);
         }

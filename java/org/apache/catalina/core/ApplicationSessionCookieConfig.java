@@ -29,6 +29,9 @@ import org.apache.catalina.util.SessionConfig;
 import org.apache.tomcat.util.descriptor.web.Constants;
 import org.apache.tomcat.util.res.StringManager;
 
+/**
+ * Implementation of session cookie configuration.
+ */
 public class ApplicationSessionCookieConfig implements SessionCookieConfig {
 
     /**
@@ -45,6 +48,11 @@ public class ApplicationSessionCookieConfig implements SessionCookieConfig {
     private String name;
     private final StandardContext context;
 
+    /**
+     * Constructs a new ApplicationSessionCookieConfig.
+     *
+     * @param context the standard context
+     */
     public ApplicationSessionCookieConfig(StandardContext context) {
         this.context = context;
     }
@@ -231,6 +239,8 @@ public class ApplicationSessionCookieConfig implements SessionCookieConfig {
         for (Map.Entry<String,String> attribute : scc.getAttributes().entrySet()) {
             switch (attribute.getKey()) {
                 case Constants.COOKIE_COMMENT_ATTR:
+                    // Intentionally not applied. Since Servlet 6.0 the cookie comment is not supported (RFC 6265) so
+                    // setComment()/getComment() are no-ops.
                 case Constants.COOKIE_DOMAIN_ATTR:
                 case Constants.COOKIE_MAX_AGE_ATTR:
                 case Constants.COOKIE_PATH_ATTR:

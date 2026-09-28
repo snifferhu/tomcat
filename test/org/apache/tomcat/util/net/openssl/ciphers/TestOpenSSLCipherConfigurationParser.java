@@ -89,18 +89,6 @@ public class TestOpenSSLCipherConfigurationParser {
 
 
     @Test
-    public void testEXPORT40() throws Exception {
-        testSpecification("EXPORT40");
-    }
-
-
-    @Test
-    public void testEXPORT() throws Exception {
-        testSpecification("EXPORT");
-    }
-
-
-    @Test
     public void testRSA() throws Exception {
         testSpecification("RSA");
     }
@@ -139,42 +127,6 @@ public class TestOpenSSLCipherConfigurationParser {
     @Test
     public void testDHE() throws Exception {
         testSpecification("DHE");
-    }
-
-
-    @Test
-    public void testkDHr() throws Exception {
-        testSpecification("kDHr");
-    }
-
-
-    @Test
-    public void testkDHd() throws Exception {
-        testSpecification("kDHd");
-    }
-
-
-    @Test
-    public void testkDH() throws Exception {
-        testSpecification("kDH");
-    }
-
-
-    @Test
-    public void testkECDHr() throws Exception {
-        testSpecification("kECDHr");
-    }
-
-
-    @Test
-    public void testkECDHe() throws Exception {
-        testSpecification("kECDHe");
-    }
-
-
-    @Test
-    public void testkECDH() throws Exception {
-        testSpecification("kECDH");
     }
 
 
@@ -221,18 +173,6 @@ public class TestOpenSSLCipherConfigurationParser {
 
 
     @Test
-    public void testaDH() throws Exception {
-        testSpecification("aDH");
-    }
-
-
-    @Test
-    public void testaECDH() throws Exception {
-        testSpecification("aECDH");
-    }
-
-
-    @Test
     public void testaECDSA() throws Exception {
         testSpecification("aECDSA");
     }
@@ -241,30 +181,6 @@ public class TestOpenSSLCipherConfigurationParser {
     @Test
     public void testECDSA() throws Exception {
         testSpecification("ECDSA");
-    }
-
-
-    @Test
-    public void testkFZA() throws Exception {
-        testSpecification("kFZA");
-    }
-
-
-    @Test
-    public void testaFZA() throws Exception {
-        testSpecification("aFZA");
-    }
-
-
-    @Test
-    public void testeFZA() throws Exception {
-        testSpecification("eFZA");
-    }
-
-
-    @Test
-    public void testFZA() throws Exception {
-        testSpecification("FZA");
     }
 
 
@@ -282,13 +198,11 @@ public class TestOpenSSLCipherConfigurationParser {
 
     @Test
     public void testSSLv3() throws Exception {
+        if (TesterOpenSSL.VERSION < 40000) {
+            return;
+        }
+        // As of OpenSSL 4.0.0, support for the SSLv3 alias has been removed
         testSpecification("SSLv3");
-    }
-
-
-    @Test
-    public void testSSLv2() throws Exception {
-        testSpecification("SSLv2");
     }
 
 
@@ -431,12 +345,6 @@ public class TestOpenSSLCipherConfigurationParser {
 
 
     @Test
-    public void testKRB5() throws Exception {
-        testSpecification("KRB5");
-    }
-
-
-    @Test
     public void testaGOST() throws Exception {
         testSpecification("aGOST");
     }
@@ -445,12 +353,6 @@ public class TestOpenSSLCipherConfigurationParser {
     @Test
     public void testaGOST01() throws Exception {
         testSpecification("aGOST01");
-    }
-
-
-    @Test
-    public void testaGOST94() throws Exception {
-        testSpecification("aGOST94");
     }
 
 
@@ -515,6 +417,12 @@ public class TestOpenSSLCipherConfigurationParser {
 
 
     @Test
+    public void testARIAGCM() throws Exception {
+        testSpecification("ARIAGCM");
+    }
+
+
+    @Test
     public void testARIA128() throws Exception {
         testSpecification("ARIA128");
     }
@@ -523,6 +431,12 @@ public class TestOpenSSLCipherConfigurationParser {
     @Test
     public void testARIA256() throws Exception {
         testSpecification("ARIA256");
+    }
+
+
+    @Test
+    public void testCBC() throws Exception {
+        testSpecification("CBC");
     }
 
 
@@ -535,25 +449,25 @@ public class TestOpenSSLCipherConfigurationParser {
         // a number of the reference browsers
         if (TesterOpenSSL.VERSION < 30200) {
             // OpenSSL 3.2.x moved the CCM8 ciphers from high to medium
-            testSpecification("HIGH:!AESCCM8:!aNULL:!eNULL:!EXPORT:!DES:!RC4:!MD5");
+            testSpecification("HIGH:!AESCCM8:!aNULL:!eNULL:!DES:!RC4:!MD5");
         } else {
-            testSpecification("HIGH:!aNULL:!eNULL:!EXPORT:!DES:!RC4:!MD5");
+            testSpecification("HIGH:!aNULL:!eNULL:!DES:!RC4:!MD5");
         }
     }
 
 
     @Test
     public void testSpecification02() throws Exception {
-        // Suggestion from dev list (s/ECDHE/kEECDH/, s/DHE/EDH/
-        testSpecification("!aNULL:!eNULL:!EXPORT:!DSS:!DES:!SSLv2:kEECDH:ECDH:EDH:AES256-GCM-SHA384:AES128-GCM-SHA256:+RC4:HIGH:aRSA:kECDHr:MEDIUM");
+        // Suggestion from dev list (s/ECDHE/kEECDH/, s/DHE/EDH/, s/\!SSLv2//, s/\!EXPORT//)
+        testSpecification("!aNULL:!eNULL:!DSS:!DES:kEECDH:ECDH:EDH:AES256-GCM-SHA384:AES128-GCM-SHA256:+RC4:HIGH:aRSA:kECDHr:MEDIUM");
     }
 
 
     @Test
     public void testSpecification03() throws Exception {
         // Reported as failing during 8.0.11 release vote by Ognjen Blagojevic
-        // EDH was introduced in 1.0.0
-        testSpecification("EECDH+aRSA+SHA384:EECDH:EDH+aRSA:RC4:!aNULL:!eNULL:!LOW:!3DES:!MD5:!EXP:!PSK:!SRP:!DSS");
+        // EDH was introduced in 1.0.0 (s/\!EXP//)
+        testSpecification("EECDH+aRSA+SHA384:EECDH:EDH+aRSA:RC4:!aNULL:!eNULL:!LOW:!3DES:!MD5:!PSK:!SRP:!DSS");
     }
 
 
@@ -564,10 +478,34 @@ public class TestOpenSSLCipherConfigurationParser {
     public void testSpecification04() throws Exception {
         if (TesterOpenSSL.VERSION < 30200) {
             // OpenSSL 3.2.x moved the CCM8 ciphers from high to medium
-            testSpecification("HIGH:!aNULL:!eNULL:!EXPORT:!DES:!RC4:!3DES:!MD5:!PSK:!DSS:!SHA1:!SHA256:!SHA384:!AESCCM8");
+            testSpecification("HIGH:!aNULL:!eNULL:!DES:!RC4:!3DES:!MD5:!PSK:!DSS:!SHA1:!SHA256:!SHA384:!AESCCM8");
         } else {
-            testSpecification("HIGH:!aNULL:!eNULL:!EXPORT:!DES:!RC4:!3DES:!MD5:!PSK:!DSS:!SHA1:!SHA256:!SHA384:");
+            testSpecification("HIGH:!aNULL:!eNULL:!DES:!RC4:!3DES:!MD5:!PSK:!DSS:!SHA1:!SHA256:!SHA384:");
         }
+    }
+
+
+    @Test
+    public void testSpecification05() throws Exception {
+        if (TesterOpenSSL.VERSION < 30200) {
+            // OpenSSL 3.2.x moved the CCM8 ciphers from high to medium
+            testSpecification("HIGH:!AESCCM8:@STRENGTH:!aNULL:!eNULL");
+        } else {
+            testSpecification("HIGH:@STRENGTH:!aNULL:!eNULL");
+        }
+    }
+
+
+    @Test
+    public void testSpecificationIsEmptyNonsense() throws Exception {
+        testSpecificationIsEmpty("Nonsense");
+    }
+
+
+    private void testSpecificationIsEmpty(String specification) throws Exception {
+        String openSSLCipherList = TesterOpenSSL.getOpenSSLCiphersAsExpression(specification);
+        Assert.assertEquals("Specification [" + specification + "] returned [" + openSSLCipherList +
+                "] rather than the expected empty list", "", openSSLCipherList);
     }
 
 
@@ -584,21 +522,32 @@ public class TestOpenSSLCipherConfigurationParser {
         // First check the lists have the same entries
         // Order is NOT important at this point. It is checked below.
         Assert.assertEquals(
+                "Expected " + jsseCipherListFromOpenSSL.size() + " ciphers but got "
+                        + jsseCipherListFromParser.size() + " for the specification '"
+                        + specification + "'",
+                new TreeSet<>(jsseCipherListFromOpenSSL), new TreeSet<>(jsseCipherListFromParser));
+
+        Assert.assertEquals(
                 "Expected " + jsseCipherListFromParser.size() + " ciphers but got "
                         + jsseCipherListFromOpenSSL.size() + " for the specification '"
                         + specification + "'",
                 new TreeSet<>(jsseCipherListFromParser), new TreeSet<>(jsseCipherListFromOpenSSL));
 
-        // OpenSSL treats many ciphers as having equal preference. The order
-        // returned depends on the order they are requested. The following code
-        // checks that the Parser produces a cipher list that is consistent with
-        // OpenSSL's preference order by confirming that running through OpenSSL
-        // does not change the order.
-        String parserOrderedExpression = listToString(jsseCipherListFromParser, ',');
-        Assert.assertEquals(
-                listToString(OpenSSLCipherConfigurationParser.parseExpression(
-                        parserOrderedExpression), ','),
-                parserOrderedExpression);
+        /*
+         * The parser generated cipher list is checked for an exact match with the list generated by OpenSSL.
+         *
+         * This check tests for the exact order as generated by OpenSSL master running on Linux.
+         *
+         * There was a change in the default ordering between 3.2.x and 3.3.x. Skip the exact order check if testing
+         * against OpenSSL 3.0.x (the only currently supported version before 3.3.x).
+         *
+         * It is assumed that the cipher order does not vary by operating system. If that assumption is wrong, it should
+         * be caught by CI and the test can be adjusted.
+         */
+        if (TesterOpenSSL.VERSION > 30299) {
+            Assert.assertEquals(specification, listToString(jsseCipherListFromOpenSSL, ','),
+                    listToString(jsseCipherListFromParser, ','));
+        }
     }
 
 

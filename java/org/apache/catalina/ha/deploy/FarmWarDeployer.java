@@ -20,7 +20,8 @@ import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.nio.file.Files;
-import java.util.HashMap;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 import javax.management.MBeanServer;
 import javax.management.ObjectName;
@@ -49,7 +50,7 @@ import org.apache.tomcat.util.res.StringManager;
  * <ul>
  * <li>watchDir - the directory where we watch for changes</li>
  * <li>deployDir - the directory where we install applications</li>
- * <li>tempDir - a temporaryDirectory to store binary data when downloading a war from the cluster</li>
+ * <li>tempDir - a temporary directory to store binary data when downloading a war from the cluster</li>
  * </ul>
  * Currently we only support deployment of WAR files since they are easier to send across the wire.
  */
@@ -59,9 +60,15 @@ public class FarmWarDeployer extends ClusterListener implements ClusterDeployer,
     private static final StringManager sm = StringManager.getManager(FarmWarDeployer.class);
 
     /*--Instance Variables--------------------------------------*/
+    /**
+     * Whether the deployer has been started.
+     */
     protected boolean started = false;
 
-    protected final HashMap<String,FileMessageFactory> fileFactories = new HashMap<>();
+    /**
+     * Map of file name to factory for in-progress file transfers.
+     */
+    protected final Map<String,FileMessageFactory> fileFactories = new ConcurrentHashMap<>();
 
     /**
      * Deployment directory.
@@ -81,8 +88,14 @@ public class FarmWarDeployer extends ClusterListener implements ClusterDeployer,
     protected String watchDir;
     private File watchDirFile = null;
 
+    /**
+     * Whether the watch directory feature is enabled.
+     */
     protected boolean watchEnabled = false;
 
+    /**
+     * The watcher for monitoring the watch directory.
+     */
     protected WarWatcher watcher = null;
 
     /**
@@ -122,6 +135,9 @@ public class FarmWarDeployer extends ClusterListener implements ClusterDeployer,
     protected int maxValidTime = 5 * 60;
 
     /*--Constructor---------------------------------------------*/
+    /**
+     * Creates a new FarmWarDeployer instance.
+     */
     public FarmWarDeployer() {
     }
 
@@ -212,7 +228,7 @@ public class FarmWarDeployer extends ClusterListener implements ClusterDeployer,
                     // last message received war file is completed
                     String name = factory.getFile().getName();
                     if (!name.endsWith(".war")) {
-                        name = name + ".war";
+                        name = (new ContextName(name, true)).getBaseName() + ".war";
                     }
                     File deployable = new File(getDeployDirFile(), name);
                     try {
@@ -320,7 +336,6 @@ public class FarmWarDeployer extends ClusterListener implements ClusterDeployer,
      * @param webapp      A WAR file or unpacked directory structure containing the web application to be installed
      *
      * @exception IllegalArgumentException if the specified context name is malformed
-     * @exception IllegalStateException    if the specified context name is already deployed
      * @exception IOException              if an input/output error was encountered during installation
      */
     @Override
@@ -377,7 +392,7 @@ public class FarmWarDeployer extends ClusterListener implements ClusterDeployer,
             if (log.isTraceEnabled()) {
                 log.trace(sm.getString("farmWarDeployer.removeTxMsg", contextName));
             }
-            cluster.send(msg);
+            getCluster().send(msg);
         }
         // remove locally
         if (undeploy) {
@@ -403,8 +418,9 @@ public class FarmWarDeployer extends ClusterListener implements ClusterDeployer,
     @Override
     public void fileModified(File newWar) {
         try {
-            File deployWar = new File(getDeployDirFile(), newWar.getName());
-            ContextName cn = new ContextName(deployWar.getName(), true);
+            ContextName cn = new ContextName(newWar.getName(), true);
+            // Ensure deployed war uses lower case ".war" extension
+            File deployWar = new File(getDeployDirFile(), cn.getBaseName() + ".war");
             if (deployWar.exists() && deployWar.lastModified() > newWar.lastModified()) {
                 if (log.isInfoEnabled()) {
                     log.info(sm.getString("farmWarDeployer.alreadyDeployed", cn.getName()));
@@ -422,10 +438,10 @@ public class FarmWarDeployer extends ClusterListener implements ClusterDeployer,
                     removeServiced(cn.getName());
                 }
                 check(cn.getName());
+                install(cn.getName(), deployWar);
             } else {
                 log.error(sm.getString("farmWarDeployer.servicingDeploy", cn.getName(), deployWar.getName()));
             }
-            install(cn.getName(), deployWar);
         } catch (Exception e) {
             log.error(sm.getString("farmWarDeployer.modInstallFail"), e);
         }
@@ -569,10 +585,20 @@ public class FarmWarDeployer extends ClusterListener implements ClusterDeployer,
     }
 
     /*--Instance Getters/Setters--------------------------------*/
+    /**
+     * Returns the deployment directory path.
+     *
+     * @return the deployment directory path
+     */
     public String getDeployDir() {
         return deployDir;
     }
 
+    /**
+     * Returns the deployment directory as a File object.
+     *
+     * @return the deployment directory file
+     */
     public File getDeployDirFile() {
         if (deployDirFile != null) {
             return deployDirFile;
@@ -583,14 +609,30 @@ public class FarmWarDeployer extends ClusterListener implements ClusterDeployer,
         return dir;
     }
 
+    /**
+     * Sets the deployment directory path.
+     *
+     * @param deployDir the deployment directory path
+     */
     public void setDeployDir(String deployDir) {
         this.deployDir = deployDir;
+        deployDirFile = null;
     }
 
+    /**
+     * Returns the temporary directory path.
+     *
+     * @return the temporary directory path
+     */
     public String getTempDir() {
         return tempDir;
     }
 
+    /**
+     * Returns the temporary directory as a File object.
+     *
+     * @return the temporary directory file
+     */
     public File getTempDirFile() {
         if (tempDirFile != null) {
             return tempDirFile;
@@ -601,14 +643,30 @@ public class FarmWarDeployer extends ClusterListener implements ClusterDeployer,
         return dir;
     }
 
+    /**
+     * Sets the temporary directory path.
+     *
+     * @param tempDir the temporary directory path
+     */
     public void setTempDir(String tempDir) {
         this.tempDir = tempDir;
+        tempDirFile = null;
     }
 
+    /**
+     * Returns the watch directory path.
+     *
+     * @return the watch directory path
+     */
     public String getWatchDir() {
         return watchDir;
     }
 
+    /**
+     * Returns the watch directory as a File object.
+     *
+     * @return the watch directory file
+     */
     public File getWatchDirFile() {
         if (watchDirFile != null) {
             return watchDirFile;
@@ -619,24 +677,47 @@ public class FarmWarDeployer extends ClusterListener implements ClusterDeployer,
         return dir;
     }
 
+    /**
+     * Sets the watch directory path.
+     *
+     * @param watchDir the watch directory path
+     */
     public void setWatchDir(String watchDir) {
         this.watchDir = watchDir;
+        watchDirFile = null;
     }
 
+    /**
+     * Returns whether the watch directory feature is enabled.
+     *
+     * @return {@code true} if watch is enabled
+     */
     public boolean isWatchEnabled() {
         return watchEnabled;
     }
 
+    /**
+     * Returns whether the watch directory feature is enabled.
+     *
+     * @return {@code true} if watch is enabled
+     */
     public boolean getWatchEnabled() {
         return watchEnabled;
     }
 
+    /**
+     * Sets whether the watch directory feature is enabled.
+     *
+     * @param watchEnabled {@code true} to enable watch
+     */
     public void setWatchEnabled(boolean watchEnabled) {
         this.watchEnabled = watchEnabled;
     }
 
     /**
-     * @return the frequency of watcher checks.
+     * Returns the frequency of watcher checks.
+     *
+     * @return the frequency of watcher checks
      */
     public int getProcessDeployFrequency() {
         return this.processDeployFrequency;
@@ -645,7 +726,7 @@ public class FarmWarDeployer extends ClusterListener implements ClusterDeployer,
     /**
      * Set the watcher checks frequency.
      *
-     * @param processExpiresFrequency the new manager checks frequency
+     * @param processExpiresFrequency the new watcher checks frequency
      */
     public void setProcessDeployFrequency(int processExpiresFrequency) {
 
@@ -655,10 +736,20 @@ public class FarmWarDeployer extends ClusterListener implements ClusterDeployer,
         this.processDeployFrequency = processExpiresFrequency;
     }
 
+    /**
+     * Returns the maximum valid time for FileMessageFactory.
+     *
+     * @return the maximum valid time in seconds
+     */
     public int getMaxValidTime() {
         return maxValidTime;
     }
 
+    /**
+     * Sets the maximum valid time for FileMessageFactory.
+     *
+     * @param maxValidTime the maximum valid time in seconds
+     */
     public void setMaxValidTime(int maxValidTime) {
         this.maxValidTime = maxValidTime;
     }
@@ -673,6 +764,10 @@ public class FarmWarDeployer extends ClusterListener implements ClusterDeployer,
      */
     protected boolean copy(File from, File to) {
         try {
+            if (from.getCanonicalPath().equals(to.getCanonicalPath())) {
+                throw new IOException(sm.getString("farmWarDeployer.samePathCopy"));
+            }
+
             if (!to.exists()) {
                 if (!to.createNewFile()) {
                     log.error(sm.getString("fileNewFail", to));
@@ -701,6 +796,9 @@ public class FarmWarDeployer extends ClusterListener implements ClusterDeployer,
         return true;
     }
 
+    /**
+     * Removes invalid file factories from the factory map.
+     */
     protected void removeInvalidFileFactories() {
         String[] fileNames = fileFactories.keySet().toArray(new String[0]);
         for (String fileName : fileNames) {

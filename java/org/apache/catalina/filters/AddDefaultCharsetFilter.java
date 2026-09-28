@@ -33,7 +33,7 @@ import org.apache.juli.logging.LogFactory;
 
 /**
  * Filter that explicitly sets the default character set for media subtypes of the "text" type to ISO-8859-1, or another
- * user defined character set. RFC2616 explicitly states that browsers must use ISO-8859-1 if no character set is
+ * user defined character set. RFC 9110 explicitly states that browsers must use ISO-8859-1 if no character set is
  * defined for media with subtype "text". However, browsers may attempt to auto-detect the character set. This may be
  * exploited by an attacker to perform an XSS attack. Internet Explorer has this behaviour by default. Other browsers
  * have an option to enable it.<br>
@@ -43,6 +43,9 @@ import org.apache.juli.logging.LogFactory;
  */
 public class AddDefaultCharsetFilter extends FilterBase {
 
+    /** Constructs a new AddDefaultCharsetFilter. */
+    public AddDefaultCharsetFilter() {}
+
     // Log must be non-static as loggers are created per class-loader and this
     // Filter may be used in multiple class loaders
     private final Log log = LogFactory.getLog(AddDefaultCharsetFilter.class); // must not be static
@@ -51,6 +54,11 @@ public class AddDefaultCharsetFilter extends FilterBase {
 
     private String encoding;
 
+    /**
+     * Sets the character encoding to use.
+     *
+     * @param encoding The character encoding
+     */
     public void setEncoding(String encoding) {
         this.encoding = encoding;
     }
@@ -92,6 +100,12 @@ public class AddDefaultCharsetFilter extends FilterBase {
 
         private String encoding;
 
+        /**
+         * Constructs a new ResponseWrapper.
+         *
+         * @param response The HTTP servlet response to wrap
+         * @param encoding The character encoding to use
+         */
         public ResponseWrapper(HttpServletResponse response, String encoding) {
             super(response);
             this.encoding = encoding;

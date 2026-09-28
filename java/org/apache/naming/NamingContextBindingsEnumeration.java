@@ -33,6 +33,12 @@ public class NamingContextBindingsEnumeration implements NamingEnumeration<Bindi
     // ----------------------------------------------------------- Constructors
 
 
+    /**
+     * Creates a new bindings enumeration.
+     *
+     * @param entries The iterator of naming entries
+     * @param ctx The context for resolving references
+     */
     public NamingContextBindingsEnumeration(Iterator<NamingEntry> entries, Context ctx) {
         iterator = entries;
         this.ctx = ctx;
@@ -107,7 +113,7 @@ public class NamingContextBindingsEnumeration implements NamingEnumeration<Bindi
             value = entry.value;
         }
 
-        return new Binding(entry.name, value.getClass().getName(), value, true);
+        return new Binding(entry.name, value == null ? null : value.getClass().getName(), value, true);
     }
 }
 

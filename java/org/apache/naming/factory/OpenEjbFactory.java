@@ -32,12 +32,21 @@ import org.apache.naming.EjbRef;
  */
 public class OpenEjbFactory implements ObjectFactory {
 
+    /**
+     * Constructs a new OpenEjbFactory.
+     */
+    public OpenEjbFactory() {
+    }
+
+    /**
+     * Default OpenEJB factory class name.
+     */
     protected static final String DEFAULT_OPENEJB_FACTORY = "org.openejb.client.LocalInitialContextFactory";
 
     /**
      * Create a new EJB instance using OpenEJB.
      *
-     * @param obj         The reference object describing the DataSource
+     * @param obj         The reference object describing the EJB
      * @param name        the bound name
      * @param nameCtx     unused
      * @param environment unused

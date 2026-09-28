@@ -45,6 +45,13 @@ import org.apache.tomcat.util.net.SSLHostConfig.CertificateVerification;
  */
 public class SSLAuthenticator extends AuthenticatorBase {
 
+    /**
+     * Default constructor.
+     */
+    public SSLAuthenticator() {
+        super();
+    }
+
     private final Log log = LogFactory.getLog(SSLAuthenticator.class); // must not be static
 
     /**
@@ -69,8 +76,6 @@ public class SSLAuthenticator extends AuthenticatorBase {
          * since it will not make any TLS information (client certificate etc) available that a web application may
          * depend on. Therefore, the reauthentication behaviour for CLIENT-CERT is to perform a normal CLIENT-CERT
          * authentication.
-         *
-         * TODO: Make the reauthentication behaviour configurable per authenticator.
          */
         if (checkForCachedAuthentication(request, response, false)) {
             return true;
@@ -159,14 +164,17 @@ public class SSLAuthenticator extends AuthenticatorBase {
          */
         Container container = getContainer();
         if (!(container instanceof Context context)) {
+            log.warn(sm.getString("sslAuthenticatorValve.invalidContainer"));
             return;
         }
         container = context.getParent();
         if (!(container instanceof Host host)) {
+            log.warn(sm.getString("sslAuthenticatorValve.invalidContainer"));
             return;
         }
         container = host.getParent();
         if (!(container instanceof Engine engine)) {
+            log.warn(sm.getString("sslAuthenticatorValve.invalidContainer"));
             return;
         }
 

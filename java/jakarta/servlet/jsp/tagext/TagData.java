@@ -136,7 +136,14 @@ public class TagData implements Cloneable {
         return attributes.keys();
     }
 
+    @Override
+    protected Object clone() throws CloneNotSupportedException {
+        TagData clone = (TagData) super.clone();
+        clone.attributes = new Hashtable<>(attributes);
+        return clone;
+    }
+
     // private data
 
-    private final Hashtable<String,Object> attributes; // the tagname/value map
+    private Hashtable<String,Object> attributes; // the tagname/value map
 }

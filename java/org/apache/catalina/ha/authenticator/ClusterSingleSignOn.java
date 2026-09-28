@@ -36,7 +36,8 @@ import org.apache.tomcat.util.res.StringManager;
 /**
  * A <strong>Valve</strong> that supports a "single sign on" user experience on each node of a cluster, where the
  * security identity of a user who successfully authenticates to one web application is propagated to other web
- * applications and to other nodes cluster in the same security domain. For successful use, the following requirements
+ * applications and to other nodes in the cluster in the same security domain. For successful use, the following
+ * requirements
  * must be met:
  * <ul>
  * <li>This Valve must be configured on the Container that represents a virtual host (typically an implementation of
@@ -48,6 +49,12 @@ import org.apache.tomcat.util.res.StringManager;
  * </ul>
  */
 public class ClusterSingleSignOn extends SingleSignOn implements ClusterValve, MapOwner {
+
+    /**
+     * Default constructor for ClusterSingleSignOn.
+     */
+    public ClusterSingleSignOn() {
+    }
 
     private static final StringManager sm = StringManager.getManager(ClusterSingleSignOn.class);
 
@@ -68,10 +75,20 @@ public class ClusterSingleSignOn extends SingleSignOn implements ClusterValve, M
 
     private long rpcTimeout = 15000;
 
+    /**
+     * Returns the RPC timeout in milliseconds.
+     *
+     * @return the RPC timeout
+     */
     public long getRpcTimeout() {
         return rpcTimeout;
     }
 
+    /**
+     * Sets the RPC timeout in milliseconds.
+     *
+     * @param rpcTimeout the RPC timeout
+     */
     public void setRpcTimeout(long rpcTimeout) {
         this.rpcTimeout = rpcTimeout;
     }
@@ -79,10 +96,20 @@ public class ClusterSingleSignOn extends SingleSignOn implements ClusterValve, M
 
     private int mapSendOptions = Channel.SEND_OPTIONS_SYNCHRONIZED_ACK | Channel.SEND_OPTIONS_USE_ACK;
 
+    /**
+     * Returns the map send options.
+     *
+     * @return the map send options
+     */
     public int getMapSendOptions() {
         return mapSendOptions;
     }
 
+    /**
+     * Sets the map send options.
+     *
+     * @param mapSendOptions the map send options
+     */
     public void setMapSendOptions(int mapSendOptions) {
         this.mapSendOptions = mapSendOptions;
     }
@@ -90,20 +117,40 @@ public class ClusterSingleSignOn extends SingleSignOn implements ClusterValve, M
 
     private boolean terminateOnStartFailure = false;
 
+    /**
+     * Returns whether to terminate on start failure.
+     *
+     * @return {@code true} if termination on start failure is enabled
+     */
     public boolean getTerminateOnStartFailure() {
         return terminateOnStartFailure;
     }
 
+    /**
+     * Sets whether to terminate on start failure.
+     *
+     * @param terminateOnStartFailure the new value
+     */
     public void setTerminateOnStartFailure(boolean terminateOnStartFailure) {
         this.terminateOnStartFailure = terminateOnStartFailure;
     }
 
     private long accessTimeout = 5000;
 
+    /**
+     * Returns the access timeout in milliseconds.
+     *
+     * @return the access timeout
+     */
     public long getAccessTimeout() {
         return accessTimeout;
     }
 
+    /**
+     * Sets the access timeout in milliseconds.
+     *
+     * @param accessTimeout the access timeout
+     */
     public void setAccessTimeout(long accessTimeout) {
         this.accessTimeout = accessTimeout;
     }
@@ -152,7 +199,7 @@ public class ClusterSingleSignOn extends SingleSignOn implements ClusterValve, M
      *                                   used
      */
     @Override
-    protected synchronized void startInternal() throws LifecycleException {
+    protected void startInternal() throws LifecycleException {
 
         // Load the cluster component, if any
         try {
@@ -192,7 +239,7 @@ public class ClusterSingleSignOn extends SingleSignOn implements ClusterValve, M
      *                                   used
      */
     @Override
-    protected synchronized void stopInternal() throws LifecycleException {
+    protected void stopInternal() throws LifecycleException {
 
         super.stopInternal();
 

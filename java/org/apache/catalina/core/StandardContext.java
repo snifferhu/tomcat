@@ -42,6 +42,7 @@ import java.util.TreeMap;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReadWriteLock;
@@ -266,6 +267,13 @@ public class StandardContext extends ContainerBase implements Context, Notificat
 
 
     /**
+     * Indicates that this Context was deployed from a Context element defined in server.xml. The flag is for internal
+     * use only (it is not exposed via JMX and is not persisted by storeconfig).
+     */
+    private boolean deployedFromServerXml = false;
+
+
+    /**
      * The security constraints for this web application.
      */
     private volatile SecurityConstraint[] constraints = new SecurityConstraint[0];
@@ -276,7 +284,7 @@ public class StandardContext extends ContainerBase implements Context, Notificat
     /**
      * The ServletContext implementation associated with this Context.
      */
-    protected ApplicationContext context = null;
+    protected volatile ApplicationContext context = null;
 
     /**
      * The wrapped version of the associated ServletContext that is presented to listeners that are required to have
@@ -753,6 +761,9 @@ public class StandardContext extends ContainerBase implements Context, Notificat
 
     private Boolean failCtxIfServletStartFails;
 
+    /**
+     * Default no-op naming listener used when no custom ThreadBindingListener is configured.
+     */
     protected static final ThreadBindingListener DEFAULT_NAMING_LISTENER = (new ThreadBindingListener() {
         @Override
         public void bind() {
@@ -762,6 +773,9 @@ public class StandardContext extends ContainerBase implements Context, Notificat
         public void unbind() {
         }
     });
+    /**
+     * Listener for thread binding operations during naming context management.
+     */
     protected ThreadBindingListener threadBindingListener = DEFAULT_NAMING_LISTENER;
 
     private final Object namingToken = new Object();
@@ -843,11 +857,21 @@ public class StandardContext extends ContainerBase implements Context, Notificat
     }
 
 
+    /**
+     * Returns the size of the cache for not-found class resources.
+     *
+     * @return The cache size
+     */
     public int getNotFoundClassResourceCacheSize() {
         return notFoundClassResourceCacheSize;
     }
 
 
+    /**
+     * Sets the size of the cache for not-found class resources.
+     *
+     * @param notFoundClassResourceCacheSize The cache size
+     */
     public void setNotFoundClassResourceCacheSize(int notFoundClassResourceCacheSize) {
         this.notFoundClassResourceCacheSize = notFoundClassResourceCacheSize;
     }
@@ -877,6 +901,11 @@ public class StandardContext extends ContainerBase implements Context, Notificat
     }
 
 
+    /**
+     * Returns the number of in-progress async requests.
+     *
+     * @return The count of in-progress async requests
+     */
     public long getInProgressAsyncCount() {
         return inProgressAsyncCount.get();
     }
@@ -1327,7 +1356,9 @@ public class StandardContext extends ContainerBase implements Context, Notificat
 
 
     /**
-     * @return true if the internal naming support is used.
+     * Check if internal naming support is used.
+     *
+     * @return {@code true} if internal naming support is used
      */
     public boolean isUseNaming() {
         return useNaming;
@@ -1399,7 +1430,9 @@ public class StandardContext extends ContainerBase implements Context, Notificat
 
 
     /**
-     * @return the antiResourceLocking flag for this Context.
+     * Return the anti-resource-locking flag for this context.
+     *
+     * @return the anti-resource-locking flag
      */
     public boolean getAntiResourceLocking() {
         return this.antiResourceLocking;
@@ -1438,7 +1471,9 @@ public class StandardContext extends ContainerBase implements Context, Notificat
 
 
     /**
-     * @return the Locale to character set mapper for this Context.
+     * Return the locale to character set mapper for this context.
+     *
+     * @return the character set mapper
      */
     public CharsetMapper getCharsetMapper() {
 
@@ -1490,6 +1525,29 @@ public class StandardContext extends ContainerBase implements Context, Notificat
     @Override
     public void setConfigFile(URL configFile) {
         this.configFile = configFile;
+    }
+
+
+    /**
+     * Indicates whether this Context was deployed from a Context element defined in server.xml. The flag is set by the
+     * server.xml digester and is for internal use only. In particular, it is not exposed via JMX and is not stored by
+     * storeconfig.
+     *
+     * @return <code>true</code> if the Context element was parsed from server.xml
+     */
+    public boolean getDeployedFromServerXml() {
+        return this.deployedFromServerXml;
+    }
+
+
+    /**
+     * Sets the flag indicating that this Context was deployed from a Context element defined in server.xml. The flag is
+     * for internal use only. In particular, it is not exposed via JMX and is not stored by storeconfig.
+     *
+     * @param deployedFromServerXml The new flag value
+     */
+    public void setDeployedFromServerXml(boolean deployedFromServerXml) {
+        this.deployedFromServerXml = deployedFromServerXml;
     }
 
 
@@ -1632,6 +1690,11 @@ public class StandardContext extends ContainerBase implements Context, Notificat
 
     }
 
+    /**
+     * Returns the location of the default context XML.
+     *
+     * @return The default context XML location
+     */
     public String getDefaultContextXml() {
         return defaultContextXml;
     }
@@ -1646,6 +1709,11 @@ public class StandardContext extends ContainerBase implements Context, Notificat
         this.defaultContextXml = defaultContextXml;
     }
 
+    /**
+     * Returns the location of the default web XML.
+     *
+     * @return The default web XML location
+     */
     public String getDefaultWebXml() {
         return defaultWebXml;
     }
@@ -1669,14 +1737,29 @@ public class StandardContext extends ContainerBase implements Context, Notificat
         return startupTime;
     }
 
+    /**
+     * Sets the time (in milliseconds) it took to start this context.
+     *
+     * @param startupTime Time (in milliseconds) it took to start this context.
+     */
     public void setStartupTime(long startupTime) {
         this.startupTime = startupTime;
     }
 
+    /**
+     * Gets the time (in milliseconds) spent scanning TLDs during startup.
+     *
+     * @return Time (in milliseconds) spent scanning TLDs.
+     */
     public long getTldScanTime() {
         return tldScanTime;
     }
 
+    /**
+     * Sets the time (in milliseconds) spent scanning TLDs during startup.
+     *
+     * @param tldScanTime Time (in milliseconds) spent scanning TLDs.
+     */
     public void setTldScanTime(long tldScanTime) {
         this.tldScanTime = tldScanTime;
     }
@@ -1754,18 +1837,38 @@ public class StandardContext extends ContainerBase implements Context, Notificat
     }
 
 
+    /**
+     * Returns the J2EE Application ObjectName this module belongs to.
+     *
+     * @return The J2EE Application ObjectName
+     */
     public String getJ2EEApplication() {
         return j2EEApplication;
     }
 
+    /**
+     * Sets the J2EE Application ObjectName this module belongs to.
+     *
+     * @param j2EEApplication The J2EE Application ObjectName
+     */
     public void setJ2EEApplication(String j2EEApplication) {
         this.j2EEApplication = j2EEApplication;
     }
 
+    /**
+     * Returns the J2EE Server ObjectName this module is deployed on.
+     *
+     * @return The J2EE Server ObjectName
+     */
     public String getJ2EEServer() {
         return j2EEServer;
     }
 
+    /**
+     * Sets the J2EE Server ObjectName this module is deployed on.
+     *
+     * @param j2EEServer The J2EE Server ObjectName
+     */
     public void setJ2EEServer(String j2EEServer) {
         this.j2EEServer = j2EEServer;
     }
@@ -2087,8 +2190,10 @@ public class StandardContext extends ContainerBase implements Context, Notificat
 
 
     /**
-     * @return the original document root for this Context. This can be an absolute pathname, a relative pathname, or a
-     *             URL. Is only set as deployment has change docRoot!
+     * Return the original document root for this context. This can be an absolute pathname, a relative pathname, or a
+     * URL. Is only set as deployment has change docRoot!
+     *
+     * @return the original document root
      */
     public String getOriginalDocBase() {
         return this.originalDocBase;
@@ -2176,12 +2281,16 @@ public class StandardContext extends ContainerBase implements Context, Notificat
 
     @Override
     public ServletContext getServletContext() {
-        // This method is called multiple times during context start which is single threaded
-        // so there is no concurrency issue
+        // Outer check avoids locking when context already exists and
+        // inner check prevents duplicate creation when multiple threads race past the outer check.
         if (context == null) {
-            context = new ApplicationContext(this);
-            if (altDDName != null) {
-                context.setAttribute(Globals.ALT_DD_ATTR, altDDName);
+            synchronized (this) {
+                if (context == null) {
+                    context = new ApplicationContext(this);
+                    if (altDDName != null) {
+                        context.setAttribute(Globals.ALT_DD_ATTR, altDDName);
+                    }
+                }
             }
         }
         return context.getFacade();
@@ -2235,7 +2344,9 @@ public class StandardContext extends ContainerBase implements Context, Notificat
 
 
     /**
-     * @return the value of the unloadDelay flag.
+     * Return the value of the unload delay flag.
+     *
+     * @return the unload delay value
      */
     public long getUnloadDelay() {
         return this.unloadDelay;
@@ -2259,7 +2370,9 @@ public class StandardContext extends ContainerBase implements Context, Notificat
 
 
     /**
-     * @return unpack WAR flag.
+     * Return the unpack WAR flag.
+     *
+     * @return {@code true} if WAR files should be unpacked
      */
     public boolean getUnpackWAR() {
         return unpackWAR;
@@ -2389,8 +2502,9 @@ public class StandardContext extends ContainerBase implements Context, Notificat
     // ------------------------------------------------------ Public Properties
 
     /**
-     * @return whether or not an attempt to modify the JNDI context will trigger an exception or if the request will be
-     *             ignored.
+     * Return whether an attempt to modify the JNDI context will trigger an exception or if the request will be ignored.
+     *
+     * @return {@code true} if modification triggers an exception
      */
     public boolean getJndiExceptionOnFailedWrite() {
         return jndiExceptionOnFailedWrite;
@@ -2409,7 +2523,9 @@ public class StandardContext extends ContainerBase implements Context, Notificat
 
 
     /**
-     * @return the Locale to character set mapper class for this Context.
+     * Return the locale to character set mapper class for this context.
+     *
+     * @return the character set mapper class name
      */
     public String getCharsetMapperClass() {
         return this.charsetMapperClass;
@@ -2451,7 +2567,9 @@ public class StandardContext extends ContainerBase implements Context, Notificat
     }
 
     /**
-     * @return the work directory for this Context.
+     * Return the work directory for this context.
+     *
+     * @return the work directory path
      */
     public String getWorkDir() {
         return this.workDir;
@@ -2473,11 +2591,21 @@ public class StandardContext extends ContainerBase implements Context, Notificat
     }
 
 
+    /**
+     * Returns whether RMI targets should be cleared during stop to prevent memory leaks.
+     *
+     * @return True if RMI targets should be cleared
+     */
     public boolean getClearReferencesRmiTargets() {
         return this.clearReferencesRmiTargets;
     }
 
 
+    /**
+     * Sets whether RMI targets should be cleared during stop to prevent memory leaks.
+     *
+     * @param clearReferencesRmiTargets True to clear RMI targets
+     */
     public void setClearReferencesRmiTargets(boolean clearReferencesRmiTargets) {
         boolean oldClearReferencesRmiTargets = this.clearReferencesRmiTargets;
         this.clearReferencesRmiTargets = clearReferencesRmiTargets;
@@ -2487,7 +2615,9 @@ public class StandardContext extends ContainerBase implements Context, Notificat
 
 
     /**
-     * @return the clearReferencesStopThreads flag for this Context.
+     * Return the clearReferencesStopThreads flag for this context.
+     *
+     * @return the clearReferencesStopThreads flag
      */
     public boolean getClearReferencesStopThreads() {
         return this.clearReferencesStopThreads;
@@ -2510,7 +2640,9 @@ public class StandardContext extends ContainerBase implements Context, Notificat
 
 
     /**
-     * @return the clearReferencesStopTimerThreads flag for this Context.
+     * Return the clearReferencesStopTimerThreads flag for this context.
+     *
+     * @return the clearReferencesStopTimerThreads flag
      */
     public boolean getClearReferencesStopTimerThreads() {
         return this.clearReferencesStopTimerThreads;
@@ -2532,7 +2664,9 @@ public class StandardContext extends ContainerBase implements Context, Notificat
 
 
     /**
-     * @return the clearReferencesHttpClientKeepAliveThread flag for this Context.
+     * Return the clearReferencesHttpClientKeepAliveThread flag for this context.
+     *
+     * @return the clearReferencesHttpClientKeepAliveThread flag
      */
     public boolean getClearReferencesHttpClientKeepAliveThread() {
         return this.clearReferencesHttpClientKeepAliveThread;
@@ -2549,10 +2683,20 @@ public class StandardContext extends ContainerBase implements Context, Notificat
     }
 
 
+    /**
+     * Returns whether threads should be renewed when stopping the context.
+     *
+     * @return True if threads should be renewed
+     */
     public boolean getRenewThreadsWhenStoppingContext() {
         return this.renewThreadsWhenStoppingContext;
     }
 
+    /**
+     * Sets whether threads should be renewed when stopping the context.
+     *
+     * @param renewThreadsWhenStoppingContext True to renew threads
+     */
     public void setRenewThreadsWhenStoppingContext(boolean renewThreadsWhenStoppingContext) {
         boolean oldRenewThreadsWhenStoppingContext = this.renewThreadsWhenStoppingContext;
         this.renewThreadsWhenStoppingContext = renewThreadsWhenStoppingContext;
@@ -2561,11 +2705,21 @@ public class StandardContext extends ContainerBase implements Context, Notificat
     }
 
 
+    /**
+     * Returns whether ThreadLocal references should be cleared during stop to prevent memory leaks.
+     *
+     * @return True if ThreadLocal references should be cleared
+     */
     public boolean getClearReferencesThreadLocals() {
         return clearReferencesThreadLocals;
     }
 
 
+    /**
+     * Sets whether ThreadLocal references should be cleared during stop to prevent memory leaks.
+     *
+     * @param clearReferencesThreadLocals True to clear ThreadLocal references
+     */
     public void setClearReferencesThreadLocals(boolean clearReferencesThreadLocals) {
         boolean oldClearReferencesThreadLocals = this.clearReferencesThreadLocals;
         this.clearReferencesThreadLocals = clearReferencesThreadLocals;
@@ -2574,20 +2728,40 @@ public class StandardContext extends ContainerBase implements Context, Notificat
     }
 
 
+    /**
+     * Returns whether memory leak checks should be skipped on JVM shutdown.
+     *
+     * @return True if memory leak checks should be skipped
+     */
     public boolean getSkipMemoryLeakChecksOnJvmShutdown() {
         return skipMemoryLeakChecksOnJvmShutdown;
     }
 
 
+    /**
+     * Sets whether memory leak checks should be skipped on JVM shutdown.
+     *
+     * @param skipMemoryLeakChecksOnJvmShutdown True to skip memory leak checks
+     */
     public void setSkipMemoryLeakChecksOnJvmShutdown(boolean skipMemoryLeakChecksOnJvmShutdown) {
         this.skipMemoryLeakChecksOnJvmShutdown = skipMemoryLeakChecksOnJvmShutdown;
     }
 
 
+    /**
+     * Returns whether the context should fail if a servlet fails to start.
+     *
+     * @return True if the context should fail, false otherwise, or null to inherit from parent
+     */
     public Boolean getFailCtxIfServletStartFails() {
         return failCtxIfServletStartFails;
     }
 
+    /**
+     * Sets whether the context should fail if a servlet fails to start.
+     *
+     * @param failCtxIfServletStartFails True to fail the context, false to continue, or null to inherit
+     */
     public void setFailCtxIfServletStartFails(Boolean failCtxIfServletStartFails) {
         Boolean oldFailCtxIfServletStartFails = this.failCtxIfServletStartFails;
         this.failCtxIfServletStartFails = failCtxIfServletStartFails;
@@ -2595,6 +2769,11 @@ public class StandardContext extends ContainerBase implements Context, Notificat
                 failCtxIfServletStartFails);
     }
 
+    /**
+     * Returns the computed value of failCtxIfServletStartFails, inheriting from parent Host if not explicitly set.
+     *
+     * @return True if the context should fail when a servlet start fails
+     */
     protected boolean getComputedFailCtxIfServletStartFails() {
         if (failCtxIfServletStartFails != null) {
             return failCtxIfServletStartFails.booleanValue();
@@ -2667,7 +2846,7 @@ public class StandardContext extends ContainerBase implements Context, Notificat
              */
             String[] jspMappings = oldJspServlet.findMappings();
             for (int i = 0; jspMappings != null && i < jspMappings.length; i++) {
-                addServletMappingDecoded(jspMappings[i], child.getName());
+                addServletMapping(jspMappings[i], child.getName());
             }
         }
     }
@@ -2851,7 +3030,7 @@ public class StandardContext extends ContainerBase implements Context, Notificat
 
 
     @Override
-    public void addServletMappingDecoded(String pattern, String name, boolean jspWildCard) {
+    public void addServletMapping(String pattern, String name, boolean jspWildCard) {
         // Validate the proposed mapping
         if (findChild(name) == null) {
             throw new IllegalArgumentException(sm.getString("standardContext.servletMap.name", name));
@@ -3048,9 +3227,10 @@ public class StandardContext extends ContainerBase implements Context, Notificat
 
 
     /**
-     * @return the message destination with the specified name, if any; otherwise, return <code>null</code>.
+     * Return the message destination with the specified name, if any; otherwise, return {@code null}.
      *
      * @param name Name of the desired message destination
+     * @return the message destination, or {@code null}
      */
     public MessageDestination findMessageDestination(String name) {
         synchronized (messageDestinations) {
@@ -3060,8 +3240,10 @@ public class StandardContext extends ContainerBase implements Context, Notificat
 
 
     /**
-     * @return the array of defined message destinations for this web application. If none have been defined, a
-     *             zero-length array is returned.
+     * Return the array of defined message destinations for this web application. If none have been defined, a
+     * zero-length array is returned.
+     *
+     * @return the message destinations
      */
     public MessageDestination[] findMessageDestinations() {
         synchronized (messageDestinations) {
@@ -3730,6 +3912,12 @@ public class StandardContext extends ContainerBase implements Context, Notificat
     }
 
 
+    /**
+     * Checks whether the given servlet was dynamically created by this context.
+     *
+     * @param servlet The servlet to check
+     * @return True if the servlet was dynamically created
+     */
     public boolean wasCreatedDynamicServlet(Servlet servlet) {
         return createdServlets.contains(servlet);
     }
@@ -4576,10 +4764,7 @@ public class StandardContext extends ContainerBase implements Context, Notificat
     private void mergeParameters() {
         Map<String,String> mergedParams = new HashMap<>();
 
-        String[] names = findParameters();
-        for (String s : names) {
-            mergedParams.put(s, findParameter(s));
-        }
+        mergedParams.putAll(parameters);
 
         ApplicationParameter[] params = findApplicationParameters();
         for (ApplicationParameter param : params) {
@@ -4594,7 +4779,6 @@ public class StandardContext extends ContainerBase implements Context, Notificat
         for (Map.Entry<String,String> entry : mergedParams.entrySet()) {
             sc.setInitParameter(entry.getKey(), entry.getValue());
         }
-
     }
 
 
@@ -4612,8 +4796,8 @@ public class StandardContext extends ContainerBase implements Context, Notificat
         // requests will be mapped) but is still available.
 
         // Give the in progress async requests a chance to complete
-        long limit = System.currentTimeMillis() + unloadDelay;
-        while (inProgressAsyncCount.get() > 0 && System.currentTimeMillis() < limit) {
+        long limit = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(unloadDelay);
+        while (inProgressAsyncCount.get() > 0 && (System.nanoTime() - limit) < 0) {
             try {
                 Thread.sleep(50);
             } catch (InterruptedException e) {
@@ -4806,7 +4990,7 @@ public class StandardContext extends ContainerBase implements Context, Notificat
             try {
                 instanceManager.backgroundProcess();
             } catch (Exception e) {
-                log.warn(sm.getString("standardContext.backgroundProcess.instanceManager", resources), e);
+                log.warn(sm.getString("standardContext.backgroundProcess.instanceManager", instanceManager), e);
             }
         }
         super.backgroundProcess();
@@ -4995,7 +5179,10 @@ public class StandardContext extends ContainerBase implements Context, Notificat
         Loader loader = getLoader();
         ClassLoader webApplicationClassLoader = null;
         if (loader != null) {
-            webApplicationClassLoader = loader.getClassLoader();
+            // Don't bind the web application class loader if it isn't started yet.
+            if (!(loader instanceof Lifecycle) || ((Lifecycle) loader).getState().isAvailable()) {
+                webApplicationClassLoader = loader.getClassLoader();
+            }
         }
 
         Thread currentThread = Thread.currentThread();
@@ -5426,8 +5613,8 @@ public class StandardContext extends ContainerBase implements Context, Notificat
                     new MBeanNotificationInfo(new String[] { "j2ee.state.running" }, Notification.class.getName(),
                             "web application is running"),
                     new MBeanNotificationInfo(new String[] { "j2ee.state.stopping" }, Notification.class.getName(),
-                            "web application start to stopped"),
-                    new MBeanNotificationInfo(new String[] { "j2ee.object.stopped" }, Notification.class.getName(),
+                            "web application is stopping"),
+                    new MBeanNotificationInfo(new String[] { "j2ee.state.stopped" }, Notification.class.getName(),
                             "web application is stopped"),
                     new MBeanNotificationInfo(new String[] { "j2ee.object.deleted" }, Notification.class.getName(),
                             "web application is deleted"),
@@ -5455,7 +5642,9 @@ public class StandardContext extends ContainerBase implements Context, Notificat
     // ------------------------------------------------------------- Attributes
 
     /**
-     * @return the naming resources associated with this web application.
+     * Return the welcome files for this web application.
+     *
+     * @return the welcome files
      */
     public String[] getWelcomeFiles() {
 
@@ -5517,10 +5706,21 @@ public class StandardContext extends ContainerBase implements Context, Notificat
      */
     private String server = null;
 
+    /**
+     * Returns the J2EE Server ObjectName this module is deployed on.
+     *
+     * @return The server ObjectName
+     */
     public String getServer() {
         return server;
     }
 
+    /**
+     * Sets the J2EE Server ObjectName this module is deployed on.
+     *
+     * @param server The server ObjectName
+     * @return The previous server value
+     */
     public String setServer(String server) {
         return this.server = server;
     }

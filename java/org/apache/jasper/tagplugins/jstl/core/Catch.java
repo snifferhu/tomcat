@@ -19,7 +19,16 @@ package org.apache.jasper.tagplugins.jstl.core;
 import org.apache.jasper.compiler.tagplugin.TagPlugin;
 import org.apache.jasper.compiler.tagplugin.TagPluginContext;
 
+/**
+ * Tag plugin implementation for the JSTL catch tag.
+ */
 public class Catch implements TagPlugin {
+
+    /**
+     * Default constructor.
+     */
+    public Catch() {
+    }
 
     @Override
     public void doTag(TagPluginContext ctxt) {
@@ -44,8 +53,8 @@ public class Catch implements TagPlugin {
         // be set to the attribute "var" defines in page scope
         if (hasVar) {
             String strVar = ctxt.getConstantAttribute("var");
-            ctxt.generateJavaSource(
-                    "    pageContext.setAttribute(\"" + strVar + "\", " + exceptionName + ", PageContext.PAGE_SCOPE);");
+            ctxt.generateJavaSource("    _jspx_page_context.setAttribute(\"" + strVar + "\", " +
+                    exceptionName + ", PageContext.PAGE_SCOPE);");
         }
 
         // whenever there's exception caught,
@@ -61,7 +70,8 @@ public class Catch implements TagPlugin {
         if (hasVar) {
             String strVar = ctxt.getConstantAttribute("var");
             ctxt.generateJavaSource("    if(!" + caughtName + "){");
-            ctxt.generateJavaSource("        pageContext.removeAttribute(\"" + strVar + "\", PageContext.PAGE_SCOPE);");
+            ctxt.generateJavaSource("        _jspx_page_context.removeAttribute(\"" + strVar +
+                    "\", PageContext.PAGE_SCOPE);");
             ctxt.generateJavaSource("    }");
         }
 

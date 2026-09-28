@@ -20,15 +20,25 @@ import java.util.Locale;
 
 import org.apache.tomcat.util.res.StringManager;
 
+/**
+ * Enum for handling cookies that do not contain an equals sign.
+ */
 public enum CookiesWithoutEquals {
+    /**
+     * Ignore cookies without an equals sign.
+     */
     IGNORE("ignore"),
+
+    /**
+     * Treat the value as the cookie name.
+     */
     NAME("name");
     /*
      * @formatter:off
      * There is no VALUE option since the Servlet specification does not permit the creation of a Cookie with a name
      * that is either null or the zero length string.
      *
-     * In RFC 2019, cookie name and value were defined as follows:
+     * In RFC 2109, cookie name and value were defined as follows:
      *    cookie          =       NAME "=" VALUE *(";" cookie-av)
      *    NAME            =       attr
      *    VALUE           =       value
@@ -58,7 +68,7 @@ public enum CookiesWithoutEquals {
      *  - both empty name and empty value are allowed but if both are empty the cookie will be ignored.
      * @formatter:on
      *
-     * To see how RFC6265 arrived at his behaviour, see https://github.com/httpwg/http-extensions/issues/159
+     * To see how RFC6265 arrived at its behaviour, see https://github.com/httpwg/http-extensions/issues/159
      *
      * Historically, the users agents settled on using a name-value-pair without an equals sign to indicate a cookie
      * with a value but no name. Tomcat did the opposite. That arose from addressing this bug:
@@ -81,10 +91,22 @@ public enum CookiesWithoutEquals {
         this.value = value;
     }
 
+    /**
+     * Get the string value of this enum constant.
+     *
+     * @return The string value
+     */
     public String getValue() {
         return value;
     }
 
+    /**
+     * Convert a string to the corresponding {@link CookiesWithoutEquals} value.
+     *
+     * @param from The string to convert
+     *
+     * @return The corresponding enum value
+     */
     public static CookiesWithoutEquals fromString(String from) {
         String trimmedLower = from.trim().toLowerCase(Locale.ENGLISH);
 

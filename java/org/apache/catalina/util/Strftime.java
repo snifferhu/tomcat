@@ -29,14 +29,21 @@ import java.util.TimeZone;
  * were literals.</li>
  * <li>Certain complicated commands, like those dealing with the week of the year probably don't have exactly the same
  * behavior as strftime.</li>
- * <li>These limitations are due to use SimpleDateTime. If the conversion was done manually, all these limitations could
+ * <li>These limitations are due to use SimpleDateFormat. If the conversion was done manually, all these limitations could
  * be eliminated.</li>
  * <li>The interface looks like a subset of DateFormat. Maybe someday someone will make this class extend
  * DateFormat.</li>
  * </ul>
  */
 public class Strftime {
+    /**
+     * Mapping of strftime format specifiers to SimpleDateFormat equivalents.
+     */
     protected static final Properties translate;
+
+    /**
+     * The underlying SimpleDateFormat instance used for date formatting.
+     */
     protected final SimpleDateFormat simpleDateFormat;
 
     /*
@@ -199,6 +206,14 @@ public class Strftime {
         return buf.toString();
     }
 
+    /**
+     * Quotes a string literal for use in a SimpleDateFormat pattern if it is
+     * not already inside quotes.
+     *
+     * @param str the string to quote
+     * @param insideQuotes whether the current position is inside quotes
+     * @return the quoted string
+     */
     protected String quote(String str, boolean insideQuotes) {
         String retVal = str;
         if (!insideQuotes) {

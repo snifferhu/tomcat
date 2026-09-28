@@ -31,6 +31,13 @@ public class RealmSF extends StoreFactoryBase {
 
     private static final Log log = LogFactory.getLog(RealmSF.class);
 
+    /**
+     * Default constructor.
+     */
+    public RealmSF() {
+        super();
+    }
+
     @Override
     public void store(PrintWriter aWriter, int indent, Object aElement) throws Exception {
         if (aElement instanceof CombinedRealm) {
@@ -46,9 +53,7 @@ public class RealmSF extends StoreFactoryBase {
                 getStoreAppender().printIndent(aWriter, indent + 2);
                 getStoreAppender().printCloseTag(aWriter, elementDesc);
             } else {
-                if (log.isWarnEnabled()) {
-                    log.warn(sm.getString("factory.storeNoDescriptor", aElement.getClass()));
-                }
+                log.warn(sm.getString("factory.storeNoDescriptor", aElement.getClass()));
             }
         } else {
             super.store(aWriter, indent, aElement);
@@ -61,17 +66,19 @@ public class RealmSF extends StoreFactoryBase {
     @Override
     public void storeChildren(PrintWriter aWriter, int indent, Object aRealm, StoreDescription parentDesc)
             throws Exception {
-        if (aRealm instanceof CombinedRealm combinedRealm) {
+        if (aRealm instanceof Realm realm) {
+            if (realm instanceof CombinedRealm combinedRealm) {
 
-            // Store nested <Realm> element
-            Realm[] realms = combinedRealm.getNestedRealms();
-            storeElementArray(aWriter, indent, realms);
-        }
-        // Store nested <CredentialHandler> element
-        CredentialHandler credentialHandler = ((Realm) aRealm).getCredentialHandler();
-        if (credentialHandler != null && !(credentialHandler.getClass().getName()
-                .equals("org.apache.catalina.realm.CombinedRealm$CombinedRealmCredentialHandler"))) {
-            storeElement(aWriter, indent, credentialHandler);
+                // Store nested <Realm> element
+                Realm[] realms = combinedRealm.getNestedRealms();
+                storeElementArray(aWriter, indent, realms);
+            }
+            // Store nested <CredentialHandler> element
+            CredentialHandler credentialHandler = realm.getCredentialHandler();
+            if (credentialHandler != null && !(credentialHandler.getClass().getName()
+                    .equals("org.apache.catalina.realm.CombinedRealm$CombinedRealmCredentialHandler"))) {
+                storeElement(aWriter, indent, credentialHandler);
+            }
         }
     }
 

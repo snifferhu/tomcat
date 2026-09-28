@@ -27,6 +27,7 @@ import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URL;
 import java.net.URLConnection;
+import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -42,6 +43,7 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
+import java.util.concurrent.atomic.AtomicLong;
 
 import jakarta.servlet.MultipartConfigElement;
 import jakarta.servlet.ServletContainerInitializer;
@@ -83,6 +85,7 @@ import org.apache.tomcat.util.bcel.classfile.ClassParser;
 import org.apache.tomcat.util.bcel.classfile.ElementValue;
 import org.apache.tomcat.util.bcel.classfile.ElementValuePair;
 import org.apache.tomcat.util.bcel.classfile.JavaClass;
+import org.apache.tomcat.util.buf.CloseableURLConnection;
 import org.apache.tomcat.util.buf.UriUtil;
 import org.apache.tomcat.util.descriptor.InputSourceUtil;
 import org.apache.tomcat.util.descriptor.XmlErrorHandler;
@@ -124,11 +127,21 @@ public class ContextConfig implements LifecycleListener {
     private static final Log log = LogFactory.getLog(ContextConfig.class);
 
     /**
+     * Constructs a new ContextConfig instance.
+     */
+    public ContextConfig() {
+    }
+
+    /**
      * The string resources for this package.
      */
     protected static final StringManager sm = StringManager.getManager(Constants.Package);
 
 
+    /**
+     * Dummy login configuration used when no login config is defined but an authenticator is needed to support
+     * programmatic login.
+     */
     protected static final LoginConfig DUMMY_LOGIN_CONFIG = new LoginConfig("NONE", null, null, null);
 
 
@@ -155,7 +168,7 @@ public class ContextConfig implements LifecycleListener {
     /**
      * Deployment count.
      */
-    protected static long deploymentCount = 0L;
+    protected static AtomicLong deploymentCount = new AtomicLong();
 
 
     /**
@@ -202,8 +215,8 @@ public class ContextConfig implements LifecycleListener {
 
 
     /**
-     * Anti-locking docBase. It is a path to a copy of the web application in the java.io.tmpdir directory. This path is
-     * always an absolute one.
+     * Anti-locking docBase. This is a path to a copy of the web application located in a temporary directory under the
+     * default JVM temporary directory. This path is always an absolute one.
      */
     private File antiLockingDocBase = null;
 
@@ -418,6 +431,11 @@ public class ContextConfig implements LifecycleListener {
     }
 
 
+    /**
+     * Returns whether code generation is enabled for this context.
+     *
+     * @return {@code true} if code generation is enabled
+     */
     protected boolean getGenerateCode() {
         Catalina catalina = Container.getService(context).getServer().getCatalina();
         if (catalina != null) {
@@ -428,6 +446,11 @@ public class ContextConfig implements LifecycleListener {
     }
 
 
+    /**
+     * Returns whether the use of generated code is enabled for this context.
+     *
+     * @return {@code true} if the use of generated code is enabled
+     */
     protected boolean getUseGeneratedCode() {
         Catalina catalina = Container.getService(context).getServer().getCatalina();
         if (catalina != null) {
@@ -438,6 +461,11 @@ public class ContextConfig implements LifecycleListener {
     }
 
 
+    /**
+     * Returns the location where generated code is stored.
+     *
+     * @return the location where generated code is stored
+     */
     protected File getGeneratedCodeLocation() {
         Catalina catalina = Container.getService(context).getServer().getCatalina();
         if (catalina != null) {
@@ -449,6 +477,11 @@ public class ContextConfig implements LifecycleListener {
     }
 
 
+    /**
+     * Returns the package name for generated code.
+     *
+     * @return the package name for generated code
+     */
     protected String getGeneratedCodePackage() {
         Catalina catalina = Container.getService(context).getServer().getCatalina();
         if (catalina != null) {
@@ -459,6 +492,14 @@ public class ContextConfig implements LifecycleListener {
     }
 
 
+    /**
+     * Builds the package name for context XML generated code based on the container hierarchy.
+     *
+     * @param generatedCodePackage the base package name for generated code
+     * @param container the container from which to derive the package name
+     *
+     * @return the fully qualified package name for the context XML generated code
+     */
     protected static String getContextXmlPackageName(String generatedCodePackage, Container container) {
         StringBuilder result = new StringBuilder();
         Container host = null;
@@ -488,6 +529,14 @@ public class ContextConfig implements LifecycleListener {
     }
 
 
+    /**
+     * Returns the Java source file path for the given context XML class.
+     *
+     * @param contextXmlPackageName the package name for the context XML class
+     * @param contextXmlSimpleClassName the simple class name
+     *
+     * @return the source file path, or {@code null} if the directory cannot be created
+     */
     protected File getContextXmlJavaSource(String contextXmlPackageName, String contextXmlSimpleClassName) {
         File generatedSourceFolder = getGeneratedCodeLocation();
         String path = contextXmlPackageName.replace('.', File.separatorChar);
@@ -499,6 +548,13 @@ public class ContextConfig implements LifecycleListener {
     }
 
 
+    /**
+     * Generates the header of the Java class for context XML code generation.
+     *
+     * @param digester the digester instance
+     * @param packageName the package name for the generated class
+     * @param resourceName the simple class name
+     */
     protected void generateClassHeader(Digester digester, String packageName, String resourceName) {
         StringBuilder code = digester.getGeneratedCode();
         code.append("package ").append(packageName).append(';').append(System.lineSeparator());
@@ -517,6 +573,11 @@ public class ContextConfig implements LifecycleListener {
     }
 
 
+    /**
+     * Generates the footer of the Java class for context XML code generation.
+     *
+     * @param digester the digester instance
+     */
     protected void generateClassFooter(Digester digester) {
         StringBuilder code = digester.getGeneratedCode();
         code.append('}').append(System.lineSeparator());
@@ -524,7 +585,17 @@ public class ContextConfig implements LifecycleListener {
     }
 
 
+    /**
+     * Interface for loading context XML configuration into a Context.
+     */
     public interface ContextXml {
+        /**
+         * Loads the context XML configuration into the given context.
+         *
+         * @param context the context to configure
+         *
+         * @throws Exception if an error occurs during loading
+         */
         void load(Context context) throws Exception;
     }
 
@@ -626,8 +697,12 @@ public class ContextConfig implements LifecycleListener {
                     if (generateCode) {
                         contextXmlJavaSource =
                                 getContextXmlJavaSource(contextXmlPackageName, contextXmlSimpleClassName);
-                        digester.startGeneratingCode();
-                        generateClassHeader(digester, contextXmlPackageName, contextXmlSimpleClassName);
+                        if (contextXmlJavaSource != null) {
+                            digester.startGeneratingCode();
+                            generateClassHeader(digester, contextXmlPackageName, contextXmlSimpleClassName);
+                        } else {
+                            generateCode = false;
+                        }
                     }
                     URL defaultContextUrl = contextXmlResource.getURI().toURL();
                     processContextConfig(digester, defaultContextUrl, contextXmlResource.getInputStream());
@@ -665,8 +740,12 @@ public class ContextConfig implements LifecycleListener {
             } else if (!useGeneratedCode) {
                 if (generateCode) {
                     contextXmlJavaSource = getContextXmlJavaSource(contextXmlPackageName, contextXmlSimpleClassName);
-                    digester.startGeneratingCode();
-                    generateClassHeader(digester, contextXmlPackageName, contextXmlSimpleClassName);
+                    if (contextXmlJavaSource != null) {
+                        digester.startGeneratingCode();
+                        generateClassHeader(digester, contextXmlPackageName, contextXmlSimpleClassName);
+                    } else {
+                        generateCode = false;
+                    }
                 }
                 processContextConfig(digester, context.getConfigFile(), null);
                 if (generateCode) {
@@ -863,6 +942,9 @@ public class ContextConfig implements LifecycleListener {
     }
 
 
+    /**
+     * Handles anti-locking by copying the docBase to a temporary location to prevent file locking issues on Windows.
+     */
     protected void antiLocking() {
 
         if ((context instanceof StandardContext) && ((StandardContext) context).getAntiResourceLocking()) {
@@ -884,19 +966,18 @@ public class ContextConfig implements LifecycleListener {
                 return;
             }
             ContextName cn = new ContextName(path, context.getWebappVersion());
-            docBase = cn.getBaseName();
 
-            String tmp = System.getProperty("java.io.tmpdir");
-            File tmpFile = new File(tmp);
-            if (!tmpFile.isDirectory()) {
-                log.error(sm.getString("contextConfig.noAntiLocking", tmp, context.getName()));
+            String prefix = "tomcat-" + deploymentCount.getAndIncrement() + "-" + cn.getBaseName();
+
+            try {
+                if (originalDocBase.toLowerCase(Locale.ENGLISH).endsWith(".war")) {
+                    antiLockingDocBase = Files.createTempFile(prefix, ".war").toFile();
+                } else {
+                    antiLockingDocBase = Files.createTempDirectory(prefix).toFile();
+                }
+            } catch (IllegalArgumentException | IOException e) {
+                log.error(sm.getString("contextConfig.noAntiLocking", context.getName()), e);
                 return;
-            }
-
-            if (originalDocBase.toLowerCase(Locale.ENGLISH).endsWith(".war")) {
-                antiLockingDocBase = new File(tmpFile, deploymentCount++ + "-" + docBase + ".war");
-            } else {
-                antiLockingDocBase = new File(tmpFile, deploymentCount++ + "-" + docBase);
             }
             antiLockingDocBase = antiLockingDocBase.getAbsoluteFile();
 
@@ -904,8 +985,6 @@ public class ContextConfig implements LifecycleListener {
                 log.debug(sm.getString("contextConfig.antiLocking", context.getName(), antiLockingDocBase.getPath()));
             }
 
-            // Cleanup just in case an old deployment is lying around
-            ExpandWar.delete(antiLockingDocBase);
             if (ExpandWar.copy(docBaseFile, antiLockingDocBase)) {
                 context.setDocBase(antiLockingDocBase.getPath());
             }
@@ -951,7 +1030,7 @@ public class ContextConfig implements LifecycleListener {
 
 
     /**
-     * Process a "contextConfig" event for this Context.
+     * Process a "configure_start" event for this Context.
      */
     protected synchronized void configureStart() {
         // Called from StandardContext.start()
@@ -1007,7 +1086,7 @@ public class ContextConfig implements LifecycleListener {
 
 
     /**
-     * Process a "stop" event for this Context.
+     * Process a "configure_stop" event for this Context.
      */
     protected synchronized void configureStop() {
 
@@ -1189,6 +1268,11 @@ public class ContextConfig implements LifecycleListener {
     }
 
 
+    /**
+     * Returns the configuration base directory for the Host that contains this Context.
+     *
+     * @return the configuration base directory, or {@code null} if the parent is not a Host
+     */
     protected File getHostConfigBase() {
         File file = null;
         if (context.getParent() instanceof Host) {
@@ -1333,6 +1417,12 @@ public class ContextConfig implements LifecycleListener {
     }
 
 
+    /**
+     * Processes /WEB-INF/classes and JARs for annotations and @HandlesTypes matches.
+     *
+     * @param webXml the main web.xml metadata
+     * @param orderedFragments the ordered set of web fragments
+     */
     protected void processClasses(WebXml webXml, Set<WebXml> orderedFragments) {
         // Step 4. Process /WEB-INF/classes for annotations and
         // @HandlesTypes matches
@@ -1423,7 +1513,7 @@ public class ContextConfig implements LifecycleListener {
             context.getNamingResources().addMessageDestinationRef(mdr);
         }
 
-        // messageDestinations were ignored in Tomcat 6, so ignore here
+        // message-destination declarations are not supported and are ignored
 
         context.setMetadataComplete(webxml.isMetadataComplete());
         for (Entry<String,String> entry : webxml.getMimeMappings().entrySet()) {
@@ -1503,7 +1593,7 @@ public class ContextConfig implements LifecycleListener {
             context.addChild(wrapper);
         }
         for (Entry<String,String> entry : webxml.getServletMappings().entrySet()) {
-            context.addServletMappingDecoded(entry.getKey(), entry.getValue());
+            context.addServletMapping(entry.getKey(), entry.getValue());
         }
         SessionConfig sessionConfig = webxml.getSessionConfig();
         if (sessionConfig != null) {
@@ -1541,7 +1631,7 @@ public class ContextConfig implements LifecycleListener {
             }
             if (context.findChild(jspServletName) != null) {
                 for (String urlPattern : jspPropertyGroup.getUrlPatterns()) {
-                    context.addServletMappingDecoded(urlPattern, jspServletName, true);
+                    context.addServletMapping(urlPattern, jspServletName, true);
                 }
             } else {
                 if (log.isDebugEnabled()) {
@@ -1605,44 +1695,24 @@ public class ContextConfig implements LifecycleListener {
         long hostTimeStamp = 0;
 
         if (globalWebXml != null) {
-            URLConnection uc = null;
             try {
                 URI uri = new URI(globalWebXml.getSystemId());
-                URL url = uri.toURL();
-                uc = url.openConnection();
-                globalTimeStamp = uc.getLastModified();
+                try (CloseableURLConnection uc = new CloseableURLConnection(uri.toURL())) {
+                    globalTimeStamp = uc.getLastModified();
+                }
             } catch (IOException | URISyntaxException | IllegalArgumentException e) {
                 globalTimeStamp = -1;
-            } finally {
-                if (uc != null) {
-                    try {
-                        uc.getInputStream().close();
-                    } catch (IOException ioe) {
-                        ExceptionUtils.handleThrowable(ioe);
-                        globalTimeStamp = -1;
-                    }
-                }
             }
         }
 
         if (hostWebXml != null) {
-            URLConnection uc = null;
             try {
                 URI uri = new URI(hostWebXml.getSystemId());
-                URL url = uri.toURL();
-                uc = url.openConnection();
-                hostTimeStamp = uc.getLastModified();
+                try (CloseableURLConnection uc = new CloseableURLConnection(uri.toURL())) {
+                    hostTimeStamp = uc.getLastModified();
+                }
             } catch (IOException | URISyntaxException | IllegalArgumentException e) {
                 hostTimeStamp = -1;
-            } finally {
-                if (uc != null) {
-                    try {
-                        uc.getInputStream().close();
-                    } catch (IOException ioe) {
-                        ExceptionUtils.handleThrowable(ioe);
-                        hostTimeStamp = -1;
-                    }
-                }
             }
         }
 
@@ -1660,6 +1730,8 @@ public class ContextConfig implements LifecycleListener {
             entry = hostWebXmlCache.get(host);
             if (entry != null && entry.getGlobalTimeStamp() == globalTimeStamp &&
                     entry.getHostTimeStamp() == hostTimeStamp) {
+                InputSourceUtil.close(globalWebXml);
+                InputSourceUtil.close(hostWebXml);
                 return entry.getWebXml();
             }
 
@@ -1747,6 +1819,11 @@ public class ContextConfig implements LifecycleListener {
         }
     }
 
+    /**
+     * Creates a new WebXml instance.
+     *
+     * @return a new WebXml instance
+     */
     protected WebXml createWebXml() {
         return new WebXml();
     }
@@ -1933,6 +2010,11 @@ public class ContextConfig implements LifecycleListener {
         return source;
     }
 
+    /**
+     * Returns the configuration base path for the Host that contains this Context.
+     *
+     * @return the configuration base path, or {@code null} if the parent is not a Host
+     */
     public String getConfigBasePath() {
         String path = null;
         if (context.getParent() instanceof Host host) {
@@ -2040,6 +2122,13 @@ public class ContextConfig implements LifecycleListener {
         return callback.getFragments();
     }
 
+    /**
+     * Processes annotations for the given set of web fragments.
+     *
+     * @param fragments the web fragments to scan
+     * @param handlesTypesOnly whether to only process @HandlesTypes matches
+     * @param javaClassCache the class cache for tracking processed classes
+     */
     protected void processAnnotations(Set<WebXml> fragments, boolean handlesTypesOnly,
             Map<String,JavaClassCacheEntry> javaClassCache) {
 
@@ -2130,6 +2219,14 @@ public class ContextConfig implements LifecycleListener {
         }
     }
 
+    /**
+     * Processes annotations for a web resource, recursing into directories.
+     *
+     * @param webResource the web resource to process
+     * @param fragment the web fragment to merge annotations into
+     * @param handlesTypesOnly whether to only process @HandlesTypes matches
+     * @param javaClassCache the class cache for tracking processed classes
+     */
     protected void processAnnotationsWebResource(WebResource webResource, WebXml fragment, boolean handlesTypesOnly,
             Map<String,JavaClassCacheEntry> javaClassCache) {
 
@@ -2153,6 +2250,14 @@ public class ContextConfig implements LifecycleListener {
     }
 
 
+    /**
+     * Dispatches annotation processing based on the URL protocol.
+     *
+     * @param url the URL to process
+     * @param fragment the web fragment to merge annotations into
+     * @param handlesTypesOnly whether to only process @HandlesTypes matches
+     * @param javaClassCache the class cache for tracking processed classes
+     */
     protected void processAnnotationsUrl(URL url, WebXml fragment, boolean handlesTypesOnly,
             Map<String,JavaClassCacheEntry> javaClassCache) {
         if (url == null) {
@@ -2172,6 +2277,14 @@ public class ContextConfig implements LifecycleListener {
     }
 
 
+    /**
+     * Processes annotations for all .class files within a JAR.
+     *
+     * @param url the URL of the JAR
+     * @param fragment the web fragment to merge annotations into
+     * @param handlesTypesOnly whether to only process @HandlesTypes matches
+     * @param javaClassCache the class cache for tracking processed classes
+     */
     protected void processAnnotationsJar(URL url, WebXml fragment, boolean handlesTypesOnly,
             Map<String,JavaClassCacheEntry> javaClassCache) {
 
@@ -2199,6 +2312,14 @@ public class ContextConfig implements LifecycleListener {
     }
 
 
+    /**
+     * Processes annotations for a file or directory, recursing into subdirectories.
+     *
+     * @param file the file or directory to process
+     * @param fragment the web fragment to merge annotations into
+     * @param handlesTypesOnly whether to only process @HandlesTypes matches
+     * @param javaClassCache the class cache for tracking processed classes
+     */
     protected void processAnnotationsFile(File file, WebXml fragment, boolean handlesTypesOnly,
             Map<String,JavaClassCacheEntry> javaClassCache) {
 
@@ -2223,6 +2344,17 @@ public class ContextConfig implements LifecycleListener {
     }
 
 
+    /**
+     * Processes annotations from a class file input stream.
+     *
+     * @param is the input stream for the class file
+     * @param fragment the web fragment to merge annotations into
+     * @param handlesTypesOnly whether to only process @HandlesTypes matches
+     * @param javaClassCache the class cache for tracking processed classes
+     *
+     * @throws ClassFormatException if the class file is malformed
+     * @throws IOException if an I/O error occurs
+     */
     protected void processAnnotationsStream(InputStream is, WebXml fragment, boolean handlesTypesOnly,
             Map<String,JavaClassCacheEntry> javaClassCache) throws ClassFormatException, IOException {
 
@@ -2238,6 +2370,12 @@ public class ContextConfig implements LifecycleListener {
     }
 
 
+    /**
+     * Processes servlet annotations from a parsed Java class.
+     *
+     * @param fragment the web fragment to merge annotations into
+     * @param clazz the parsed Java class
+     */
     protected void processClass(WebXml fragment, JavaClass clazz) {
         AnnotationEntry[] annotationsEntries = clazz.getAnnotationEntries();
         if (annotationsEntries != null) {
@@ -2454,6 +2592,13 @@ public class ContextConfig implements LifecycleListener {
         return internalForm.substring(1, internalForm.length() - 1).replace('/', '.');
     }
 
+    /**
+     * Processes a @WebServlet annotation and merges it into the web fragment.
+     *
+     * @param className the class name containing the annotation
+     * @param ae the annotation entry
+     * @param fragment the web fragment to merge the servlet definition into
+     */
     protected void processAnnotationWebServlet(String className, AnnotationEntry ae, WebXml fragment) {
         String servletName = null;
         // must search for name s. Spec Servlet API 3.0 - 8.2.3.3.n.ii page 81
@@ -2597,7 +2742,6 @@ public class ContextConfig implements LifecycleListener {
                 urlPatterns = processAnnotationsStringArray(evp.getValue());
                 urlPatternsSet = urlPatterns.length > 0;
                 for (String urlPattern : urlPatterns) {
-                    // % decoded (if required) using UTF-8
                     filterMap.addURLPattern(urlPattern);
                 }
             } else if ("servletNames".equals(name)) {
@@ -2684,6 +2828,13 @@ public class ContextConfig implements LifecycleListener {
 
     }
 
+    /**
+     * Processes an element value that represents a string array from an annotation.
+     *
+     * @param ev the element value to process
+     *
+     * @return the resulting string array
+     */
     protected String[] processAnnotationsStringArray(ElementValue ev) {
         List<String> values = new ArrayList<>();
         if (ev instanceof ArrayElementValue) {
@@ -2697,6 +2848,13 @@ public class ContextConfig implements LifecycleListener {
         return values.toArray(new String[0]);
     }
 
+    /**
+     * Processes init parameters from an annotation element value.
+     *
+     * @param ev the element value containing init parameters
+     *
+     * @return a map of init parameter names to values
+     */
     protected Map<String,String> processAnnotationWebInitParams(ElementValue ev) {
         Map<String,String> result = new HashMap<>();
         if (ev instanceof ArrayElementValue) {
@@ -2723,25 +2881,50 @@ public class ContextConfig implements LifecycleListener {
         return result;
     }
 
+    /**
+     * Cache entry for the default web.xml fragment associated with a Host.
+     */
     protected static class DefaultWebXmlCacheEntry {
         private final WebXml webXml;
         private final long globalTimeStamp;
         private final long hostTimeStamp;
 
+        /**
+         * Constructs a new cache entry.
+         *
+         * @param webXml the parsed web.xml fragment
+         * @param globalTimeStamp the last modified timestamp of the global web.xml
+         * @param hostTimeStamp the last modified timestamp of the host web.xml
+         */
         DefaultWebXmlCacheEntry(WebXml webXml, long globalTimeStamp, long hostTimeStamp) {
             this.webXml = webXml;
             this.globalTimeStamp = globalTimeStamp;
             this.hostTimeStamp = hostTimeStamp;
         }
 
+        /**
+         * Returns the cached web.xml fragment.
+         *
+         * @return the web.xml fragment
+         */
         public WebXml getWebXml() {
             return webXml;
         }
 
+        /**
+         * Returns the last modified timestamp of the global web.xml.
+         *
+         * @return the global web.xml timestamp
+         */
         public long getGlobalTimeStamp() {
             return globalTimeStamp;
         }
 
+        /**
+         * Returns the last modified timestamp of the host web.xml.
+         *
+         * @return the host web.xml timestamp
+         */
         public long getHostTimeStamp() {
             return hostTimeStamp;
         }
@@ -2759,30 +2942,67 @@ public class ContextConfig implements LifecycleListener {
         }
     }
 
+    /**
+     * Cache entry for a Java class used during annotation scanning.
+     */
     protected static class JavaClassCacheEntry {
+        /**
+         * The name of the superclass.
+         */
         public final String superclassName;
 
+        /**
+         * The names of the implemented interfaces.
+         */
         public final String[] interfaceNames;
 
+        /**
+         * The set of ServletContainerInitializers interested in this class, or {@link #EMPTY_SCI_SET} if none.
+         */
         private Set<ServletContainerInitializer> sciSet = null;
 
+        /**
+         * Constructs a new cache entry from a parsed Java class.
+         *
+         * @param javaClass the parsed Java class
+         */
         JavaClassCacheEntry(JavaClass javaClass) {
             superclassName = javaClass.getSuperclassName();
             interfaceNames = javaClass.getInterfaceNames();
         }
 
+        /**
+         * Returns the name of the superclass.
+         *
+         * @return the superclass name
+         */
         public String getSuperclassName() {
             return superclassName;
         }
 
+        /**
+         * Returns the names of the implemented interfaces.
+         *
+         * @return the interface names
+         */
         public String[] getInterfaceNames() {
             return interfaceNames;
         }
 
+        /**
+         * Returns the set of ServletContainerInitializers interested in this class.
+         *
+         * @return the SCI set
+         */
         public Set<ServletContainerInitializer> getSciSet() {
             return sciSet;
         }
 
+        /**
+         * Sets the set of ServletContainerInitializers interested in this class.
+         *
+         * @param sciSet the SCI set
+         */
         public void setSciSet(Set<ServletContainerInitializer> sciSet) {
             this.sciSet = sciSet;
         }

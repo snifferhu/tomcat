@@ -30,7 +30,7 @@ import org.apache.tools.ant.BuildException;
 /**
  * Query for Mbeans.
  * <ul>
- * <li>open no existing JSR 160 rmi jmx connection</li>
+ * <li>reuse existing JSR 160 rmi jmx connection</li>
  * <li>Get all Mbeans attributes</li>
  * <li>Get only the Query Mbeans ObjectNames</li>
  * <li>Show query result as Ant console log</li>
@@ -43,17 +43,23 @@ import org.apache.tools.ant.BuildException;
  *   &lt;jmxQuery
  *           host="127.0.0.1"
  *           port="9014"
- *           name="Catalina:type=Manager,*
+ *           name="Catalina:type=Manager,*"
  *           resultproperty="manager" /&gt;
  * </pre>
  *
  * with attribute <em>attributebinding="true"</em> you can get all attributes also from result objects.<br>
- * The property manager.length show the size of the result and with manager.[0..length].name the resulted ObjectNames
+ * The property manager.Length show the size of the result and with manager.[0..Length].Name the resulted ObjectNames
  * are saved. These tasks require Ant 1.6 or later interface.
  *
  * @since 5.5.10
  */
 public class JMXAccessorQueryTask extends JMXAccessorTask {
+
+    /**
+     * Constructs a new JMXAccessorQueryTask.
+     */
+    public JMXAccessorQueryTask() {
+    }
 
     // ----------------------------------------------------- Instance Variables
 
@@ -62,14 +68,18 @@ public class JMXAccessorQueryTask extends JMXAccessorTask {
     // ------------------------------------------------------------- Properties
 
     /**
-     * @return Returns the attributebinding.
+     * Get the attribute binding flag.
+     *
+     * @return the attribute binding flag
      */
     public boolean isAttributebinding() {
         return attributebinding;
     }
 
     /**
-     * @param attributeBinding The attributebinding to set.
+     * Set the attribute binding flag.
+     *
+     * @param attributeBinding the flag to set
      */
     public void setAttributebinding(boolean attributeBinding) {
         this.attributebinding = attributeBinding;
@@ -80,12 +90,13 @@ public class JMXAccessorQueryTask extends JMXAccessorTask {
 
     @Override
     public String jmxExecute(MBeanServerConnection jmxServerConnection) throws Exception {
-
         if (getName() == null) {
             throw new BuildException("Must specify a 'name'");
         }
+        if (jmxServerConnection == null) {
+            throw new BuildException("Must open a connection!");
+        }
         return jmxQuery(jmxServerConnection, getName());
-
     }
 
 
@@ -128,6 +139,13 @@ public class JMXAccessorQueryTask extends JMXAccessorTask {
         return null;
     }
 
+    /**
+     * Bind MBean attributes to Ant properties.
+     *
+     * @param jmxServerConnection the JMX server connection
+     * @param pname the property name prefix
+     * @param oname the MBean object name
+     */
     protected void bindAttributes(MBeanServerConnection jmxServerConnection, String pname, ObjectName oname) {
         try {
             MBeanInfo minfo = jmxServerConnection.getMBeanInfo(oname);

@@ -18,6 +18,7 @@ package org.apache.catalina.core;
 
 import java.io.IOException;
 import java.io.PrintWriter;
+import java.nio.charset.StandardCharsets;
 
 import jakarta.servlet.AsyncContext;
 import jakarta.servlet.DispatcherType;
@@ -42,6 +43,7 @@ import org.apache.catalina.connector.Request;
 import org.apache.catalina.connector.RequestFacade;
 import org.apache.catalina.connector.Response;
 import org.apache.catalina.connector.ResponseFacade;
+import org.apache.catalina.util.URLEncoder;
 import org.apache.coyote.BadRequestException;
 import org.apache.coyote.CloseNowException;
 import org.apache.tomcat.util.ExceptionUtils;
@@ -384,7 +386,7 @@ final class ApplicationDispatcher implements AsyncDispatcher, RequestDispatcher 
         } else {
             // Handle an HTTP path based include
 
-            String contextPath = context.getPath();
+            String contextPath = context.getEncodedPath();
             if (requestURI != null) {
                 wrequest.setAttribute(INCLUDE_REQUEST_URI, requestURI);
             }
@@ -448,9 +450,6 @@ final class ApplicationDispatcher implements AsyncDispatcher, RequestDispatcher 
     /**
      * Ask the resource represented by this RequestDispatcher to process the associated request, and create (or append
      * to) the associated response.
-     * <p>
-     * <strong>IMPLEMENTATION NOTE</strong>: This implementation assumes that no filters are applied to a forwarded or
-     * included resource, because they were already done for the original request.
      *
      * @param request  The servlet request we are processing
      * @param response The servlet response we are creating
@@ -698,9 +697,10 @@ final class ApplicationDispatcher implements AsyncDispatcher, RequestDispatcher 
                 Object contextPath = houterRequest.getAttribute(INCLUDE_CONTEXT_PATH);
                 if (contextPath == null) {
                     // Forward
-                    contextPath = houterRequest.getContextPath();
+                    contextPath = URLEncoder.DEFAULT.encode(houterRequest.getServletContext().getContextPath(),
+                            StandardCharsets.UTF_8);
                 }
-                crossContext = !context.getPath().equals(contextPath);
+                crossContext = !context.getEncodedPath().equals(contextPath);
             }
             wrapper = new ApplicationHttpRequest(hcurrent, context, crossContext);
         } else {

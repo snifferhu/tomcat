@@ -30,24 +30,32 @@ public interface UserDatabase {
     // ------------------------------------------------------------- Properties
 
     /**
+     * Get the set of {@link Group}s defined in this user database.
+     *
      * @return the set of {@link Group}s defined in this user database.
      */
     Iterator<Group> getGroups();
 
 
     /**
+     * Get the unique global identifier of this user database.
+     *
      * @return the unique global identifier of this user database.
      */
     String getId();
 
 
     /**
+     * Get the set of {@link Role}s defined in this user database.
+     *
      * @return the set of {@link Role}s defined in this user database.
      */
     Iterator<Role> getRoles();
 
 
     /**
+     * Get the set of {@link User}s defined in this user database.
+     *
      * @return the set of {@link User}s defined in this user database.
      */
     Iterator<User> getUsers();
@@ -69,7 +77,7 @@ public interface UserDatabase {
      * @param groupname   The group name of the new group (must be unique)
      * @param description The description of this group
      *
-     * @return The new group
+     * @return The new group, or {@code null} if there's a pre-existing group
      */
     Group createGroup(String groupname, String description);
 
@@ -80,7 +88,7 @@ public interface UserDatabase {
      * @param rolename    The role name of the new role (must be unique)
      * @param description The description of this role
      *
-     * @return The new role
+     * @return The new role, or {@code null} if there's a pre-existing role
      */
     Role createRole(String rolename, String description);
 
@@ -92,31 +100,34 @@ public interface UserDatabase {
      * @param password The logon password of the new user
      * @param fullName The full name of the new user
      *
-     * @return The new user
+     * @return The new user, or {@code null} if there's a pre-existing user
      */
     User createUser(String username, String password, String fullName);
 
 
     /**
-     * @return the {@link Group} with the specified group name, if any; otherwise return <code>null</code>.
+     * Find the {@link Group} with the specified group name.
      *
      * @param groupname Name of the group to return
+     * @return the {@link Group} with the specified group name, if any; otherwise return <code>null</code>.
      */
     Group findGroup(String groupname);
 
 
     /**
-     * @return the {@link Role} with the specified role name, if any; otherwise return <code>null</code>.
+     * Find the {@link Role} with the specified role name.
      *
      * @param rolename Name of the role to return
+     * @return the {@link Role} with the specified role name, if any; otherwise return <code>null</code>.
      */
     Role findRole(String rolename);
 
 
     /**
-     * @return the {@link User} with the specified username, if any; otherwise return <code>null</code>.
+     * Find the {@link User} with the specified username.
      *
      * @param username Name of the user to return
+     * @return the {@link User} with the specified username, if any; otherwise return <code>null</code>.
      */
     User findUser(String username);
 
@@ -200,7 +211,7 @@ public interface UserDatabase {
     /**
      * Is the database available.
      *
-     * @return true
+     * @return <code>true</code> if the database is available, <code>false</code> otherwise
      */
     default boolean isAvailable() {
         return true;

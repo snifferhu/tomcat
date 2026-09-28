@@ -47,14 +47,7 @@ import org.apache.juli.logging.LogFactory;
 import org.apache.tomcat.util.res.StringManager;
 
 /**
- * Implementation of a Valve that logs interesting contents from the specified Request (before processing) and the
- * corresponding Response (after processing). It is especially useful in debugging problems related to headers and
- * cookies.
- * <p>
- * This Valve may be attached to any Container, depending on the granularity of the logging you wish to perform.
- * <p>
- * primaryIndicator=true, then the request attribute <i>org.apache.catalina.ha.tcp.isPrimarySession.</i> is set true,
- * when request processing is at sessions primary node.
+ * Valve that triggers session replication across the cluster.
  */
 public class ReplicationValve extends ValveBase implements ClusterValve {
 
@@ -84,13 +77,34 @@ public class ReplicationValve extends ValveBase implements ClusterValve {
      */
     protected boolean doProcessingStats = false;
 
+    /**
+     * Total request time in nanoseconds.
+     */
     protected LongAdder totalRequestTime = new LongAdder();
+    /**
+     * Total send time in nanoseconds.
+     */
     protected LongAdder totalSendTime = new LongAdder();
-    protected LongAdder nrOfRequests = new LongAdder();
+    /**
+     * Time (in milliseconds) of the last replication send.
+     */
     protected AtomicLong lastSendTime = new AtomicLong();
+    /**
+     * Number of requests filtered out.
+     */
     protected LongAdder nrOfFilterRequests = new LongAdder();
+    /**
+     * Number of requests sent for replication.
+     */
     protected LongAdder nrOfSendRequests = new LongAdder();
+    /**
+     * Number of cross-context requests sent for replication.
+     */
     protected LongAdder nrOfCrossContextSendRequests = new LongAdder();
+    /**
+     * Number of requests.
+     */
+    protected LongAdder nrOfRequests = new LongAdder();
 
     /**
      * Must set primary change indicator.
@@ -104,6 +118,9 @@ public class ReplicationValve extends ValveBase implements ClusterValve {
 
     // ------------------------------------------------------------- Properties
 
+    /**
+     * Default constructor.
+     */
     public ReplicationValve() {
         super(true);
     }
@@ -125,7 +142,9 @@ public class ReplicationValve extends ValveBase implements ClusterValve {
     }
 
     /**
-     * @return the filter
+     * Return the replication filter pattern as a string.
+     *
+     * @return the filter pattern, or {@code null} if not set
      */
     public String getFilter() {
         if (filter == null) {
@@ -158,28 +177,36 @@ public class ReplicationValve extends ValveBase implements ClusterValve {
     }
 
     /**
-     * @return the primaryIndicator.
+     * Return whether the primary indicator is enabled.
+     *
+     * @return {@code true} if the primary indicator is enabled
      */
     public boolean isPrimaryIndicator() {
         return primaryIndicator;
     }
 
     /**
-     * @param primaryIndicator The primaryIndicator to set.
+     * Set whether the primary indicator is enabled.
+     *
+     * @param primaryIndicator {@code true} to enable the primary indicator
      */
     public void setPrimaryIndicator(boolean primaryIndicator) {
         this.primaryIndicator = primaryIndicator;
     }
 
     /**
-     * @return the primaryIndicatorName.
+     * Return the primary indicator name.
+     *
+     * @return the primary indicator name
      */
     public String getPrimaryIndicatorName() {
         return primaryIndicatorName;
     }
 
     /**
-     * @param primaryIndicatorName The primaryIndicatorName to set.
+     * Set the primary indicator name.
+     *
+     * @param primaryIndicatorName the primary indicator name
      */
     public void setPrimaryIndicatorName(String primaryIndicatorName) {
         this.primaryIndicatorName = primaryIndicatorName;
@@ -206,49 +233,63 @@ public class ReplicationValve extends ValveBase implements ClusterValve {
     }
 
     /**
-     * @return the lastSendTime.
+     * Return the last send time.
+     *
+     * @return the last send time
      */
     public long getLastSendTime() {
         return lastSendTime.longValue();
     }
 
     /**
-     * @return the nrOfRequests.
+     * Return the number of requests.
+     *
+     * @return the number of requests
      */
     public long getNrOfRequests() {
         return nrOfRequests.longValue();
     }
 
     /**
-     * @return the nrOfFilterRequests.
+     * Return the number of filtered requests.
+     *
+     * @return the number of filtered requests
      */
     public long getNrOfFilterRequests() {
         return nrOfFilterRequests.longValue();
     }
 
     /**
-     * @return the nrOfCrossContextSendRequests.
+     * Return the number of cross-context send requests.
+     *
+     * @return the number of cross-context send requests
      */
     public long getNrOfCrossContextSendRequests() {
         return nrOfCrossContextSendRequests.longValue();
     }
 
     /**
-     * @return the nrOfSendRequests.
+     * Return the number of send requests.
+     *
+     * @return the number of send requests
      */
     public long getNrOfSendRequests() {
         return nrOfSendRequests.longValue();
     }
 
     /**
-     * @return the totalRequestTime.
+     * Return the total request time.
+     *
+     * @return the total request time
      */
     public long getTotalRequestTime() {
         return totalRequestTime.longValue();
     }
 
     /**
-     * @return the totalSendTime.
+     * Return the total send time.
+     *
+     * @return the total send time
      */
     public long getTotalSendTime() {
         return totalSendTime.longValue();
@@ -257,10 +298,10 @@ public class ReplicationValve extends ValveBase implements ClusterValve {
     // --------------------------------------------------------- Public Methods
 
     /**
-     * Register all cross context sessions inside endAccess. Use a list with contains check, that the Portlet API can
-     * include a lot of fragments from same or different applications with session changes.
+     * Register a cross-context session for replication. The session is added to the current thread's cross-context
+     * session list if it is not already present.
      *
-     * @param session cross context session
+     * @param session the cross-context session to register
      */
     public void registerReplicationSession(DeltaSession session) {
         List<DeltaSession> sessions = crossContextSessions.get();
@@ -354,6 +395,15 @@ public class ReplicationValve extends ValveBase implements ClusterValve {
 
     // --------------------------------------------------------- Protected Methods
 
+    /**
+     * Send a replication message for the given request.
+     *
+     * @param request        the request
+     * @param totalstart     the start time
+     * @param isCrossContext {@code true} if cross-context
+     * @param isAsync        {@code true} if async
+     * @param clusterManager the cluster manager
+     */
     protected void sendReplicationMessage(Request request, long totalstart, boolean isCrossContext, boolean isAsync,
             ClusterManager clusterManager) {
         // this happens after the request
@@ -362,16 +412,19 @@ public class ReplicationValve extends ValveBase implements ClusterValve {
             start = System.currentTimeMillis();
         }
         try {
-            // send invalid sessions
             sendInvalidSessions(clusterManager);
-            // send replication
-            sendSessionReplicationMessage(request, clusterManager);
-            if (isCrossContext) {
-                sendCrossContextSession();
+            try {
+                sendSessionReplicationMessage(request, clusterManager);
+            } catch (Exception e) {
+                log.error(sm.getString("ReplicationValve.send.failure"), e);
             }
-        } catch (Exception e) {
-            // FIXME we have a lot of sends, but the trouble with one node stops the correct replication to other nodes!
-            log.error(sm.getString("ReplicationValve.send.failure"), e);
+            try {
+                if (isCrossContext) {
+                    sendCrossContextSession();
+                }
+            } catch (Exception e) {
+                log.error(sm.getString("ReplicationValve.send.failure"), e);
+            }
         } finally {
             if (doStatistics()) {
                 updateStats(totalstart, start, isAsync);
@@ -552,23 +605,31 @@ public class ReplicationValve extends ValveBase implements ClusterValve {
      *
      * @throws IOException IO error finding session
      */
+    @SuppressWarnings("null") // ctx can't be null
     protected void createPrimaryIndicator(Request request) throws IOException {
         String id = request.getRequestedSessionId();
         if ((id != null) && (!id.isEmpty())) {
-            Manager manager = request.getContext().getManager();
-            Session session = manager.findSession(id);
+            Context ctx = request.getContext();
+            Session session = null;
+            if (ctx != null) {
+                Manager manager = ctx.getManager();
+                if (manager != null) {
+                    session = manager.findSession(id);
+                }
+            }
             if (session instanceof ClusterSession cses) {
                 if (log.isDebugEnabled()) {
-                    log.debug(sm.getString("ReplicationValve.session.indicator", request.getContext().getName(), id,
-                            primaryIndicatorName, Boolean.valueOf(cses.isPrimarySession())));
+                    log.debug(sm.getString("ReplicationValve.session.indicator", ctx.getPath(), id, primaryIndicatorName,
+                            Boolean.valueOf(cses.isPrimarySession())));
                 }
                 request.setAttribute(primaryIndicatorName, cses.isPrimarySession() ? Boolean.TRUE : Boolean.FALSE);
             } else {
                 if (log.isDebugEnabled()) {
                     if (session != null) {
-                        log.debug(sm.getString("ReplicationValve.session.found", request.getContext().getName(), id));
+                        log.debug(sm.getString("ReplicationValve.session.found", ctx.getPath(), id));
                     } else {
-                        log.debug(sm.getString("ReplicationValve.session.invalid", request.getContext().getName(), id));
+                        log.debug(sm.getString("ReplicationValve.session.invalid",
+                                ctx == null ? "null Context" : ctx.getPath(), id));
                     }
                 }
             }

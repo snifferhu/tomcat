@@ -41,6 +41,11 @@ public class EmptyResourceSet extends LifecycleBase implements WebResourceSet {
     private boolean classLoaderOnly;
     private boolean staticOnly;
 
+    /**
+     * Creates a new empty resource set with the given root.
+     *
+     * @param root the web resource root
+     */
     public EmptyResourceSet(WebResourceRoot root) {
         this.root = root;
     }
@@ -137,7 +142,7 @@ public class EmptyResourceSet extends LifecycleBase implements WebResourceSet {
      */
     @Override
     public void setReadOnly(boolean readOnly) {
-
+        // NO-OP
     }
 
     /**
@@ -147,6 +152,7 @@ public class EmptyResourceSet extends LifecycleBase implements WebResourceSet {
      */
     @Override
     public void setAllowLinking(boolean allowLinking) {
+        // NO-OP
     }
 
     /**

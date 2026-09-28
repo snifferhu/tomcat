@@ -34,6 +34,7 @@ import org.apache.catalina.Role;
 import org.apache.catalina.User;
 import org.apache.juli.logging.Log;
 import org.apache.juli.logging.LogFactory;
+import org.apache.tomcat.util.ExceptionUtils;
 import org.apache.tomcat.util.res.StringManager;
 
 /**
@@ -44,6 +45,12 @@ public class DataSourceUserDatabase extends SparseUserDatabase {
     private static final Log log = LogFactory.getLog(DataSourceUserDatabase.class);
     private static final StringManager sm = StringManager.getManager(DataSourceUserDatabase.class);
 
+    /**
+     * Create a new DataSourceUserDatabase.
+     *
+     * @param dataSource The data source to use
+     * @param id The unique identifier for this user database
+     */
     public DataSourceUserDatabase(DataSource dataSource, String id) {
         this.dataSource = dataSource;
         this.id = id;
@@ -61,16 +68,43 @@ public class DataSourceUserDatabase extends SparseUserDatabase {
      */
     protected final String id;
 
+    /**
+     * Users that have been created but not yet persisted.
+     */
     protected final ConcurrentHashMap<String,User> createdUsers = new ConcurrentHashMap<>();
+    /**
+     * Users that have been modified but not yet persisted.
+     */
     protected final ConcurrentHashMap<String,User> modifiedUsers = new ConcurrentHashMap<>();
+    /**
+     * Users that have been removed but not yet persisted.
+     */
     protected final ConcurrentHashMap<String,User> removedUsers = new ConcurrentHashMap<>();
 
+    /**
+     * Groups that have been created but not yet persisted.
+     */
     protected final ConcurrentHashMap<String,Group> createdGroups = new ConcurrentHashMap<>();
+    /**
+     * Groups that have been modified but not yet persisted.
+     */
     protected final ConcurrentHashMap<String,Group> modifiedGroups = new ConcurrentHashMap<>();
+    /**
+     * Groups that have been removed but not yet persisted.
+     */
     protected final ConcurrentHashMap<String,Group> removedGroups = new ConcurrentHashMap<>();
 
+    /**
+     * Roles that have been created but not yet persisted.
+     */
     protected final ConcurrentHashMap<String,Role> createdRoles = new ConcurrentHashMap<>();
+    /**
+     * Roles that have been modified but not yet persisted.
+     */
     protected final ConcurrentHashMap<String,Role> modifiedRoles = new ConcurrentHashMap<>();
+    /**
+     * Roles that have been removed but not yet persisted.
+     */
     protected final ConcurrentHashMap<String,Role> removedRoles = new ConcurrentHashMap<>();
 
 
@@ -120,13 +154,13 @@ public class DataSourceUserDatabase extends SparseUserDatabase {
 
 
     /**
-     * The generated string for the groups PreparedStatement
+     * The generated string for the user groups relationship PreparedStatement
      */
     private String preparedUserGroups = null;
 
 
     /**
-     * The generated string for the groups PreparedStatement
+     * The generated string for the group roles relationship PreparedStatement
      */
     private String preparedGroupRoles = null;
 
@@ -198,13 +232,13 @@ public class DataSourceUserDatabase extends SparseUserDatabase {
 
 
     /**
-     * The table that holds user data.
+     * The table that holds group data.
      */
     protected String groupTable = null;
 
 
     /**
-     * The table that holds user data.
+     * The table that holds role data.
      */
     protected String roleTable = null;
 
@@ -242,7 +276,9 @@ public class DataSourceUserDatabase extends SparseUserDatabase {
     // ------------------------------------------------------------- Properties
 
     /**
-     * @return the name of the JNDI JDBC DataSource.
+     * Return the name of the JNDI JDBC DataSource.
+     *
+     * @return the DataSource name
      */
     public String getDataSourceName() {
         return dataSourceName;
@@ -251,14 +287,16 @@ public class DataSourceUserDatabase extends SparseUserDatabase {
     /**
      * Set the name of the JNDI JDBC DataSource.
      *
-     * @param dataSourceName the name of the JNDI JDBC DataSource
+     * @param dataSourceName the name of the JNDI JDBC DataSource to use
      */
     public void setDataSourceName(String dataSourceName) {
         this.dataSourceName = dataSourceName;
     }
 
     /**
-     * @return the column in the user role table that names a role.
+     * Return the column in the user role table that names a role.
+     *
+     * @return the role name column
      */
     public String getRoleNameCol() {
         return roleNameCol;
@@ -267,14 +305,16 @@ public class DataSourceUserDatabase extends SparseUserDatabase {
     /**
      * Set the column in the user role table that names a role.
      *
-     * @param roleNameCol The column name
+     * @param roleNameCol The column name to use
      */
     public void setRoleNameCol(String roleNameCol) {
         this.roleNameCol = roleNameCol;
     }
 
     /**
-     * @return the column in the user table that holds the user's credentials.
+     * Return the column in the user table that holds the user's credentials.
+     *
+     * @return the credentials column
      */
     public String getUserCredCol() {
         return userCredCol;
@@ -283,14 +323,16 @@ public class DataSourceUserDatabase extends SparseUserDatabase {
     /**
      * Set the column in the user table that holds the user's credentials.
      *
-     * @param userCredCol The column name
+     * @param userCredCol The column name to use
      */
     public void setUserCredCol(String userCredCol) {
         this.userCredCol = userCredCol;
     }
 
     /**
-     * @return the column in the user table that holds the user's name.
+     * Return the column in the user table that holds the user's name.
+     *
+     * @return the user name column
      */
     public String getUserNameCol() {
         return userNameCol;
@@ -299,14 +341,16 @@ public class DataSourceUserDatabase extends SparseUserDatabase {
     /**
      * Set the column in the user table that holds the user's name.
      *
-     * @param userNameCol The column name
+     * @param userNameCol The column name to use
      */
     public void setUserNameCol(String userNameCol) {
         this.userNameCol = userNameCol;
     }
 
     /**
-     * @return the table that holds the relation between user's and roles.
+     * Return the table that holds the relation between user's and roles.
+     *
+     * @return the user-role table name
      */
     public String getUserRoleTable() {
         return userRoleTable;
@@ -315,14 +359,16 @@ public class DataSourceUserDatabase extends SparseUserDatabase {
     /**
      * Set the table that holds the relation between user's and roles.
      *
-     * @param userRoleTable The table name
+     * @param userRoleTable The table name to use
      */
     public void setUserRoleTable(String userRoleTable) {
         this.userRoleTable = userRoleTable;
     }
 
     /**
-     * @return the table that holds user data
+     * Return the table that holds user data.
+     *
+     * @return the user table name
      */
     public String getUserTable() {
         return userTable;
@@ -331,7 +377,7 @@ public class DataSourceUserDatabase extends SparseUserDatabase {
     /**
      * Set the table that holds user data.
      *
-     * @param userTable The table name
+     * @param userTable The table name to use
      */
     public void setUserTable(String userTable) {
         this.userTable = userTable;
@@ -339,112 +385,144 @@ public class DataSourceUserDatabase extends SparseUserDatabase {
 
 
     /**
-     * @return the roleAndGroupDescriptionCol
+     * Return the column name used for role and group descriptions.
+     *
+     * @return the role and group description column name
      */
     public String getRoleAndGroupDescriptionCol() {
         return this.roleAndGroupDescriptionCol;
     }
 
     /**
-     * @param roleAndGroupDescriptionCol the roleAndGroupDescriptionCol to set
+     * Set the column name used for role and group descriptions.
+     *
+     * @param roleAndGroupDescriptionCol the column name to use
      */
     public void setRoleAndGroupDescriptionCol(String roleAndGroupDescriptionCol) {
         this.roleAndGroupDescriptionCol = roleAndGroupDescriptionCol;
     }
 
     /**
-     * @return the groupNameCol
+     * Return the column name used for group names.
+     *
+     * @return the group name column
      */
     public String getGroupNameCol() {
         return this.groupNameCol;
     }
 
     /**
-     * @param groupNameCol the groupNameCol to set
+     * Set the column name used for group names.
+     *
+     * @param groupNameCol the column name to use
      */
     public void setGroupNameCol(String groupNameCol) {
         this.groupNameCol = groupNameCol;
     }
 
     /**
-     * @return the userFullNameCol
+     * Return the column name used for user full names.
+     *
+     * @return the user full name column
      */
     public String getUserFullNameCol() {
         return this.userFullNameCol;
     }
 
     /**
-     * @param userFullNameCol the userFullNameCol to set
+     * Set the column name used for user full names.
+     *
+     * @param userFullNameCol the column name to use
      */
     public void setUserFullNameCol(String userFullNameCol) {
         this.userFullNameCol = userFullNameCol;
     }
 
     /**
-     * @return the userGroupTable
+     * Return the table that holds the relation between users and groups.
+     *
+     * @return the user-group table name
      */
     public String getUserGroupTable() {
         return this.userGroupTable;
     }
 
     /**
-     * @param userGroupTable the userGroupTable to set
+     * Set the table that holds the relation between users and groups.
+     *
+     * @param userGroupTable the table name to use
      */
     public void setUserGroupTable(String userGroupTable) {
         this.userGroupTable = userGroupTable;
     }
 
     /**
-     * @return the groupRoleTable
+     * Return the table that holds the relation between groups and roles.
+     *
+     * @return the group-role table name
      */
     public String getGroupRoleTable() {
         return this.groupRoleTable;
     }
 
     /**
-     * @param groupRoleTable the groupRoleTable to set
+     * Set the table that holds the relation between groups and roles.
+     *
+     * @param groupRoleTable the table name to use
      */
     public void setGroupRoleTable(String groupRoleTable) {
         this.groupRoleTable = groupRoleTable;
     }
 
     /**
-     * @return the groupTable
+     * Return the table that holds group data.
+     *
+     * @return the group table name
      */
     public String getGroupTable() {
         return this.groupTable;
     }
 
     /**
-     * @param groupTable the groupTable to set
+     * Set the table that holds group data.
+     *
+     * @param groupTable the table name to use
      */
     public void setGroupTable(String groupTable) {
         this.groupTable = groupTable;
     }
 
     /**
-     * @return the roleTable
+     * Return the table that holds role data.
+     *
+     * @return the role table name
      */
     public String getRoleTable() {
         return this.roleTable;
     }
 
     /**
-     * @param roleTable the roleTable to set
+     * Set the table that holds role data.
+     *
+     * @param roleTable the table name to use
      */
     public void setRoleTable(String roleTable) {
         this.roleTable = roleTable;
     }
 
     /**
-     * @return the readonly
+     * Return whether the user database is read only.
+     *
+     * @return true if the database is read only
      */
     public boolean getReadonly() {
         return this.readonly;
     }
 
     /**
-     * @param readonly the readonly to set
+     * Set whether the user database is read only.
+     *
+     * @param readonly true to make the database read only
      */
     public void setReadonly(boolean readonly) {
         this.readonly = readonly;
@@ -465,26 +543,27 @@ public class DataSourceUserDatabase extends SparseUserDatabase {
                 groups.putAll(createdGroups);
                 groups.putAll(modifiedGroups);
 
-                try (Connection dbConnection = openConnection()) {
-                    if (dbConnection != null && preparedAllGroups != null) {
-                        try (PreparedStatement stmt = dbConnection.prepareStatement(preparedAllGroups)) {
-                            try (ResultSet rs = stmt.executeQuery()) {
-                                while (rs.next()) {
-                                    String groupName = rs.getString(1);
-                                    if (groupName != null) {
-                                        if (!groups.containsKey(groupName) && !removedGroups.containsKey(groupName)) {
-                                            Group group = findGroupInternal(dbConnection, groupName);
-                                            if (group != null) {
-                                                groups.put(groupName, group);
-                                            }
+                Connection dbConnection = openConnection();
+                if (dbConnection != null && preparedAllGroups != null) {
+                    try (PreparedStatement stmt = dbConnection.prepareStatement(preparedAllGroups)) {
+                        try (ResultSet rs = stmt.executeQuery()) {
+                            while (rs.next()) {
+                                String groupName = rs.getString(1);
+                                if (groupName != null) {
+                                    if (!groups.containsKey(groupName) && !removedGroups.containsKey(groupName)) {
+                                        Group group = findGroupInternal(dbConnection, groupName);
+                                        if (group != null) {
+                                            groups.put(groupName, group);
                                         }
                                     }
                                 }
                             }
                         }
+                    } catch (SQLException e) {
+                        log.error(sm.getString("dataSourceUserDatabase.exception"), e);
+                    } finally {
+                        closeConnection(dbConnection);
                     }
-                } catch (SQLException e) {
-                    log.error(sm.getString("dataSourceUserDatabase.exception"), e);
                 }
                 return groups.values().iterator();
             } finally {
@@ -505,26 +584,27 @@ public class DataSourceUserDatabase extends SparseUserDatabase {
                 roles.putAll(createdRoles);
                 roles.putAll(modifiedRoles);
 
-                try (Connection dbConnection = openConnection()) {
-                    if (dbConnection != null && preparedAllRoles != null) {
-                        try (PreparedStatement stmt = dbConnection.prepareStatement(preparedAllRoles)) {
-                            try (ResultSet rs = stmt.executeQuery()) {
-                                while (rs.next()) {
-                                    String roleName = rs.getString(1);
-                                    if (roleName != null) {
-                                        if (!roles.containsKey(roleName) && !removedRoles.containsKey(roleName)) {
-                                            Role role = findRoleInternal(dbConnection, roleName);
-                                            if (role != null) {
-                                                roles.put(roleName, role);
-                                            }
+                Connection dbConnection = openConnection();
+                if (dbConnection != null && preparedAllRoles != null) {
+                    try (PreparedStatement stmt = dbConnection.prepareStatement(preparedAllRoles)) {
+                        try (ResultSet rs = stmt.executeQuery()) {
+                            while (rs.next()) {
+                                String roleName = rs.getString(1);
+                                if (roleName != null) {
+                                    if (!roles.containsKey(roleName) && !removedRoles.containsKey(roleName)) {
+                                        Role role = findRoleInternal(dbConnection, roleName);
+                                        if (role != null) {
+                                            roles.put(roleName, role);
                                         }
                                     }
                                 }
                             }
                         }
+                    } catch (SQLException e) {
+                        log.error(sm.getString("dataSourceUserDatabase.exception"), e);
+                    } finally {
+                        closeConnection(dbConnection);
                     }
-                } catch (SQLException e) {
-                    log.error(sm.getString("dataSourceUserDatabase.exception"), e);
                 }
                 return roles.values().iterator();
             } finally {
@@ -584,11 +664,16 @@ public class DataSourceUserDatabase extends SparseUserDatabase {
     public Group createGroup(String groupname, String description) {
         dbReadLock.lock();
         try {
+            if (findGroup(groupname) != null) {
+                return null;
+            }
             groupsWriteLock.lock();
             try {
+                if (findGroup(groupname) != null) {
+                    return null;
+                }
                 Group group = new GenericGroup<>(this, groupname, description, null);
                 createdGroups.put(groupname, group);
-                modifiedGroups.remove(groupname);
                 return group;
             } finally {
                 groupsWriteLock.unlock();
@@ -602,11 +687,16 @@ public class DataSourceUserDatabase extends SparseUserDatabase {
     public Role createRole(String rolename, String description) {
         dbReadLock.lock();
         try {
+            if (findRole(rolename) != null) {
+                return null;
+            }
             rolesWriteLock.lock();
             try {
+                if (findRole(rolename) != null) {
+                    return null;
+                }
                 Role role = new GenericRole<>(this, rolename, description);
                 createdRoles.put(rolename, role);
-                modifiedRoles.remove(rolename);
                 return role;
             } finally {
                 rolesWriteLock.unlock();
@@ -620,11 +710,16 @@ public class DataSourceUserDatabase extends SparseUserDatabase {
     public User createUser(String username, String password, String fullName) {
         dbReadLock.lock();
         try {
+            if (findUser(username) != null) {
+                return null;
+            }
             usersWriteLock.lock();
             try {
+                if (findUser(username) != null) {
+                    return null;
+                }
                 User user = new GenericUser<>(this, username, password, fullName, null, null);
                 createdUsers.put(username, user);
-                modifiedUsers.remove(username);
                 return user;
             } finally {
                 usersWriteLock.unlock();
@@ -675,6 +770,13 @@ public class DataSourceUserDatabase extends SparseUserDatabase {
         }
     }
 
+    /**
+     * Find a group by name using the provided database connection.
+     *
+     * @param dbConnection The database connection to use
+     * @param groupName The name of the group to find
+     * @return the group, or null if not found
+     */
     public Group findGroupInternal(Connection dbConnection, String groupName) {
         Group group = null;
         try (PreparedStatement stmt = dbConnection.prepareStatement(preparedGroup)) {
@@ -684,24 +786,22 @@ public class DataSourceUserDatabase extends SparseUserDatabase {
                     if (rs.getString(1) != null) {
                         String description = (roleAndGroupDescriptionCol != null) ? rs.getString(2) : null;
                         ArrayList<Role> groupRoles = new ArrayList<>();
-                        if (groupName != null) {
-                            groupName = groupName.trim();
-                            try (PreparedStatement stmt2 = dbConnection.prepareStatement(preparedGroupRoles)) {
-                                stmt2.setString(1, groupName);
-                                try (ResultSet rs2 = stmt2.executeQuery()) {
-                                    while (rs2.next()) {
-                                        String roleName = rs2.getString(1);
-                                        if (roleName != null) {
-                                            Role groupRole = findRoleInternal(dbConnection, roleName);
-                                            if (groupRole != null) {
-                                                groupRoles.add(groupRole);
-                                            }
+                        try (PreparedStatement stmt2 = dbConnection.prepareStatement(preparedGroupRoles)) {
+                            stmt2.setString(1, groupName);
+                            try (ResultSet rs2 = stmt2.executeQuery()) {
+                                while (rs2.next()) {
+                                    String roleName = rs2.getString(1);
+                                    if (roleName != null) {
+                                        Role groupRole = findRoleInternal(dbConnection, roleName);
+                                        if (groupRole != null) {
+                                            groupRoles.add(groupRole);
                                         }
                                     }
                                 }
-                            } catch (SQLException e) {
-                                log.error(sm.getString("dataSourceUserDatabase.exception"), e);
                             }
+                        } catch (SQLException e) {
+                            log.error(sm.getString("dataSourceUserDatabase.exception"), e);
+                            return null;
                         }
                         group = new GenericGroup<>(this, groupName, description, groupRoles);
                     }
@@ -733,7 +833,7 @@ public class DataSourceUserDatabase extends SparseUserDatabase {
                     return null;
                 }
 
-                if (userRoleTable != null && roleNameCol != null) {
+                if (isUserRoleStoreDefined()) {
                     Connection dbConnection = openConnection();
                     if (dbConnection == null) {
                         return null;
@@ -754,6 +854,13 @@ public class DataSourceUserDatabase extends SparseUserDatabase {
         }
     }
 
+    /**
+     * Find a role by name using the provided database connection.
+     *
+     * @param dbConnection The database connection to use
+     * @param roleName The name of the role to find
+     * @return the role, or null if not found
+     */
     public Role findRoleInternal(Connection dbConnection, String roleName) {
         Role role = null;
         try (PreparedStatement stmt = dbConnection.prepareStatement(preparedRole)) {
@@ -809,7 +916,14 @@ public class DataSourceUserDatabase extends SparseUserDatabase {
         }
     }
 
-    public User findUserInternal(Connection dbConnection, String userName) {
+    /**
+     * Find a user by name using the provided database connection.
+     *
+     * @param dbConnection The database connection to use
+     * @param userName The name of the user to find
+     * @return the user, or null if not found
+     */
+    private User findUserInternal(Connection dbConnection, String userName) {
         String dbCredentials = null;
         String fullName = null;
 
@@ -822,12 +936,15 @@ public class DataSourceUserDatabase extends SparseUserDatabase {
                     if (userFullNameCol != null) {
                         fullName = rs.getString(2);
                     }
+                } else {
+                    return null;
                 }
 
                 dbCredentials = (dbCredentials != null) ? dbCredentials.trim() : null;
             }
         } catch (SQLException e) {
             log.error(sm.getString("dataSourceUserDatabase.exception"), e);
+            return null;
         }
 
         // Lookup groups
@@ -848,11 +965,12 @@ public class DataSourceUserDatabase extends SparseUserDatabase {
                 }
             } catch (SQLException e) {
                 log.error(sm.getString("dataSourceUserDatabase.exception"), e);
+                return null;
             }
         }
 
         ArrayList<Role> roles = new ArrayList<>();
-        if (userRoleTable != null && roleNameCol != null) {
+        if (isUserRoleStoreDefined()) {
             try (PreparedStatement stmt = dbConnection.prepareStatement(preparedUserRoles)) {
                 stmt.setString(1, userName);
                 try (ResultSet rs = stmt.executeQuery()) {
@@ -868,6 +986,7 @@ public class DataSourceUserDatabase extends SparseUserDatabase {
                 }
             } catch (SQLException e) {
                 log.error(sm.getString("dataSourceUserDatabase.exception"), e);
+                return null;
             }
         }
 
@@ -934,12 +1053,20 @@ public class DataSourceUserDatabase extends SparseUserDatabase {
         if (log.isDebugEnabled()) {
             // As there are lots of parameters to configure, log some debug to help out
             log.debug(sm.getString("dataSourceUserDatabase.features",
-                    Boolean.toString(userRoleTable != null && roleNameCol != null),
+                    Boolean.toString(isUserRoleStoreDefined()),
                     Boolean.toString(isRoleStoreDefined()), Boolean.toString(isGroupStoreDefined())));
+        }
+
+        if (!isUserStoreDefined()) {
+            throw new IllegalArgumentException(sm.getString("dataSourceUserDatabase.noUserConfiguration",
+                    userTable, userNameCol, userCredCol));
         }
 
         dbWriteLock.lock();
         try {
+
+            // Basic user functionality is mandatory
+            // This includes storing user name, credential, and a list of roles
 
             StringBuilder temp = new StringBuilder("SELECT ");
             temp.append(userCredCol);
@@ -959,14 +1086,16 @@ public class DataSourceUserDatabase extends SparseUserDatabase {
             temp.append(userTable);
             preparedAllUsers = temp.toString();
 
-            temp = new StringBuilder("SELECT ");
-            temp.append(roleNameCol);
-            temp.append(" FROM ");
-            temp.append(userRoleTable);
-            temp.append(" WHERE ");
-            temp.append(userNameCol);
-            temp.append(" = ?");
-            preparedUserRoles = temp.toString();
+            if (isUserRoleStoreDefined()) {
+                temp = new StringBuilder("SELECT ");
+                temp.append(roleNameCol);
+                temp.append(" FROM ");
+                temp.append(userRoleTable);
+                temp.append(" WHERE ");
+                temp.append(userNameCol);
+                temp.append(" = ?");
+                preparedUserRoles = temp.toString();
+            }
 
             if (isGroupStoreDefined()) {
                 temp = new StringBuilder("SELECT ");
@@ -1025,7 +1154,7 @@ public class DataSourceUserDatabase extends SparseUserDatabase {
                 temp.append(" FROM ");
                 temp.append(roleTable);
                 preparedAllRoles = temp.toString();
-            } else if (userRoleTable != null && roleNameCol != null) {
+            } else if (isUserRoleStoreDefined()) {
                 // Validate roles existence from the user <-> roles table
                 temp = new StringBuilder("SELECT ");
                 temp.append(roleNameCol);
@@ -1110,18 +1239,62 @@ public class DataSourceUserDatabase extends SparseUserDatabase {
 
         dbWriteLock.lock();
         try {
+            boolean success = false;
             try {
+                dbConnection.setAutoCommit(false);
                 saveInternal(dbConnection);
+                // Commit all changes to the database
+                dbConnection.commit();
+                success = true;
+            } catch (Throwable t) {
+                ExceptionUtils.handleThrowable(t);
+                log.error(sm.getString("dataSourceUserDatabase.exception"), t);
+                // Some exception occurred so rollback everything
+                try {
+                    dbConnection.rollback();
+                } catch (SQLException e) {
+                    t.addSuppressed(e);
+                }
+                throw t;
             } finally {
-                closeConnection(dbConnection);
+                try {
+                    // Everything is committed successfully, we can now clear all un-persisted changes
+                    if (success) {
+                        if (isUserRoleStoreDefined()) {
+                            removedRoles.clear();
+                            if (isRoleStoreDefined()) {
+                                createdRoles.clear();
+                                modifiedRoles.clear();
+                            }
+                        }
+                        if (isGroupStoreDefined()) {
+                            removedGroups.clear();
+                            createdGroups.clear();
+                            modifiedGroups.clear();
+                        }
+                        removedUsers.clear();
+                        createdUsers.clear();
+                        modifiedUsers.clear();
+                    }
+                    dbConnection.setAutoCommit(true);
+                } catch (SQLException e) {
+                    // Ignore, this is for cleanup
+                } finally {
+                    closeConnection(dbConnection);
+                }
             }
         } finally {
             dbWriteLock.unlock();
         }
     }
 
-    protected void saveInternal(Connection dbConnection) {
-
+    /**
+     * Save all pending changes to the database using the provided connection.
+     *
+     * @param dbConnection The database connection to use
+     * @throws SQLException when a database error occurs
+     */
+    protected void saveInternal(Connection dbConnection) throws SQLException {
         StringBuilder temp = null;
         StringBuilder tempRelation;
         StringBuilder tempRelationDelete = null;
@@ -1151,24 +1324,17 @@ public class DataSourceUserDatabase extends SparseUserDatabase {
                         try (PreparedStatement stmt = dbConnection.prepareStatement(tempRelationDelete.toString())) {
                             stmt.setString(1, role.getRolename());
                             stmt.executeUpdate();
-                        } catch (SQLException e) {
-                            log.error(sm.getString("dataSourceUserDatabase.exception"), e);
                         }
                     }
                     try (PreparedStatement stmt = dbConnection.prepareStatement(tempRelationDelete2.toString())) {
                         stmt.setString(1, role.getRolename());
                         stmt.executeUpdate();
-                    } catch (SQLException e) {
-                        log.error(sm.getString("dataSourceUserDatabase.exception"), e);
                     }
                     try (PreparedStatement stmt = dbConnection.prepareStatement(temp.toString())) {
                         stmt.setString(1, role.getRolename());
                         stmt.executeUpdate();
-                    } catch (SQLException e) {
-                        log.error(sm.getString("dataSourceUserDatabase.exception"), e);
                     }
                 }
-                removedRoles.clear();
             }
 
             // Created roles
@@ -1191,11 +1357,8 @@ public class DataSourceUserDatabase extends SparseUserDatabase {
                             stmt.setString(2, role.getDescription());
                         }
                         stmt.executeUpdate();
-                    } catch (SQLException e) {
-                        log.error(sm.getString("dataSourceUserDatabase.exception"), e);
                     }
                 }
-                createdRoles.clear();
             }
 
             // Modified roles
@@ -1210,14 +1373,11 @@ public class DataSourceUserDatabase extends SparseUserDatabase {
                         stmt.setString(1, role.getDescription());
                         stmt.setString(2, role.getRolename());
                         stmt.executeUpdate();
-                    } catch (SQLException e) {
-                        log.error(sm.getString("dataSourceUserDatabase.exception"), e);
                     }
                 }
-                modifiedRoles.clear();
             }
 
-        } else if (userRoleTable != null && roleNameCol != null) {
+        } else if (isUserRoleStoreDefined()) {
             // Only remove role from users
             tempRelationDelete = new StringBuilder("DELETE FROM ");
             tempRelationDelete.append(userRoleTable);
@@ -1228,11 +1388,8 @@ public class DataSourceUserDatabase extends SparseUserDatabase {
                 try (PreparedStatement stmt = dbConnection.prepareStatement(tempRelationDelete.toString())) {
                     stmt.setString(1, role.getRolename());
                     stmt.executeUpdate();
-                } catch (SQLException e) {
-                    log.error(sm.getString("dataSourceUserDatabase.exception"), e);
                 }
             }
-            removedRoles.clear();
         }
 
         if (isGroupStoreDefined()) {
@@ -1266,23 +1423,16 @@ public class DataSourceUserDatabase extends SparseUserDatabase {
                     try (PreparedStatement stmt = dbConnection.prepareStatement(groupRoleRelationDelete)) {
                         stmt.setString(1, group.getGroupname());
                         stmt.executeUpdate();
-                    } catch (SQLException e) {
-                        log.error(sm.getString("dataSourceUserDatabase.exception"), e);
                     }
                     try (PreparedStatement stmt = dbConnection.prepareStatement(tempRelationDelete2.toString())) {
                         stmt.setString(1, group.getGroupname());
                         stmt.executeUpdate();
-                    } catch (SQLException e) {
-                        log.error(sm.getString("dataSourceUserDatabase.exception"), e);
                     }
                     try (PreparedStatement stmt = dbConnection.prepareStatement(temp.toString())) {
                         stmt.setString(1, group.getGroupname());
                         stmt.executeUpdate();
-                    } catch (SQLException e) {
-                        log.error(sm.getString("dataSourceUserDatabase.exception"), e);
                     }
                 }
-                removedGroups.clear();
             }
 
             // Created groups
@@ -1305,8 +1455,6 @@ public class DataSourceUserDatabase extends SparseUserDatabase {
                             stmt.setString(2, group.getDescription());
                         }
                         stmt.executeUpdate();
-                    } catch (SQLException e) {
-                        log.error(sm.getString("dataSourceUserDatabase.exception"), e);
                     }
                     Iterator<Role> roles = group.getRoles();
                     while (roles.hasNext()) {
@@ -1315,12 +1463,9 @@ public class DataSourceUserDatabase extends SparseUserDatabase {
                             stmt.setString(1, group.getGroupname());
                             stmt.setString(2, role.getRolename());
                             stmt.executeUpdate();
-                        } catch (SQLException e) {
-                            log.error(sm.getString("dataSourceUserDatabase.exception"), e);
                         }
                     }
                 }
-                createdGroups.clear();
             }
 
             // Modified groups
@@ -1338,15 +1483,11 @@ public class DataSourceUserDatabase extends SparseUserDatabase {
                             stmt.setString(1, group.getDescription());
                             stmt.setString(2, group.getGroupname());
                             stmt.executeUpdate();
-                        } catch (SQLException e) {
-                            log.error(sm.getString("dataSourceUserDatabase.exception"), e);
                         }
                     }
                     try (PreparedStatement stmt = dbConnection.prepareStatement(groupRoleRelationDelete)) {
                         stmt.setString(1, group.getGroupname());
                         stmt.executeUpdate();
-                    } catch (SQLException e) {
-                        log.error(sm.getString("dataSourceUserDatabase.exception"), e);
                     }
                     Iterator<Role> roles = group.getRoles();
                     while (roles.hasNext()) {
@@ -1355,19 +1496,16 @@ public class DataSourceUserDatabase extends SparseUserDatabase {
                             stmt.setString(1, group.getGroupname());
                             stmt.setString(2, role.getRolename());
                             stmt.executeUpdate();
-                        } catch (SQLException e) {
-                            log.error(sm.getString("dataSourceUserDatabase.exception"), e);
                         }
                     }
                 }
-                modifiedGroups.clear();
             }
 
         }
 
         String userRoleRelation = null;
         String userRoleRelationDelete = null;
-        if (userRoleTable != null && roleNameCol != null) {
+        if (isUserRoleStoreDefined()) {
             tempRelation = new StringBuilder("INSERT INTO ");
             tempRelation.append(userRoleTable);
             tempRelation.append('(').append(userNameCol).append(", ");
@@ -1411,26 +1549,19 @@ public class DataSourceUserDatabase extends SparseUserDatabase {
                     try (PreparedStatement stmt = dbConnection.prepareStatement(userRoleRelationDelete)) {
                         stmt.setString(1, user.getUsername());
                         stmt.executeUpdate();
-                    } catch (SQLException e) {
-                        log.error(sm.getString("dataSourceUserDatabase.exception"), e);
                     }
                 }
                 if (userGroupRelationDelete != null) {
                     try (PreparedStatement stmt = dbConnection.prepareStatement(userGroupRelationDelete)) {
                         stmt.setString(1, user.getUsername());
                         stmt.executeUpdate();
-                    } catch (SQLException e) {
-                        log.error(sm.getString("dataSourceUserDatabase.exception"), e);
                     }
                 }
                 try (PreparedStatement stmt = dbConnection.prepareStatement(temp.toString())) {
                     stmt.setString(1, user.getUsername());
                     stmt.executeUpdate();
-                } catch (SQLException e) {
-                    log.error(sm.getString("dataSourceUserDatabase.exception"), e);
                 }
             }
-            removedUsers.clear();
         }
 
         // Created users
@@ -1455,8 +1586,6 @@ public class DataSourceUserDatabase extends SparseUserDatabase {
                         stmt.setString(3, user.getFullName());
                     }
                     stmt.executeUpdate();
-                } catch (SQLException e) {
-                    log.error(sm.getString("dataSourceUserDatabase.exception"), e);
                 }
                 if (userRoleRelation != null) {
                     Iterator<Role> roles = user.getRoles();
@@ -1466,8 +1595,6 @@ public class DataSourceUserDatabase extends SparseUserDatabase {
                             stmt.setString(1, user.getUsername());
                             stmt.setString(2, role.getRolename());
                             stmt.executeUpdate();
-                        } catch (SQLException e) {
-                            log.error(sm.getString("dataSourceUserDatabase.exception"), e);
                         }
                     }
                 }
@@ -1479,13 +1606,10 @@ public class DataSourceUserDatabase extends SparseUserDatabase {
                             stmt.setString(1, user.getUsername());
                             stmt.setString(2, group.getGroupname());
                             stmt.executeUpdate();
-                        } catch (SQLException e) {
-                            log.error(sm.getString("dataSourceUserDatabase.exception"), e);
                         }
                     }
                 }
             }
-            createdUsers.clear();
         }
 
         // Modified users
@@ -1509,23 +1633,17 @@ public class DataSourceUserDatabase extends SparseUserDatabase {
                         stmt.setString(2, user.getUsername());
                     }
                     stmt.executeUpdate();
-                } catch (SQLException e) {
-                    log.error(sm.getString("dataSourceUserDatabase.exception"), e);
                 }
                 if (userRoleRelationDelete != null) {
                     try (PreparedStatement stmt = dbConnection.prepareStatement(userRoleRelationDelete)) {
                         stmt.setString(1, user.getUsername());
                         stmt.executeUpdate();
-                    } catch (SQLException e) {
-                        log.error(sm.getString("dataSourceUserDatabase.exception"), e);
                     }
                 }
                 if (userGroupRelationDelete != null) {
                     try (PreparedStatement stmt = dbConnection.prepareStatement(userGroupRelationDelete)) {
                         stmt.setString(1, user.getUsername());
                         stmt.executeUpdate();
-                    } catch (SQLException e) {
-                        log.error(sm.getString("dataSourceUserDatabase.exception"), e);
                     }
                 }
                 if (userRoleRelation != null) {
@@ -1536,8 +1654,6 @@ public class DataSourceUserDatabase extends SparseUserDatabase {
                             stmt.setString(1, user.getUsername());
                             stmt.setString(2, role.getRolename());
                             stmt.executeUpdate();
-                        } catch (SQLException e) {
-                            log.error(sm.getString("dataSourceUserDatabase.exception"), e);
                         }
                     }
                 }
@@ -1549,21 +1665,37 @@ public class DataSourceUserDatabase extends SparseUserDatabase {
                             stmt.setString(1, user.getUsername());
                             stmt.setString(2, group.getGroupname());
                             stmt.executeUpdate();
-                        } catch (SQLException e) {
-                            log.error(sm.getString("dataSourceUserDatabase.exception"), e);
                         }
                     }
                 }
             }
-            modifiedGroups.clear();
         }
-
     }
 
     @Override
     public boolean isAvailable() {
         return connectionSuccess;
     }
+
+    /**
+     * User storage is mandatory.
+     *
+     * @return true when users are properly configured
+     */
+    protected boolean isUserStoreDefined() {
+        return userTable != null && userNameCol != null && userCredCol != null;
+    }
+
+
+    /**
+     * User role relationship storage.
+     *
+     * @return true when user roles relationship are properly configured
+     */
+    protected boolean isUserRoleStoreDefined() {
+        return userRoleTable != null && roleNameCol != null;
+    }
+
 
     /**
      * Only use groups if the tables are fully defined.
@@ -1582,7 +1714,7 @@ public class DataSourceUserDatabase extends SparseUserDatabase {
      * @return true when roles are used
      */
     protected boolean isRoleStoreDefined() {
-        return roleTable != null && userRoleTable != null && roleNameCol != null;
+        return roleTable != null && isUserRoleStoreDefined();
     }
 
 

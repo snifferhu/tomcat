@@ -23,6 +23,9 @@ on:
     branches:
       - main
 
+permissions:
+  contents: read
+
 env:
   LC_ALL: en_US.UTF-8
 
@@ -33,24 +36,20 @@ jobs:
       matrix:
         isMain:
           - ${{ contains(github.ref, 'main') }}
-        java: [ 21, 25, 26-ea ]
-        os: [ ubuntu-latest, windows-latest, macos-latest ]
+        java: [ 21, 25, 26, 27-ea ]
+        os: [ ubuntu-latest, windows-latest ]
         exclude:
           - os: windows-latest
             java: 21
-          - os: macos-latest
-            java: 21
           - os: windows-latest
             java: 25
-          - os: macos-latest
-            java: 25
-          - os: macos-latest
-            java: 26-ea
+          - os: windows-latest
+            java: 26
     name: JDK${{ matrix.java }} ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     steps:
     - name: Git Checkout
-      uses: actions/checkout@v6
+      uses: actions/checkout@v7
     - name: Set up Java
       uses: actions/setup-java@v5
       with:
@@ -64,7 +63,7 @@ jobs:
 
     - name: Upload logs
       if: ${{ !cancelled() }}
-      uses: actions/upload-artifact@v6
+      uses: actions/upload-artifact@v7
       with:
         name: JDK${{ matrix.java }}-${{ matrix.os }}-logs
         path: |

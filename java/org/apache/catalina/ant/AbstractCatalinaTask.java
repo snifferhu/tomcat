@@ -26,6 +26,7 @@ import java.net.PasswordAuthentication;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URLConnection;
+import java.nio.charset.StandardCharsets;
 
 import org.apache.catalina.util.IOTools;
 import org.apache.tomcat.util.http.Method;
@@ -34,18 +35,15 @@ import org.apache.tools.ant.Project;
 
 /**
  * Abstract base class for Ant tasks that interact with the <em>Manager</em> web application for dynamically deploying
- * and undeploying applications. These tasks require Ant 1.4 or later.
- *
- * @since 4.1
+ * and undeploying applications. These tasks require Ant 1.5 or later.
  */
 public abstract class AbstractCatalinaTask extends BaseRedirectorHelperTask {
 
-    // ----------------------------------------------------- Instance Variables
-
     /**
-     * manager webapp's encoding.
+     * Construct a new instance of this task.
      */
-    private static final String CHARSET = "utf-8";
+    protected AbstractCatalinaTask() {
+    }
 
 
     // ------------------------------------------------------------- Properties
@@ -55,10 +53,20 @@ public abstract class AbstractCatalinaTask extends BaseRedirectorHelperTask {
      */
     protected String charset = "ISO-8859-1";
 
+    /**
+     * Returns the charset used during URL encoding.
+     *
+     * @return the charset
+     */
     public String getCharset() {
         return charset;
     }
 
+    /**
+     * Sets the charset used during URL encoding.
+     *
+     * @param charset the charset to set
+     */
     public void setCharset(String charset) {
         this.charset = charset;
     }
@@ -69,10 +77,20 @@ public abstract class AbstractCatalinaTask extends BaseRedirectorHelperTask {
      */
     protected String password = null;
 
+    /**
+     * Returns the login password for the Manager application.
+     *
+     * @return the password
+     */
     public String getPassword() {
         return this.password;
     }
 
+    /**
+     * Sets the login password for the Manager application.
+     *
+     * @param password the password to set
+     */
     public void setPassword(String password) {
         this.password = password;
     }
@@ -83,10 +101,20 @@ public abstract class AbstractCatalinaTask extends BaseRedirectorHelperTask {
      */
     protected String url = "http://localhost:8080/manager/text";
 
+    /**
+     * Returns the URL of the Manager application to be used.
+     *
+     * @return the url
+     */
     public String getUrl() {
         return this.url;
     }
 
+    /**
+     * Sets the URL of the Manager application to be used.
+     *
+     * @param url the url to set
+     */
     public void setUrl(String url) {
         this.url = url;
     }
@@ -97,10 +125,20 @@ public abstract class AbstractCatalinaTask extends BaseRedirectorHelperTask {
      */
     protected String username = null;
 
+    /**
+     * Returns the login username for the Manager application.
+     *
+     * @return the username
+     */
     public String getUsername() {
         return this.username;
     }
 
+    /**
+     * Sets the login username for the Manager application.
+     *
+     * @param username the username to set
+     */
     public void setUsername(String username) {
         this.username = username;
     }
@@ -117,10 +155,20 @@ public abstract class AbstractCatalinaTask extends BaseRedirectorHelperTask {
      */
     protected boolean ignoreResponseConstraint = false;
 
+    /**
+     * Returns whether the constraint on the first line of the response message is ignored.
+     *
+     * @return true if the constraint is ignored
+     */
     public boolean isIgnoreResponseConstraint() {
         return ignoreResponseConstraint;
     }
 
+    /**
+     * Sets whether the constraint on the first line of the response message is ignored.
+     *
+     * @param ignoreResponseConstraint true to ignore the constraint
+     */
     public void setIgnoreResponseConstraint(boolean ignoreResponseConstraint) {
         this.ignoreResponseConstraint = ignoreResponseConstraint;
     }
@@ -170,9 +218,6 @@ public abstract class AbstractCatalinaTask extends BaseRedirectorHelperTask {
 
         InputStreamReader reader = null;
         try {
-            // Set up authorization with our credentials
-            Authenticator.setDefault(new TaskAuthenticator(username, password));
-
             // Create a connection for this command
             URI uri = new URI(url + command);
             URLConnection conn = uri.parseServerAuthority().toURL().openConnection();
@@ -182,8 +227,13 @@ public abstract class AbstractCatalinaTask extends BaseRedirectorHelperTask {
             hconn.setAllowUserInteraction(false);
             hconn.setDoInput(true);
             hconn.setUseCaches(false);
+
+            // Set up authorization with our credentials
+            Authenticator authenticator = new TaskAuthenticator(username, password);
+            hconn.setAuthenticator(authenticator);
+
             if (istream != null) {
-                preAuthenticate();
+                preAuthenticate(authenticator);
 
                 hconn.setDoOutput(true);
                 hconn.setRequestMethod(Method.PUT);
@@ -212,7 +262,7 @@ public abstract class AbstractCatalinaTask extends BaseRedirectorHelperTask {
             }
 
             // Process the response message
-            reader = new InputStreamReader(hconn.getInputStream(), CHARSET);
+            reader = new InputStreamReader(hconn.getInputStream(), StandardCharsets.UTF_8);
             StringBuilder buff = new StringBuilder();
             String error = null;
             int msgPriority = Project.MSG_INFO;
@@ -281,10 +331,11 @@ public abstract class AbstractCatalinaTask extends BaseRedirectorHelperTask {
      * the above two are not compatible. When the request is made, the resulting 401 triggers an exception because, when
      * using streams, the InputStream is no longer available to send with the repeated request that now includes the
      * appropriate Authorization header. The hack is to make a simple OPTIONS request- i.e. without a request body. This
-     * triggers authentication and the requirement to authenticate for this host is cached and used to provide an
-     * appropriate Authorization when the next request is made (that includes a request body).
+     * triggers authentication and the requirement to authenticate for this host is cached in the JDK's HTTP
+     * authentication cache and used to provide an appropriate Authorization when the next request is made (that
+     * includes a request body).
      */
-    private void preAuthenticate() throws IOException, URISyntaxException {
+    private void preAuthenticate(Authenticator authenticator) throws IOException, URISyntaxException {
 
         // Create a connection for this command
         URI uri = new URI(url);
@@ -296,6 +347,7 @@ public abstract class AbstractCatalinaTask extends BaseRedirectorHelperTask {
         hconn.setDoInput(true);
         hconn.setUseCaches(false);
         hconn.setDoOutput(false);
+        hconn.setAuthenticator(authenticator);
         hconn.setRequestMethod(Method.OPTIONS);
         hconn.setRequestProperty("User-Agent", "Catalina-Ant-Task/1.0");
 

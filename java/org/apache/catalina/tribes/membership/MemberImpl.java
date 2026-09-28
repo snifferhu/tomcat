@@ -28,24 +28,35 @@ import org.apache.catalina.tribes.transport.SenderState;
 import org.apache.catalina.tribes.util.StringManager;
 
 /**
- * A <b>membership</b> implementation using simple multicast. This is the representation of a multicast member. Carries
- * the host, and port of the this or other cluster nodes.
+ * This is the representation of a multicast member. Carries the host, and port of the this or other cluster nodes.
  */
 public class MemberImpl implements Member, java.io.Externalizable {
 
+    /**
+     * The start marker for tribes member data.
+     */
     public static final byte[] TRIBES_MBR_BEGIN = new byte[] { 84, 82, 73, 66, 69, 83, 45, 66, 1, 0 };
+    /**
+     * The end marker for tribes member data.
+     */
     public static final byte[] TRIBES_MBR_END = new byte[] { 84, 82, 73, 66, 69, 83, 45, 69, 1, 0 };
+    /**
+     * The string manager for this class.
+     */
     protected static final StringManager sm = StringManager.getManager(Constants.Package);
 
     /**
-     * The listen host for this member
+     * The listen host for this member.
      */
     protected volatile byte[] host = new byte[0];
+    /**
+     * The hostname string representation.
+     */
     protected transient volatile String hostname;
     /**
      * The tcp listen port for this member
      */
-    protected volatile int port;
+    protected volatile int port = -1;
     /**
      * The udp listen port for this member
      */
@@ -124,6 +135,15 @@ public class MemberImpl implements Member, java.io.Externalizable {
         this.memberAliveTime = aliveTime;
     }
 
+    /**
+     * Construct a new member object with payload.
+     *
+     * @param host      the tcp listen host
+     * @param port      the tcp listen port
+     * @param aliveTime the number of milliseconds since this member was created
+     * @param payload   the payload
+     * @throws IOException if there is an error converting the host name to an IP address
+     */
     public MemberImpl(String host, int port, long aliveTime, byte[] payload) throws IOException {
         this(host, port, aliveTime);
         setPayload(payload);
@@ -154,7 +174,7 @@ public class MemberImpl implements Member, java.io.Externalizable {
     /**
      * Create a data package to send over the wire representing this member. This is faster than serialization.
      *
-     * @return - the bytes for this member deserialized
+     * @return the serialized bytes for this member
      */
     public byte[] getData() {
         return getData(true);
@@ -251,6 +271,10 @@ public class MemberImpl implements Member, java.io.Externalizable {
         XByteBuffer.toBytes(udpPort, data, pos);
         pos += 4;
         // host length
+        if (host.length > 127) {
+            throw new IllegalArgumentException(sm.getString("memberImpl.invalid.hostLength",
+                    Integer.toString(host.length)));
+        }
         data[pos++] = (byte) host.length;
         // host
         System.arraycopy(host, 0, data, pos, host.length);
@@ -297,6 +321,15 @@ public class MemberImpl implements Member, java.io.Externalizable {
         return getMember(data, 0, data.length, member);
     }
 
+    /**
+     * Deserializes a member from data sent over the wire.
+     *
+     * @param data   The bytes received
+     * @param offset The offset
+     * @param length The length
+     * @param member The member object to populate
+     * @return The populated member object
+     */
     public static Member getMember(byte[] data, int offset, int length, MemberImpl member) {
         // package looks like
         // start package TRIBES_MBR_BEGIN.length
@@ -360,6 +393,10 @@ public class MemberImpl implements Member, java.io.Externalizable {
 
 
         byte hl = data[pos++];
+        if (hl < 0) {
+            throw new IllegalArgumentException(sm.getString("memberImpl.invalid.hostLength",
+                    Integer.toString(hl)));
+        }
         byte[] addr = new byte[hl];
         System.arraycopy(data, pos, addr, 0, hl);
         pos += hl;
@@ -407,10 +444,24 @@ public class MemberImpl implements Member, java.io.Externalizable {
         return member;
     }
 
+    /**
+     * Deserializes a member from data sent over the wire.
+     *
+     * @param data the bytes received
+     * @return the member
+     */
     public static Member getMember(byte[] data) {
         return getMember(data, new MemberImpl());
     }
 
+    /**
+     * Deserializes a member from data sent over the wire.
+     *
+     * @param data   the bytes received
+     * @param offset the offset
+     * @param length the length
+     * @return the member
+     */
     public static Member getMember(byte[] data, int offset, int length) {
         return getMember(data, offset, length, new MemberImpl());
     }
@@ -430,6 +481,10 @@ public class MemberImpl implements Member, java.io.Externalizable {
         return host;
     }
 
+    /**
+     * Get the hostname.
+     * @return the hostname
+     */
     public String getHostname() {
         if (this.hostname != null) {
             return hostname;
@@ -440,6 +495,10 @@ public class MemberImpl implements Member, java.io.Externalizable {
         }
     }
 
+    /**
+     * Get the message count.
+     * @return the message count
+     */
     public int getMsgCount() {
         return msgCount.get();
     }
@@ -449,6 +508,10 @@ public class MemberImpl implements Member, java.io.Externalizable {
         return memberAliveTime;
     }
 
+    /**
+     * Get the service start time.
+     * @return the service start time
+     */
     public long getServiceStartTime() {
         return serviceStartTime;
     }
@@ -507,10 +570,21 @@ public class MemberImpl implements Member, java.io.Externalizable {
         return buf.toString();
     }
 
+    /**
+     * Convert byte array to string.
+     * @param data the data
+     * @return the string
+     */
     public static String bToS(byte[] data) {
         return bToS(data, data.length);
     }
 
+    /**
+     * Convert byte array to string with max length.
+     * @param data the data
+     * @param max the max length
+     * @return the string
+     */
     public static String bToS(byte[] data, int max) {
         StringBuilder buf = new StringBuilder(4 * 16);
         buf.append('{');
@@ -527,7 +601,10 @@ public class MemberImpl implements Member, java.io.Externalizable {
 
     @Override
     public int hashCode() {
-        return getHost()[0] + getHost()[1] + getHost()[2] + getHost()[3];
+        int result = Arrays.hashCode(getHost());
+        result = 31 * result + getPort();
+        result = 31 * result + Arrays.hashCode(getUniqueId());
+        return result;
     }
 
     /**
@@ -546,10 +623,19 @@ public class MemberImpl implements Member, java.io.Externalizable {
         }
     }
 
+    /**
+     * Set the host.
+     * @param host the host
+     */
     public synchronized void setHost(byte[] host) {
         this.host = host;
     }
 
+    /**
+     * Set the hostname.
+     * @param host the hostname
+     * @throws IOException if there is an error converting the host name to an IP address
+     */
     public void setHostname(String host) throws IOException {
         hostname = host;
         synchronized (this) {
@@ -557,19 +643,35 @@ public class MemberImpl implements Member, java.io.Externalizable {
         }
     }
 
+    /**
+     * Set the message count.
+     * @param msgCount the message count
+     */
     public void setMsgCount(int msgCount) {
         this.msgCount.set(msgCount);
     }
 
+    /**
+     * Set the port.
+     * @param port the port
+     */
     public synchronized void setPort(int port) {
         this.port = port;
         this.dataPkg = null;
     }
 
+    /**
+     * Set the service start time.
+     * @param serviceStartTime the service start time
+     */
     public void setServiceStartTime(long serviceStartTime) {
         this.serviceStartTime = serviceStartTime;
     }
 
+    /**
+     * Set the unique ID.
+     * @param uniqueId the unique ID
+     */
     public synchronized void setUniqueId(byte[] uniqueId) {
         this.uniqueId = uniqueId != null ? uniqueId : new byte[16];
         getData(true, true);
@@ -600,16 +702,28 @@ public class MemberImpl implements Member, java.io.Externalizable {
         getData(true, true);
     }
 
+    /**
+     * Set the domain.
+     * @param domain the domain
+     */
     public synchronized void setDomain(byte[] domain) {
         this.domain = domain != null ? domain : new byte[0];
         getData(true, true);
     }
 
+    /**
+     * Set the secure port.
+     * @param securePort the secure port
+     */
     public synchronized void setSecurePort(int securePort) {
         this.securePort = securePort;
         this.dataPkg = null;
     }
 
+    /**
+     * Set the UDP port.
+     * @param port the UDP port
+     */
     public synchronized void setUdpPort(int port) {
         this.udpPort = port;
         this.dataPkg = null;

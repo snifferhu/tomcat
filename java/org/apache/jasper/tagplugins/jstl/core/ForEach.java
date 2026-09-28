@@ -19,7 +19,16 @@ package org.apache.jasper.tagplugins.jstl.core;
 import org.apache.jasper.compiler.tagplugin.TagPlugin;
 import org.apache.jasper.compiler.tagplugin.TagPluginContext;
 
+/**
+ * Tag plugin implementation for the JSTL &lt;c:forEach&gt; tag.
+ */
 public final class ForEach implements TagPlugin {
+    /**
+     * Creates a new ForEach tag plugin instance.
+     */
+    public ForEach() {
+        // Default constructor
+    }
 
     private boolean hasVar, hasBegin, hasEnd, hasStep;
 
@@ -59,8 +68,7 @@ public final class ForEach implements TagPlugin {
             ctxt.generateJavaSource("; " + index + "++) {");
         }
 
-        // If var is specified and the body contains an EL, then sync
-        // the var attribute
+        // If var is specified, sync the var attribute
         if (hasVar /* && ctxt.hasEL() */) {
             ctxt.generateJavaSource("_jspx_page_context.setAttribute(");
             ctxt.generateAttribute("var");
@@ -71,7 +79,7 @@ public final class ForEach implements TagPlugin {
     }
 
     /**
-     * Generate codes for Collections The pseudocode is:
+     * Generate codes for Collections.
      */
     private void doCollection(TagPluginContext ctxt) {
 

@@ -39,6 +39,10 @@ import org.apache.catalina.connector.Response;
 public class SemaphoreValve extends ValveBase {
 
     // ------------------------------------------------------ Constructor
+
+    /**
+     * Construct a new {@link SemaphoreValve} with async support enabled.
+     */
     public SemaphoreValve() {
         super(true);
     }
@@ -60,11 +64,25 @@ public class SemaphoreValve extends ValveBase {
      */
     protected int concurrency = 10;
 
+    /**
+     * Return the concurrency level of the semaphore.
+     *
+     * @return the concurrency level
+     */
     public int getConcurrency() {
         return concurrency;
     }
 
+    /**
+     * Set the concurrency level of the semaphore.
+     *
+     * @param concurrency the concurrency level
+     */
     public void setConcurrency(int concurrency) {
+        if (concurrency < 0) {
+            throw new IllegalArgumentException(
+                    sm.getString("semaphoreValve.invalidConcurrency", Integer.valueOf(concurrency)));
+        }
         this.concurrency = concurrency;
     }
 
@@ -74,10 +92,20 @@ public class SemaphoreValve extends ValveBase {
      */
     protected boolean fairness = false;
 
+    /**
+     * Return the fairness setting of the semaphore.
+     *
+     * @return {@code true} if the semaphore uses fair ordering
+     */
     public boolean getFairness() {
         return fairness;
     }
 
+    /**
+     * Set the fairness setting of the semaphore.
+     *
+     * @param fairness {@code true} if the semaphore should use fair ordering
+     */
     public void setFairness(boolean fairness) {
         this.fairness = fairness;
     }
@@ -88,10 +116,20 @@ public class SemaphoreValve extends ValveBase {
      */
     protected boolean block = true;
 
+    /**
+     * Return whether the valve blocks until a permit is available.
+     *
+     * @return {@code true} if the valve blocks waiting for a permit
+     */
     public boolean getBlock() {
         return block;
     }
 
+    /**
+     * Set whether the valve blocks until a permit is available.
+     *
+     * @param block {@code true} if the valve should block waiting for a permit
+     */
     public void setBlock(boolean block) {
         this.block = block;
     }
@@ -102,10 +140,20 @@ public class SemaphoreValve extends ValveBase {
      */
     protected boolean interruptible = false;
 
+    /**
+     * Return whether the valve blocks interruptibly.
+     *
+     * @return {@code true} if the valve blocks interruptibly
+     */
     public boolean getInterruptible() {
         return interruptible;
     }
 
+    /**
+     * Set whether the valve blocks interruptibly.
+     *
+     * @param interruptible {@code true} if the valve should block interruptibly
+     */
     public void setInterruptible(boolean interruptible) {
         this.interruptible = interruptible;
     }
@@ -116,11 +164,25 @@ public class SemaphoreValve extends ValveBase {
      */
     protected int highConcurrencyStatus = -1;
 
+    /**
+     * Return the HTTP status code returned when concurrency is too high.
+     *
+     * @return the status code, or -1 if no error is returned
+     */
     public int getHighConcurrencyStatus() {
         return this.highConcurrencyStatus;
     }
 
+    /**
+     * Set the HTTP status code returned when concurrency is too high.
+     *
+     * @param highConcurrencyStatus the status code to return
+     */
     public void setHighConcurrencyStatus(int highConcurrencyStatus) {
+        if (highConcurrencyStatus != -1 && (highConcurrencyStatus < 100 || highConcurrencyStatus >= 600)) {
+            throw new IllegalArgumentException(
+                    sm.getString("semaphoreValve.invalidStatus", Integer.valueOf(highConcurrencyStatus)));
+        }
         this.highConcurrencyStatus = highConcurrencyStatus;
     }
 

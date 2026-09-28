@@ -36,12 +36,15 @@ import org.apache.tools.ant.types.Path;
 import org.apache.tools.ant.types.PatternSet;
 
 /**
- * Main JSP compiler class. This class uses Ant for compiling.
+ * JSP compiler class. This class uses Ant for compiling.
  */
 public class AntCompiler extends Compiler {
 
     private final Log log = LogFactory.getLog(AntCompiler.class); // must not be static
 
+    /**
+     * Lock object used to synchronize javac compilation when not forking.
+     */
     protected static final Object javacLock = new Object();
 
     static {
@@ -50,12 +53,29 @@ public class AntCompiler extends Compiler {
 
     // ----------------------------------------------------- Instance Variables
 
+    /**
+     * The Ant project used for compilation.
+     */
     protected Project project = null;
+
+    /**
+     * The Ant build listener that captures compilation output.
+     */
     protected JasperAntLogger logger;
 
     // ------------------------------------------------------------ Constructor
 
-    // Lazy eval - if we don't need to compile we probably don't need the project
+    /**
+     * Constructs a new AntCompiler.
+     */
+    public AntCompiler() {
+    }
+
+    /**
+     * Returns the Ant project, initializing it if necessary.
+     *
+     * @return the Ant project
+     */
     protected Project getProject() {
 
         if (project != null) {
@@ -83,8 +103,20 @@ public class AntCompiler extends Compiler {
         return project;
     }
 
+    /**
+     * Ant logger that captures compilation output for reporting.
+     */
     public static class JasperAntLogger extends DefaultLogger {
 
+        /**
+         * Constructs a new JasperAntLogger.
+         */
+        public JasperAntLogger() {
+        }
+
+        /**
+         * Buffer that accumulates compilation output.
+         */
         protected final StringBuilder reportBuf = new StringBuilder();
 
         @Override
@@ -97,6 +129,11 @@ public class AntCompiler extends Compiler {
             reportBuf.append(System.lineSeparator());
         }
 
+        /**
+         * Returns and clears the accumulated compilation report.
+         *
+         * @return the compilation report
+         */
         protected String getReport() {
             String report = reportBuf.toString();
             reportBuf.setLength(0);
@@ -258,6 +295,9 @@ public class AntCompiler extends Compiler {
     }
 
 
+    /**
+     * Handler that captures System.err output for compilation error reporting.
+     */
     protected static class SystemLogHandler extends PrintStream {
 
 
@@ -265,7 +305,7 @@ public class AntCompiler extends Compiler {
 
 
         /**
-         * Construct the handler to capture the output of the given steam.
+         * Construct the handler to capture the output of the given stream.
          *
          * @param wrapped The wrapped stream
          */

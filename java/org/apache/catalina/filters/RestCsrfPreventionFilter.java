@@ -76,6 +76,11 @@ import jakarta.servlet.http.HttpSession;
  * </pre>
  */
 public class RestCsrfPreventionFilter extends CsrfPreventionFilterBase {
+    /**
+     * Default constructor.
+     */
+    public RestCsrfPreventionFilter() {
+    }
     private enum MethodType {
         NON_MODIFYING_METHOD,
         MODIFYING_METHOD
@@ -197,7 +202,8 @@ public class RestCsrfPreventionFilter extends CsrfPreventionFilterBase {
 
         @Override
         public boolean apply(HttpServletRequest request, HttpServletResponse response) {
-            if (fetchRequest.test(nonceFromRequestHeader.getNonce(request, Constants.CSRF_REST_NONCE_HEADER_NAME))) {
+            String nonceFromRequest = nonceFromRequestHeader.getNonce(request, Constants.CSRF_REST_NONCE_HEADER_NAME);
+            if (Objects.nonNull(nonceFromRequest) && fetchRequest.test(nonceFromRequest)) {
                 String nonceFromSessionStr = nonceFromSession.getNonce(request.getSession(false),
                         Constants.CSRF_REST_NONCE_SESSION_ATTR_NAME);
                 if (nonceFromSessionStr == null) {
@@ -241,6 +247,11 @@ public class RestCsrfPreventionFilter extends CsrfPreventionFilterBase {
         }
     }
 
+    /**
+     * Get the set of paths that accept parameters.
+     *
+     * @return The set of paths that accept parameters
+     */
     public Set<String> getPathsAcceptingParams() {
         return pathsAcceptingParams;
     }

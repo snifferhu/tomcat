@@ -29,21 +29,32 @@ import org.apache.tomcat.util.res.StringManager;
 
 /**
  * Convenience base class for implementations of the <b>Valve</b> interface. A subclass <strong>MUST</strong> implement
- * an <code>invoke()</code> method to provide the required functionality, and <strong>MAY</strong> implement the
- * <code>Lifecycle</code> interface to provide configuration management and lifecycle support.
+ * an <code>invoke()</code> method to provide the required functionality. Configuration management and lifecycle
+ * support are provided by this class.
  */
 public abstract class ValveBase extends LifecycleMBeanBase implements Contained, Valve {
 
+    /**
+     * StringManager for internationalized strings.
+     */
     protected static final StringManager sm = StringManager.getManager(ValveBase.class);
 
 
     // ------------------------------------------------------ Constructor
 
+    /**
+     * Constructs a new ValveBase with async support disabled.
+     */
     public ValveBase() {
         this(false);
     }
 
 
+    /**
+     * Constructs a new ValveBase.
+     *
+     * @param asyncSupported Whether this valve supports async requests
+     */
     public ValveBase(boolean asyncSupported) {
         this.asyncSupported = asyncSupported;
     }
@@ -95,6 +106,11 @@ public abstract class ValveBase extends LifecycleMBeanBase implements Contained,
     }
 
 
+    /**
+     * Sets whether this valve supports Servlet 3+ async requests.
+     *
+     * @param asyncSupported Whether this valve supports async requests
+     */
     public void setAsyncSupported(boolean asyncSupported) {
         this.asyncSupported = asyncSupported;
     }
@@ -127,8 +143,12 @@ public abstract class ValveBase extends LifecycleMBeanBase implements Contained,
 
     @Override
     protected void initInternal() throws LifecycleException {
+        Container container = getContainer();
+        if (container == null) {
+            throw new IllegalStateException(sm.getString("valveBase.noContainer"));
+        }
         super.initInternal();
-        containerLog = getContainer().getLogger();
+        containerLog = container.getLogger();
     }
 
 

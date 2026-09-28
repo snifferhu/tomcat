@@ -33,13 +33,20 @@ public class SessionMessageImpl extends ClusterMessageBase implements SessionMes
     /*
      * Private serializable variables to keep the messages state
      */
+    /** The event type of the session message. */
     private final int mEvtType;
+    /** The serialized session data. */
     private final byte[] mSession;
+    /** The session identifier. */
     private final String mSessionID;
 
+    /** The context name for the session. */
     private final String mContextName;
+    /** The timestamp when the message was serialized. */
     private long serializationTimestamp;
+    /** Whether the timestamp has been explicitly set. */
     private boolean timestampSet = false;
+    /** The unique identifier for this message. */
     private String uniqueId;
 
 
@@ -75,7 +82,7 @@ public class SessionMessageImpl extends ClusterMessageBase implements SessionMes
      * send that context manager does not exist after GET_ALL_SESSION received from this sender.<BR>
      *
      * @param contextName - the name of the context (application
-     * @param eventtype   - one of the 8 event type defined in this class
+     * @param eventtype   - one of the 9 event types defined in this class
      * @param session     - the serialized byte array of the session itself
      * @param sessionID   - the id that identifies this session
      * @param uniqueID    - the id that identifies this message

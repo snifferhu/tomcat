@@ -37,6 +37,12 @@ import org.apache.naming.StringManager;
  */
 public class LookupFactory implements ObjectFactory {
 
+    /**
+     * Default constructor.
+     */
+    public LookupFactory() {
+    }
+
     private static final Log log = LogFactory.getLog(LookupFactory.class);
     private static final StringManager sm = StringManager.getManager(LookupFactory.class);
 
@@ -45,7 +51,7 @@ public class LookupFactory implements ObjectFactory {
     /**
      * Create a new Resource env instance.
      *
-     * @param obj         The reference object describing the DataSource
+     * @param obj         The reference object describing the LookupRef
      * @param name        the bound name
      * @param nameCtx     unused
      * @param environment unused

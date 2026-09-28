@@ -64,12 +64,21 @@ public class AprLifecycleListener implements LifecycleListener {
 
     // ---------------------------------------------- Constants
 
-    protected static final int TCN_REQUIRED_MAJOR = 1;
-    protected static final int TCN_REQUIRED_MINOR = 2;
-    protected static final int TCN_REQUIRED_PATCH = 34;
+    private static final int TCN_1_REQUIRED_MINOR = 3;
+    private static final int TCN_1_REQUIRED_PATCH = 9;
+
+    /** Required major version of Tomcat Native. */
+    protected static final int TCN_REQUIRED_MAJOR = 2;
+    /** Required minor version of Tomcat Native. */
+    protected static final int TCN_REQUIRED_MINOR = 0;
+    /** Required patch version of Tomcat Native. */
+    protected static final int TCN_REQUIRED_PATCH = 16;
+    /** Recommended major version of Tomcat Native. */
     protected static final int TCN_RECOMMENDED_MAJOR = 2;
+    /** Recommended minor version of Tomcat Native. */
     protected static final int TCN_RECOMMENDED_MINOR = 0;
-    protected static final int TCN_RECOMMENDED_PV = 5;
+    /** Recommended patch version of Tomcat Native. */
+    protected static final int TCN_RECOMMENDED_PV = 16;
 
 
     // ---------------------------------------------- Properties
@@ -79,10 +88,15 @@ public class AprLifecycleListener implements LifecycleListener {
     private static int tcnPatch = 0;
     private static int tcnVersion = 0;
 
+    /** SSL engine configuration. */
     protected static String SSLEngine = "on"; // default on
+    /** FIPS mode configuration. */
     protected static String FIPSMode = "off"; // default off, valid only when SSLEngine="on"
+    /** SSL random seed source. */
     protected static String SSLRandomSeed = "builtin";
+    /** Indicates whether SSL has been initialized. */
     protected static boolean sslInitialized = false;
+    /** Indicates whether FIPS mode is currently active. */
     protected static boolean fipsModeActive = false;
 
     /**
@@ -105,6 +119,11 @@ public class AprLifecycleListener implements LifecycleListener {
     private boolean instanceInitialized = false;
 
 
+    /**
+     * Checks APR availability, initializing if necessary.
+     *
+     * @return {@code true} if APR is available
+     */
     public static boolean isAprAvailable() {
         // https://bz.apache.org/bugzilla/show_bug.cgi?id=48613
         if (org.apache.tomcat.jni.AprStatus.isInstanceCreated()) {
@@ -119,6 +138,98 @@ public class AprLifecycleListener implements LifecycleListener {
         return org.apache.tomcat.jni.AprStatus.isAprAvailable();
     }
 
+    /**
+     * Helper method to safely get a version string from APR/TCN.
+     * Checks APR availability and handles exceptions.
+     *
+     * @param versionSupplier supplier that returns the version string
+     * @return the version string, or null if APR is not available or an error occurs
+     */
+    private static String getVersionString(java.util.function.Supplier<String> versionSupplier) {
+        if (!isAprAvailable()) {
+            return null;
+        }
+
+        try {
+            return versionSupplier.get();
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /**
+     * Get the installed Tomcat Native version string, if available.
+     *
+     * @return the version string, or null if APR is not available
+     */
+    public static String getInstalledTcnVersion() {
+        return getVersionString(org.apache.tomcat.jni.Library::versionString);
+    }
+
+    /**
+     * Get the installed APR version string, if available.
+     *
+     * @return the APR version string, or null if APR is not available
+     */
+    public static String getInstalledAprVersion() {
+        return getVersionString(org.apache.tomcat.jni.Library::aprVersionString);
+    }
+
+    /**
+     * Get the installed OpenSSL version string (via APR), if available.
+     *
+     * @return the OpenSSL version string, or null if not available
+     */
+    public static String getInstalledOpenSslVersion() {
+        return getVersionString(org.apache.tomcat.jni.SSL::versionString);
+    }
+
+    /**
+     * Helper method to convert version components to a comparable integer.
+     *
+     * @param major major version number
+     * @param minor minor version number
+     * @param patch patch version number
+     *
+     * @return comparable version integer
+     */
+    private static int versionToInt(int major, int minor, int patch) {
+        return major * 1000 + minor * 100 + patch;
+    }
+
+    /**
+     * Get a warning message if the installed Tomcat Native version is older than recommended.
+     * Unlike the version check performed during Tomcat startup, this only compares the installed version against the
+     * recommended version and does not enforce the required minimum version.
+     *
+     * @return a warning message if the installed version is outdated, or null if the version
+     *         is acceptable or APR is not available
+     */
+    public static String getTcnVersionWarning() {
+        if (!isAprAvailable()) {
+            return null;
+        }
+
+        try {
+            int installedVersion = versionToInt(
+                    org.apache.tomcat.jni.Library.TCN_MAJOR_VERSION,
+                    org.apache.tomcat.jni.Library.TCN_MINOR_VERSION,
+                    org.apache.tomcat.jni.Library.TCN_PATCH_VERSION);
+            int recommendedVersion = versionToInt(
+                    TCN_RECOMMENDED_MAJOR,
+                    TCN_RECOMMENDED_MINOR,
+                    TCN_RECOMMENDED_PV);
+            if (installedVersion < recommendedVersion) {
+                return "WARNING: Tomcat recommends a minimum version of " +
+                        TCN_RECOMMENDED_MAJOR + "." + TCN_RECOMMENDED_MINOR + "." + TCN_RECOMMENDED_PV;
+            }
+            return null;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /** Constructs a new AprLifecycleListener. */
     public AprLifecycleListener() {
         org.apache.tomcat.jni.AprStatus.setInstanceCreated(true);
     }
@@ -209,9 +320,6 @@ public class AprLifecycleListener implements LifecycleListener {
     }
 
     private static void init() {
-        int rqver = TCN_REQUIRED_MAJOR * 1000 + TCN_REQUIRED_MINOR * 100 + TCN_REQUIRED_PATCH;
-        int rcver = TCN_RECOMMENDED_MAJOR * 1000 + TCN_RECOMMENDED_MINOR * 100 + TCN_RECOMMENDED_PV;
-
         if (org.apache.tomcat.jni.AprStatus.isAprInitialized()) {
             return;
         }
@@ -249,9 +357,34 @@ public class AprLifecycleListener implements LifecycleListener {
             }
             return;
         }
+
+        /*
+         * With parallel development of 1.x and 2.x there are now minimum and recommended versions for both branches.
+         *
+         * The minimum required version is increased when the Tomcat Native API is changed (typically extended) to
+         * include functionality that Tomcat expects to always be present.
+         *
+         * The minimum recommended version is increased when there is a change in Tomcat Native that while not required
+         * is recommended (such as bug fixes).
+         */
+        int rqver;
+        int rcver;
+        if (tcnMajor == 1) {
+            rqver = 1000 + TCN_1_REQUIRED_MINOR * 100 + TCN_1_REQUIRED_PATCH;
+            rcver = TCN_RECOMMENDED_MAJOR * 1000 + TCN_RECOMMENDED_MINOR * 100 + TCN_RECOMMENDED_PV;
+        } else {
+            rqver = TCN_REQUIRED_MAJOR * 1000 + TCN_REQUIRED_MINOR * 100 + TCN_REQUIRED_PATCH;
+            rcver = TCN_RECOMMENDED_MAJOR * 1000 + TCN_RECOMMENDED_MINOR * 100 + TCN_RECOMMENDED_PV;
+        }
+
         if (tcnVersion < rqver) {
-            log.error(sm.getString("aprListener.tcnInvalid", Library.versionString(),
-                    TCN_REQUIRED_MAJOR + "." + TCN_REQUIRED_MINOR + "." + TCN_REQUIRED_PATCH));
+            if (tcnMajor == 1) {
+                log.error(sm.getString("aprListener.tcnInvalid.1", Library.versionString(),
+                        "1." + TCN_1_REQUIRED_MINOR + "." + TCN_1_REQUIRED_PATCH));
+            } else {
+                log.error(sm.getString("aprListener.tcnInvalid", Library.versionString(),
+                        TCN_REQUIRED_MAJOR + "." + TCN_REQUIRED_MINOR + "." + TCN_REQUIRED_PATCH));
+            }
             try {
                 // Terminate the APR in case the version
                 // is below required.
@@ -390,10 +523,20 @@ public class AprLifecycleListener implements LifecycleListener {
         log.info(sm.getString("aprListener.initializedOpenSSL", SSL.versionString()));
     }
 
+    /**
+     * Returns the SSL engine configuration.
+     *
+     * @return the SSL engine configuration
+     */
     public String getSSLEngine() {
         return SSLEngine;
     }
 
+    /**
+     * Sets the SSL engine configuration.
+     *
+     * @param SSLEngine the SSL engine configuration
+     */
     public void setSSLEngine(String SSLEngine) {
         if (!SSLEngine.equals(AprLifecycleListener.SSLEngine)) {
             // Ensure that the SSLEngine is consistent with that used for SSL init
@@ -405,10 +548,20 @@ public class AprLifecycleListener implements LifecycleListener {
         }
     }
 
+    /**
+     * Returns the SSL random seed source.
+     *
+     * @return the SSL random seed source
+     */
     public String getSSLRandomSeed() {
         return SSLRandomSeed;
     }
 
+    /**
+     * Sets the SSL random seed source.
+     *
+     * @param SSLRandomSeed the SSL random seed source
+     */
     public void setSSLRandomSeed(String SSLRandomSeed) {
         if (!SSLRandomSeed.equals(AprLifecycleListener.SSLRandomSeed)) {
             // Ensure that the random seed is consistent with that used for SSL init
@@ -420,10 +573,20 @@ public class AprLifecycleListener implements LifecycleListener {
         }
     }
 
+    /**
+     * Returns the FIPS mode configuration.
+     *
+     * @return the FIPS mode configuration
+     */
     public String getFIPSMode() {
         return FIPSMode;
     }
 
+    /**
+     * Sets the FIPS mode configuration.
+     *
+     * @param FIPSMode the FIPS mode configuration
+     */
     public void setFIPSMode(String FIPSMode) {
         if (!FIPSMode.equals(AprLifecycleListener.FIPSMode)) {
             // Ensure that the FIPS mode is consistent with that used for SSL init
@@ -435,20 +598,40 @@ public class AprLifecycleListener implements LifecycleListener {
         }
     }
 
+    /**
+     * Returns whether FIPS mode is currently active.
+     *
+     * @return {@code true} if FIPS mode is active
+     */
     public boolean isFIPSModeActive() {
         return fipsModeActive;
     }
 
+    /**
+     * Configures whether to use OpenSSL.
+     *
+     * @param useOpenSSL {@code true} to use OpenSSL
+     */
     public void setUseOpenSSL(boolean useOpenSSL) {
         if (useOpenSSL != org.apache.tomcat.jni.AprStatus.getUseOpenSSL()) {
             org.apache.tomcat.jni.AprStatus.setUseOpenSSL(useOpenSSL);
         }
     }
 
+    /**
+     * Returns whether OpenSSL is in use.
+     *
+     * @return {@code true} if OpenSSL is in use
+     */
     public static boolean getUseOpenSSL() {
         return org.apache.tomcat.jni.AprStatus.getUseOpenSSL();
     }
 
+    /**
+     * Returns whether an APR instance has been created.
+     *
+     * @return {@code true} if an APR instance has been created
+     */
     public static boolean isInstanceCreated() {
         return org.apache.tomcat.jni.AprStatus.isInstanceCreated();
     }

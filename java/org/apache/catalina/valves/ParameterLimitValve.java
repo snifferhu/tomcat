@@ -45,8 +45,9 @@ import org.apache.tomcat.util.file.ConfigurationSource;
  * <ul>
  * <li>URL-specific parameter limits that can be defined using regular expressions</li>
  * <li>Configurable through Tomcat's <code>server.xml</code> or <code>context.xml</code></li>
- * <li>Requires a <code>parameter_limit.config</code> file containing the URL-specific parameter limits. It must be
- * placed in the Host configuration folder or in the WEB-INF folder of the web application.</li>
+ * <li>URL-specific parameter limits may optionally be defined in a <code>parameter_limit.config</code> file. When
+ * present, it must be placed in the Host configuration folder or in the WEB-INF folder of the web application. Without
+ * this file the valve can be configured dynamically using the management operations.</li>
  * </ul>
  * <p>
  * The default limit, specified by Connector's value, applies to all requests unless a more specific URL pattern is
@@ -61,7 +62,7 @@ import org.apache.tomcat.util.file.ConfigurationSource;
  * <pre>
  * {@code
  * <Context>
- *     <Valve className="org.apache.catalina.valves.ParameterLimitValve"
+ *     <Valve className="org.apache.catalina.valves.ParameterLimitValve"/>
  * </Context>
  * }
  * and in <code>parameter_limit.config</code>:
@@ -102,14 +103,27 @@ public class ParameterLimitValve extends ValveBase {
      */
     private boolean context = false;
 
+    /**
+     * Construct a new {@code ParameterLimitValve} instance.
+     */
     public ParameterLimitValve() {
         super(true);
     }
 
+    /**
+     * Returns the relative path to the configuration file.
+     *
+     * @return the relative path to the configuration file
+     */
     public String getResourcePath() {
         return resourcePath;
     }
 
+    /**
+     * Set the relative path to the configuration file.
+     *
+     * @param resourcePath the relative path to the configuration file
+     */
     public void setResourcePath(String resourcePath) {
         this.resourcePath = resourcePath;
     }
@@ -171,6 +185,12 @@ public class ParameterLimitValve extends ValveBase {
 
     }
 
+    /**
+     * Set the mapping of URL patterns to their corresponding parameter limits from a string containing the
+     * configuration.
+     *
+     * @param urlPatternConfig The URL pattern to parameter limit mappings
+     */
     public void setUrlPatternLimits(String urlPatternConfig) {
         urlPatternLimits.clear();
         setUrlPatternLimits(new BufferedReader(new StringReader(urlPatternConfig)));

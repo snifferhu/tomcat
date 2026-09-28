@@ -35,6 +35,12 @@ import org.apache.catalina.tribes.Channel;
 public class CatalinaClusterSF extends StoreFactoryBase {
 
     /**
+     * Default constructor.
+     */
+    public CatalinaClusterSF() {
+    }
+
+    /**
      * Store the specified Cluster children.
      * <p>
      * {@inheritDoc}
@@ -43,13 +49,6 @@ public class CatalinaClusterSF extends StoreFactoryBase {
     public void storeChildren(PrintWriter aWriter, int indent, Object aCluster, StoreDescription parentDesc)
             throws Exception {
         if (aCluster instanceof CatalinaCluster cluster) {
-            if (cluster instanceof SimpleTcpCluster tcpCluster) {
-                // Store nested <Manager> element
-                ClusterManager manager = tcpCluster.getManagerTemplate();
-                if (manager != null) {
-                    storeElement(aWriter, indent, manager);
-                }
-            }
             // Store nested <Channel> element
             Channel channel = cluster.getChannel();
             if (channel != null) {
@@ -60,17 +59,22 @@ public class CatalinaClusterSF extends StoreFactoryBase {
             if (deployer != null) {
                 storeElement(aWriter, indent, deployer);
             }
-            // Store nested <Valve> element
-            // ClusterValve are not store at Hosts element, see
+            // Store nested <Valve> elements. Cluster valves are stored here,
+            // not as <Valve> elements within the <Host> element.
             Valve[] valves = cluster.getValves();
             storeElementArray(aWriter, indent, valves);
 
-            if (aCluster instanceof SimpleTcpCluster) {
+            if (cluster instanceof SimpleTcpCluster tcpCluster) {
+                // Store nested <Manager> element
+                ClusterManager manager = tcpCluster.getManagerTemplate();
+                if (manager != null) {
+                    storeElement(aWriter, indent, manager);
+                }
                 // Store nested <Listener> elements
-                LifecycleListener[] listeners = ((SimpleTcpCluster) cluster).findLifecycleListeners();
+                LifecycleListener[] listeners = tcpCluster.findLifecycleListeners();
                 storeElementArray(aWriter, indent, listeners);
                 // Store nested <ClusterListener> elements
-                ClusterListener[] mlisteners = ((SimpleTcpCluster) cluster).findClusterListeners();
+                ClusterListener[] mlisteners = tcpCluster.findClusterListeners();
                 List<ClusterListener> clusterListeners = new ArrayList<>();
                 for (ClusterListener clusterListener : mlisteners) {
                     if (clusterListener != deployer) {

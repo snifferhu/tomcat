@@ -207,6 +207,12 @@ public final class CGIServlet extends HttpServlet {
     @Serial
     private static final long serialVersionUID = 1L;
 
+    /**
+     * Default constructor.
+     */
+    public CGIServlet() {
+    }
+
     private static final Set<String> DEFAULT_SUPER_METHODS = new HashSet<>();
     private static final Pattern DEFAULT_CMD_LINE_ARGUMENTS_DECODED_PATTERN;
     private static final String ALLOW_ANY_PATTERN = ".*";
@@ -241,8 +247,9 @@ public final class CGIServlet extends HttpServlet {
     /** the encoding to use for parameters */
     private String parameterEncoding = System.getProperty("file.encoding", "UTF-8");
 
-    /* The HTTP methods this Servlet will pass to the CGI script */
+    /** The HTTP methods this servlet will pass to the CGI script. */
     private final Set<String> cgiMethods = new HashSet<>();
+    /** Whether all HTTP methods are allowed for CGI scripts. */
     private boolean cgiMethodsAll = false;
 
     private transient WebResourceRoot resources = null;
@@ -1325,13 +1332,11 @@ public final class CGIServlet extends HttpServlet {
          * @param map Map to convert
          *
          * @return converted string array
-         *
-         * @exception NullPointerException if a hash key has a null value
          */
-        protected String[] mapToStringArray(Map<String,?> map) throws NullPointerException {
+        protected String[] mapToStringArray(Map<String,?> map) {
             List<String> list = new ArrayList<>(map.size());
             for (Entry<String,?> entry : map.entrySet()) {
-                list.add(entry.getKey() + "=" + entry.getValue().toString());
+                list.add(entry.getKey() + "=" + (entry.getValue() == null ? "" : entry.getValue().toString()));
             }
             return list.toArray(new String[0]);
         }
@@ -1394,7 +1399,7 @@ public final class CGIServlet extends HttpServlet {
             Runtime rt;
             BufferedReader cgiHeaderReader = null;
             InputStream cgiOutput = null;
-            BufferedReader commandsStdErr;
+            BufferedReader commandsStdErr = null;
             Thread errReaderThread = null;
             BufferedOutputStream commandsStdIn;
             Process proc = null;
@@ -1474,11 +1479,13 @@ public final class CGIServlet extends HttpServlet {
                         cgiOutput = proc.getInputStream();
 
                         try {
-                            while (!skipBody && (bufRead = cgiOutput.read(bBuf)) != -1) {
-                                if (log.isTraceEnabled()) {
-                                    log.trace("output " + bufRead + " bytes of data");
+                            while ((bufRead = cgiOutput.read(bBuf)) != -1) {
+                                if (!skipBody) {
+                                    if (log.isTraceEnabled()) {
+                                        log.trace("output " + bufRead + " bytes of data");
+                                    }
+                                    out.write(bBuf, 0, bufRead);
                                 }
-                                out.write(bBuf, 0, bufRead);
                             }
                         } finally {
                             // Attempt to consume any leftover byte if something bad happens,
@@ -1522,6 +1529,14 @@ public final class CGIServlet extends HttpServlet {
                         cgiOutput.close();
                     } catch (IOException ioe) {
                         log.warn(sm.getString("cgiServlet.runOutputStreamFail"), ioe);
+                    }
+                }
+                // Close the error stream reader if used
+                if (commandsStdErr != null) {
+                    try {
+                        commandsStdErr.close();
+                    } catch (IOException ioe) {
+                        log.warn(sm.getString("cgiServlet.runStdErrReaderFail"), ioe);
                     }
                 }
                 // Make sure the error stream reader has finished

@@ -28,11 +28,12 @@ import org.apache.tomcat.util.res.StringManager;
 
 /**
  * Move server.xml or context.xml as backup
- * <p>
- * TODO Get Encoding from Registry
  */
 public class StoreFileMover {
 
+    /**
+     * The string manager for this package.
+     */
     protected static final StringManager sm = StringManager.getManager(Constants.Package);
 
     private String filename = "conf/server.xml";
@@ -48,63 +49,81 @@ public class StoreFileMover {
     private File configSave;
 
     /**
-     * @return Returns the configNew.
+     * Returns the File object representing the new configuration file.
+     *
+     * @return the new configuration file
      */
     public File getConfigNew() {
         return configNew;
     }
 
     /**
-     * @return Returns the configOld.
+     * Returns the File object representing the old configuration file.
+     *
+     * @return the old configuration file
      */
     public File getConfigOld() {
         return configOld;
     }
 
     /**
-     * @return Returns the configSave.
+     * Returns the File object representing the saved backup configuration file.
+     *
+     * @return the backup configuration file
      */
     public File getConfigSave() {
         return configSave;
     }
 
     /**
-     * @return Returns the basename.
+     * Returns the base directory path for configuration files.
+     *
+     * @return the base directory path
      */
     public String getBasename() {
         return basename;
     }
 
     /**
-     * @param basename The basename to set.
+     * Sets the base directory path for configuration files.
+     *
+     * @param basename the base directory path
      */
     public void setBasename(String basename) {
         this.basename = basename;
     }
 
     /**
-     * @return The file name
+     * Returns the configuration file name.
+     *
+     * @return the configuration file name
      */
     public String getFilename() {
         return filename;
     }
 
     /**
-     * @param string The file name
+     * Sets the configuration file name.
+     *
+     * @param string the configuration file name
      */
     public void setFilename(String string) {
         filename = string;
     }
 
     /**
-     * @return The encoding
+     * Returns the character encoding used for configuration files.
+     *
+     * @return the character encoding
      */
     public String getEncoding() {
         return encoding;
     }
 
     /**
-     * @param string The encoding
+     * Sets the character encoding used for configuration files.
+     *
+     * @param string the character encoding
      */
     public void setEncoding(String string) {
         encoding = string;
@@ -125,16 +144,12 @@ public class StoreFileMover {
     }
 
     /**
-     * Calculate file objects for the old and new configuration files.
-     */
-    public StoreFileMover() {
-        init();
-    }
-
-    /**
      * Generate the Filename to new with TimeStamp.
      */
     public void init() {
+        if (getBasename() == null || getFilename() == null || getEncoding() == null) {
+            throw new IllegalArgumentException(sm.getString("storeFileMover.null"));
+        }
         String configFile = getFilename();
         configOld = new File(configFile);
         if (!configOld.isAbsolute()) {
@@ -168,7 +183,10 @@ public class StoreFileMover {
     public void move() throws IOException {
         if (configOld.renameTo(configSave)) {
             if (!configNew.renameTo(configOld)) {
-                configSave.renameTo(configOld);
+                if (!configSave.renameTo(configOld)) {
+                    throw new IOException(sm.getString("storeFileMover.restoreError", configNew.getAbsolutePath(),
+                            configOld.getAbsolutePath()));
+                }
                 throw new IOException(sm.getString("storeFileMover.renameError", configNew.getAbsolutePath(),
                         configOld.getAbsolutePath()));
             }

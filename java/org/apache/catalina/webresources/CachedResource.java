@@ -33,6 +33,7 @@ import java.text.Collator;
 import java.util.Arrays;
 import java.util.Locale;
 import java.util.Objects;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.jar.JarFile;
 import java.util.jar.Manifest;
 
@@ -57,6 +58,10 @@ public class CachedResource implements WebResource {
     // based on profiler data.
     private static final long CACHE_ENTRY_SIZE = 500;
 
+    // The ordering process in cache eviction requires a unique ID for each cached resource
+    private static final AtomicLong uniqueIdSource = new AtomicLong(0);
+    private final long uniqueId = uniqueIdSource.getAndIncrement();
+
     private final Cache cache;
     private final StandardRoot root;
     private final String webAppPath;
@@ -79,6 +84,16 @@ public class CachedResource implements WebResource {
     private volatile String cachedStrongETag = null;
 
 
+    /**
+     * Construct a cached resource.
+     *
+     * @param cache                    The cache
+     * @param root                     The standard root
+     * @param path                     The web application path
+     * @param ttl                      The time to live in milliseconds
+     * @param objectMaxSizeBytes       The maximum size of objects to cache
+     * @param usesClassLoaderResources Whether class loader resources are used
+     */
     public CachedResource(Cache cache, StandardRoot root, String path, long ttl, int objectMaxSizeBytes,
             boolean usesClassLoaderResources) {
         this.cache = cache;
@@ -90,6 +105,13 @@ public class CachedResource implements WebResource {
         this.usesClassLoaderResources = usesClassLoaderResources;
     }
 
+    /**
+     * Validates the cached resource.
+     *
+     * @param useClassLoaderResources Whether class loader resources are used
+     *
+     * @return <code>true</code> if the cached resource is still valid
+     */
     protected boolean validateResource(boolean useClassLoaderResources) {
         // It is possible that some resources will only be visible for a given
         // value of useClassLoaderResources. Therefore, if the lookup is made
@@ -151,6 +173,13 @@ public class CachedResource implements WebResource {
         return true;
     }
 
+    /**
+     * Validates the cached resources.
+     *
+     * @param useClassLoaderResources Whether class loader resources are used
+     *
+     * @return <code>true</code> if the cached resources are still valid
+     */
     protected boolean validateResources(boolean useClassLoaderResources) {
         long now = System.currentTimeMillis();
 
@@ -179,6 +208,11 @@ public class CachedResource implements WebResource {
         }
     }
 
+    /**
+     * Returns the next check time.
+     *
+     * @return the next check time
+     */
     protected long getNextCheck() {
         return nextCheck;
     }
@@ -431,6 +465,11 @@ public class CachedResource implements WebResource {
     }
 
 
+    long getUniqueId() {
+        return uniqueId;
+    }
+
+
     /*
      * Mimics the behaviour of FileURLConnection.getInputStream for a directory. Deliberately uses default locale.
      */
@@ -495,7 +534,7 @@ public class CachedResource implements WebResource {
                     constructedURI = new URI(u.toExternalForm());
                 } catch (URISyntaxException e) {
                     // Not ideal but consistent with API
-                    throw new IOException(e);
+                    throw new IOException(sm.getString("cachedResource.invalidURI", u.toExternalForm()), e);
                 }
                 URL constructedURL = constructedURI.toURL();
                 return constructedURL.openConnection();
@@ -576,6 +615,7 @@ public class CachedResource implements WebResource {
 
         @Override
         @Deprecated
+        @SuppressWarnings("removal")
         public Permission getPermission() throws IOException {
             // Doesn't trigger a call to connect for file:// URLs
             return resourceURL.openConnection().getPermission();
@@ -639,6 +679,7 @@ public class CachedResource implements WebResource {
 
         @Override
         @Deprecated
+        @SuppressWarnings("removal")
         public Permission getPermission() throws IOException {
             // Doesn't trigger a call to connect for jar:// URLs
             return resourceURL.openConnection().getPermission();

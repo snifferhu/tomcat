@@ -45,8 +45,8 @@ class Http2Parser {
     protected final Input input;
     private final Output output;
     private final byte[] frameHeaderBuffer = new byte[9];
+    private final HpackDecoder hpackDecoder;
 
-    private volatile HpackDecoder hpackDecoder;
     private volatile ByteBuffer headerReadBuffer = ByteBuffer.allocate(Constants.DEFAULT_HEADER_READ_BUFFER_SIZE);
     private volatile int headersCurrentStream = -1;
     private volatile boolean headersEndStream = false;
@@ -55,6 +55,7 @@ class Http2Parser {
         this.connectionId = connectionId;
         this.input = input;
         this.output = output;
+        this.hpackDecoder = output.getHpackDecoder();
     }
 
 
@@ -140,6 +141,14 @@ class Http2Parser {
 
         int dataLength;
         if (Flags.hasPadding(flags)) {
+
+            // Frame is too small to contain mandatory frame data (for the given flags)
+            if (payloadSize == 0) {
+                throw new ConnectionException(sm.getString("http2Parser.processFrame.insufficientPayload",connectionId,
+                        Integer.toString(streamId), Integer.toString(FrameType.DATA.getId()),
+                        Integer.toString(flags), Integer.toString(payloadSize)), Http2Error.FRAME_SIZE_ERROR);
+            }
+
             if (buffer == null) {
                 byte[] b = new byte[1];
                 input.fill(true, b);
@@ -171,7 +180,16 @@ class Http2Parser {
                     Integer.toString(dataLength), padding));
         }
 
-        ByteBuffer dest = output.startRequestBodyFrame(streamId, dataLength, endOfStream);
+        ByteBuffer dest;
+        try {
+            dest = output.startRequestBodyFrame(streamId, dataLength, endOfStream);
+        } catch (StreamException se) {
+            swallowPayload(streamId, FrameType.DATA.getId(), dataLength, false, buffer);
+            if (Flags.hasPadding(flags)) {
+                swallowPayload(streamId, FrameType.DATA.getId(), padLength, true, buffer);
+            }
+            throw se;
+        }
         if (dest == null) {
             swallowPayload(streamId, FrameType.DATA.getId(), dataLength, false, buffer);
             // Process padding before sending any notifications in case padding
@@ -220,14 +238,10 @@ class Http2Parser {
 
         headersEndStream = Flags.isEndOfStream(flags);
 
-        if (hpackDecoder == null) {
-            hpackDecoder = output.getHpackDecoder();
-        }
         try {
             hpackDecoder.setHeaderEmitter(output.headersStart(streamId, headersEndStream));
         } catch (StreamException se) {
-            swallowPayload(streamId, FrameType.HEADERS.getId(), payloadSize, false, buffer);
-            throw se;
+            hpackDecoder.setHeaderEmitter(new HeaderSink(se));
         }
 
         int padLength = 0;
@@ -240,6 +254,14 @@ class Http2Parser {
         if (priority) {
             optionalLen += 5;
         }
+
+        // Frame is too small to contain mandatory frame data (for the given flags)
+        if (payloadSize < optionalLen) {
+            throw new ConnectionException(sm.getString("http2Parser.processFrame.insufficientPayload",connectionId,
+                    Integer.toString(streamId), Integer.toString(FrameType.HEADERS.getId()),
+                    Integer.toString(flags), Integer.toString(payloadSize)), Http2Error.FRAME_SIZE_ERROR);
+        }
+
         if (optionalLen > 0) {
             byte[] optional = new byte[optionalLen];
             if (buffer == null) {
@@ -247,6 +269,12 @@ class Http2Parser {
             } else {
                 buffer.get(optional);
             }
+            /*
+             * The optional padLength byte and priority bytes (if any) don't count towards the payload size when
+             * comparing payload size to padLength as required by RFC 9113, section 6.2.
+             */
+            payloadSize -= optionalLen;
+
             if (padding) {
                 padLength = ByteUtil.getOneByte(optional, 0);
                 if (padLength >= payloadSize) {
@@ -255,21 +283,19 @@ class Http2Parser {
                             Http2Error.PROTOCOL_ERROR);
                 }
             }
-
-            // Ignore RFC 7450 priority data if present
-
-            payloadSize -= optionalLen;
+            // The padding does not count towards the size of payload that is read below.
             payloadSize -= padLength;
+
+            // Any RFC 7540 priority data was read into the byte[] optional above. It is ignored.
         }
 
         readHeaderPayload(streamId, payloadSize, buffer);
 
         swallowPayload(streamId, FrameType.HEADERS.getId(), padLength, true, buffer);
 
-        // Validate the headers so far
-        hpackDecoder.getHeaderEmitter().validateHeaders();
-
         if (Flags.isEndOfHeaders(flags)) {
+            // Validate the headers once complete
+            hpackDecoder.getHeaderEmitter().validateHeaders();
             onHeadersComplete(streamId);
         } else {
             headersCurrentStream = streamId;
@@ -278,7 +304,7 @@ class Http2Parser {
 
 
     protected void readPriorityFrame(int streamId, ByteBuffer buffer) throws IOException {
-        // RFC 7450 priority frames are ignored. Still need to treat as overhead.
+        // RFC 7540 priority frames are ignored. Still need to treat as overhead.
         try {
             swallowPayload(streamId, FrameType.PRIORITY.getId(), 5, false, buffer);
         } catch (ConnectionException ignore) {
@@ -299,8 +325,11 @@ class Http2Parser {
 
         long errorCode = ByteUtil.getFourBytes(payload, 0);
         output.reset(streamId, errorCode);
+
         headersCurrentStream = -1;
         headersEndStream = false;
+        // Force clearing of header buffer as there may be data left over
+        afterHeadersCompleteCleanUp(true);
     }
 
 
@@ -432,11 +461,12 @@ class Http2Parser {
 
         readHeaderPayload(streamId, payloadSize, buffer);
 
-        // Validate the headers so far
-        hpackDecoder.getHeaderEmitter().validateHeaders();
-
         if (endOfHeaders) {
             headersCurrentStream = -1;
+
+            // Validate the headers once complete
+            hpackDecoder.getHeaderEmitter().validateHeaders();
+
             onHeadersComplete(streamId);
         }
     }
@@ -635,12 +665,6 @@ class Http2Parser {
                     Http2Error.COMPRESSION_ERROR);
         }
 
-        /*
-         * Clear the reference to the stream in the HPack decoder now that the headers have been processed so that the
-         * HPack decoder does not retain a reference to this stream. This aids GC.
-         */
-        hpackDecoder.clearHeaderEmitter();
-
         synchronized (output) {
             output.headersEnd(streamId, headersEndStream);
 
@@ -649,10 +673,24 @@ class Http2Parser {
             }
         }
 
+        // We know from test above that buffer is empty so no need to force it to be cleared
+        afterHeadersCompleteCleanUp(false);
+    }
+
+
+    protected void afterHeadersCompleteCleanUp(boolean forceClear) {
         // Reset size for new request if the buffer was previously expanded
         if (headerReadBuffer.capacity() > Constants.DEFAULT_HEADER_READ_BUFFER_SIZE) {
             headerReadBuffer = ByteBuffer.allocate(Constants.DEFAULT_HEADER_READ_BUFFER_SIZE);
+        } else if (forceClear) {
+            headerReadBuffer.clear();
         }
+
+        /*
+         * Clear the reference to the stream in the HPack decoder now that the headers have been processed so that the
+         * HPack decoder does not retain a reference to this stream. This aids GC.
+         */
+        hpackDecoder.clearHeaderEmitter();
     }
 
 
@@ -744,10 +782,31 @@ class Http2Parser {
          */
         boolean fill(boolean block, byte[] data, int offset, int length) throws IOException;
 
+        /**
+         * Convenience overload that fills the entire byte array.
+         *
+         * @param block  Should the first read into the provided buffer be a blocking read or not
+         * @param data   Buffer to fill
+         *
+         * @return {@code true} if the buffer was filled otherwise {@code false}
+         *
+         * @throws IOException If an I/O occurred while obtaining data with which to fill the buffer
+         */
         default boolean fill(boolean block, byte[] data) throws IOException {
             return fill(block, data, 0, data.length);
         }
 
+        /**
+         * Convenience overload that fills a {@link ByteBuffer}.
+         *
+         * @param block  Should the first read into the provided buffer be a blocking read or not
+         * @param data   Buffer to fill
+         * @param len    Number of bytes to read
+         *
+         * @return {@code true} if the buffer was filled otherwise {@code false}
+         *
+         * @throws IOException If an I/O occurred while obtaining data with which to fill the buffer
+         */
         default boolean fill(boolean block, ByteBuffer data, int len) throws IOException {
             boolean result = fill(block, data.array(), data.arrayOffset() + data.position(), len);
             if (result) {
@@ -772,7 +831,7 @@ class Http2Parser {
 
         void endRequestBodyFrame(int streamId, int dataLength) throws Http2Exception, IOException;
 
-        void receivedEndOfStream(int streamId) throws ConnectionException;
+        void receivedEndOfStream(int streamId) throws Http2Exception;
 
         /**
          * Notification triggered when the parser swallows some or all of a DATA frame payload without writing it to the

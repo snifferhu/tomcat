@@ -23,9 +23,15 @@ import org.apache.catalina.Store;
 import org.apache.catalina.session.PersistentManager;
 
 /**
- * store server.xml PersistentManager element with nested "Store"
+ * Stores the server.xml PersistentManager element with nested "Store".
  */
 public class PersistentManagerSF extends StoreFactoryBase {
+
+    /**
+     * Constructs a new PersistentManagerSF instance.
+     */
+    public PersistentManagerSF() {
+    }
 
     /**
      * Store the specified PersistentManager properties.
@@ -39,7 +45,9 @@ public class PersistentManagerSF extends StoreFactoryBase {
 
             // Store nested <Store> element
             Store store = manager.getStore();
-            storeElement(aWriter, indent, store);
+            if (store != null) {
+                storeElement(aWriter, indent, store);
+            }
 
             // Store nested <SessionIdGenerator> element
             SessionIdGenerator sessionIdGenerator = manager.getSessionIdGenerator();

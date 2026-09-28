@@ -20,6 +20,7 @@ import java.io.Serial;
 import java.security.Principal;
 import java.security.cert.X509Certificate;
 import java.util.LinkedHashMap;
+import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -40,6 +41,12 @@ import org.ietf.jgss.GSSName;
  * to grow) the size of the list of users that have failed authentication is limited.
  */
 public class LockOutRealm extends CombinedRealm {
+
+    /**
+     * Default constructor.
+     */
+    public LockOutRealm() {
+    }
 
     private static final Log log = LogFactory.getLog(LockOutRealm.class);
 
@@ -71,6 +78,11 @@ public class LockOutRealm extends CombinedRealm {
      * recent.
      */
     protected Map<String,LockRecord> failedUsers = null;
+
+    /*
+     * Should user names (the keys) in the failedUsers Map be treated in a case sensitive manner. The default is false.
+     */
+    private boolean caseSensitive = false;
 
 
     @Override
@@ -202,11 +214,15 @@ public class LockOutRealm extends CombinedRealm {
     }
 
 
-    /*
-     * Checks to see if the current user is locked. If this is associated with a login attempt, then the last access
-     * time will be recorded and any attempt to authenticate a locked user will log a warning.
+    /**
+     * Check if the specified user is locked, that is, the user has at least the configured number of recent
+     * authentication failures and the lock out period has not yet expired.
+     *
+     * @param username The username to check
+     * @return true if the user is locked, false otherwise
      */
     public boolean isLocked(String username) {
+        username = normalizeUsername(username);
         LockRecord lockRecord;
         synchronized (this) {
             lockRecord = failedUsers.get(username);
@@ -230,7 +246,7 @@ public class LockOutRealm extends CombinedRealm {
      */
     private synchronized void registerAuthSuccess(String username) {
         // Successful authentication means removal from the list of failed users
-        failedUsers.remove(username);
+        failedUsers.remove(normalizeUsername(username));
     }
 
 
@@ -238,10 +254,12 @@ public class LockOutRealm extends CombinedRealm {
      * After a failed authentication, add the record of the failed authentication.
      */
     private void registerAuthFailure(String username) {
+        username = normalizeUsername(username);
         LockRecord lockRecord;
         synchronized (this) {
             if (!failedUsers.containsKey(username)) {
                 lockRecord = new LockRecord();
+                lockRecord.registerFailure();
                 failedUsers.put(username, lockRecord);
             } else {
                 lockRecord = failedUsers.get(username);
@@ -251,9 +269,9 @@ public class LockOutRealm extends CombinedRealm {
                     // expired so reset failure count
                     lockRecord.setFailures(0);
                 }
+                lockRecord.registerFailure();
             }
         }
-        lockRecord.registerFailure();
     }
 
 
@@ -339,22 +357,83 @@ public class LockOutRealm extends CombinedRealm {
     }
 
 
-    protected static class LockRecord {
-        private final AtomicInteger failures = new AtomicInteger(0);
-        private long lastFailureTime = 0;
+    /**
+     * Get the case sensitivity flag for username matching.
+     *
+     * @return the caseSensitive
+     */
+    public boolean getCaseSensitive() {
+        return caseSensitive;
+    }
 
+
+    /**
+     * Set the case sensitivity flag for username matching.
+     *
+     * @param caseSensitive the caseSensitive to set
+     */
+    public void setCaseSensitive(boolean caseSensitive) {
+        this.caseSensitive = caseSensitive;
+    }
+
+
+    private String normalizeUsername(String username) {
+        if (username != null && !getCaseSensitive()) {
+            return username.toLowerCase(Locale.ROOT);
+        }
+        return username;
+    }
+
+
+    /**
+     * Internal record to track lock state for a user.
+     */
+    protected static class LockRecord {
+        /**
+         * The number of authentication failures.
+         */
+        private final AtomicInteger failures = new AtomicInteger(0);
+        /**
+         * The time of the last failure.
+         */
+        private volatile long lastFailureTime = 0;
+
+        /**
+         * Default constructor.
+         */
+        public LockRecord() {
+        }
+
+        /**
+         * Get the number of authentication failures.
+         *
+         * @return the failures
+         */
         public int getFailures() {
             return failures.get();
         }
 
+        /**
+         * Set the number of authentication failures.
+         *
+         * @param theFailures the failures to set
+         */
         public void setFailures(int theFailures) {
             failures.set(theFailures);
         }
 
+        /**
+         * Get the time of the last failure.
+         *
+         * @return the lastFailureTime
+         */
         public long getLastFailureTime() {
             return lastFailureTime;
         }
 
+        /**
+         * Register a new authentication failure.
+         */
         public void registerFailure() {
             failures.incrementAndGet();
             lastFailureTime = System.currentTimeMillis();

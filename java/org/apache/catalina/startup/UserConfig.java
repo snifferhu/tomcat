@@ -38,11 +38,16 @@ import org.apache.tomcat.util.res.StringManager;
 /**
  * Startup event listener for a <b>Host</b> that configures Contexts (web applications) for all defined "users" who have
  * a web application in a directory with the specified name in their home directories. The context path of each deployed
- * application will be set to <code>~xxxxx</code>, where xxxxx is the username of the owning user for that web
+ * application will be set to <code>/~xxxxx</code>, where xxxxx is the username of the owning user for that web
  * application
  */
 public final class UserConfig implements LifecycleListener {
 
+    /**
+     * Constructs a new UserConfig.
+     */
+    public UserConfig() {
+    }
 
     private static final Log log = LogFactory.getLog(UserConfig.class);
 
@@ -92,20 +97,22 @@ public final class UserConfig implements LifecycleListener {
     private String userClass = "org.apache.catalina.startup.PasswdUserDatabase";
 
     /**
-     * A regular expression defining user who deployment is allowed.
+     * A regular expression defining users for whom deployment is allowed.
      */
-    Pattern allow = null;
+    private Pattern allow = null;
 
     /**
-     * A regular expression defining user who deployment is denied.
+     * A regular expression defining users for whom deployment is denied.
      */
-    Pattern deny = null;
+    private Pattern deny = null;
 
     // ------------------------------------------------------------- Properties
 
 
     /**
-     * @return the Context configuration class name.
+     * Returns the Context configuration class name.
+     *
+     * @return the Context configuration class name
      */
     public String getConfigClass() {
         return this.configClass;
@@ -113,9 +120,9 @@ public final class UserConfig implements LifecycleListener {
 
 
     /**
-     * Set the Context configuration class name.
+     * Sets the Context configuration class name.
      *
-     * @param configClass The new Context configuration class name.
+     * @param configClass The new Context configuration class name
      */
     public void setConfigClass(String configClass) {
         this.configClass = configClass;
@@ -123,7 +130,9 @@ public final class UserConfig implements LifecycleListener {
 
 
     /**
-     * @return the Context implementation class name.
+     * Returns the Context implementation class name.
+     *
+     * @return the Context implementation class name
      */
     public String getContextClass() {
         return this.contextClass;
@@ -131,9 +140,9 @@ public final class UserConfig implements LifecycleListener {
 
 
     /**
-     * Set the Context implementation class name.
+     * Sets the Context implementation class name.
      *
-     * @param contextClass The new Context implementation class name.
+     * @param contextClass The new Context implementation class name
      */
     public void setContextClass(String contextClass) {
         this.contextClass = contextClass;
@@ -141,7 +150,9 @@ public final class UserConfig implements LifecycleListener {
 
 
     /**
-     * @return the directory name for user web applications.
+     * Returns the directory name for user web applications.
+     *
+     * @return the directory name
      */
     public String getDirectoryName() {
         return this.directoryName;
@@ -149,7 +160,7 @@ public final class UserConfig implements LifecycleListener {
 
 
     /**
-     * Set the directory name for user web applications.
+     * Sets the directory name for user web applications.
      *
      * @param directoryName The new directory name
      */
@@ -159,7 +170,9 @@ public final class UserConfig implements LifecycleListener {
 
 
     /**
-     * @return the base directory containing user home directories.
+     * Returns the base directory containing user home directories.
+     *
+     * @return the base directory
      */
     public String getHomeBase() {
         return this.homeBase;
@@ -167,7 +180,7 @@ public final class UserConfig implements LifecycleListener {
 
 
     /**
-     * Set the base directory containing user home directories.
+     * Sets the base directory containing user home directories.
      *
      * @param homeBase The new base directory
      */
@@ -177,7 +190,9 @@ public final class UserConfig implements LifecycleListener {
 
 
     /**
-     * @return the user database class name for this component.
+     * Returns the user database class name.
+     *
+     * @return the user database class name
      */
     public String getUserClass() {
         return this.userClass;
@@ -185,7 +200,7 @@ public final class UserConfig implements LifecycleListener {
 
 
     /**
-     * Set the user database class name for this component.
+     * Sets the user database class name.
      *
      * @param userClass The user database class name
      */
@@ -194,7 +209,9 @@ public final class UserConfig implements LifecycleListener {
     }
 
     /**
-     * @return the regular expression used to test for user who deployment is allowed.
+     * Returns the regular expression that defines allowed users.
+     *
+     * @return the allow pattern, or null if all users are allowed
      */
     public String getAllow() {
         if (allow == null) {
@@ -205,7 +222,7 @@ public final class UserConfig implements LifecycleListener {
 
 
     /**
-     * Set the regular expression used to test for user who deployment is allowed.
+     * Set the regular expression used to test for users for whom deployment is allowed.
      *
      * @param allow The new allow expression
      */
@@ -219,7 +236,9 @@ public final class UserConfig implements LifecycleListener {
 
 
     /**
-     * @return the regular expression used to test for user who deployment is denied.
+     * Returns the regular expression that defines denied users.
+     *
+     * @return the deny pattern, or null if no users are denied
      */
     public String getDeny() {
         if (deny == null) {
@@ -230,7 +249,7 @@ public final class UserConfig implements LifecycleListener {
 
 
     /**
-     * Set the regular expression used to test for user who deployment is denied.
+     * Set the regular expression used to test for users for whom deployment is denied.
      *
      * @param deny The new deny expression
      */
@@ -344,6 +363,7 @@ public final class UserConfig implements LifecycleListener {
         try {
             Class<?> clazz = Class.forName(contextClass);
             Context context = (Context) clazz.getConstructor().newInstance();
+            // StandardContext or any compatible Context impl should also set the name derived from the path
             context.setPath(contextPath);
             context.setDocBase(app.toString());
             clazz = Class.forName(configClass);

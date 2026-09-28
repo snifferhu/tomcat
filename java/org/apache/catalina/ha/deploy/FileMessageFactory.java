@@ -36,7 +36,7 @@ import org.apache.tomcat.util.res.StringManager;
  * The factory can be used as a reader or writer but not both at the same time. When done reading or writing the factory
  * will close the input or output streams and mark the factory as closed. It is not possible to use it after that. <BR>
  * To force a cleanup, call cleanup() from the calling object. <BR>
- * This class is not thread safe.
+ * The read path is not thread safe. The write path is synchronized.
  */
 public class FileMessageFactory {
     /*--Static Variables----------------------------------------*/
@@ -207,7 +207,7 @@ public class FileMessageFactory {
      *
      * @return returns true if the file is complete and outputstream is closed, false otherwise.
      */
-    public boolean writeMessage(FileMessage msg) throws IllegalArgumentException, IOException {
+    public synchronized boolean writeMessage(FileMessage msg) throws IllegalArgumentException, IOException {
         if (!openForWrite) {
             throw new IllegalArgumentException(sm.getString("fileMessageFactory.cannotWrite"));
         }
@@ -235,17 +235,15 @@ public class FileMessageFactory {
         lastModified = System.currentTimeMillis();
 
         FileMessage next;
-        synchronized (this) {
-            if (!isWriting) {
-                next = msgBuffer.get(Long.valueOf(lastMessageProcessed.get() + 1));
-                if (next != null) {
-                    isWriting = true;
-                } else {
-                    return false;
-                }
+        if (!isWriting) {
+            next = msgBuffer.get(Long.valueOf(lastMessageProcessed.get() + 1));
+            if (next != null) {
+                isWriting = true;
             } else {
                 return false;
             }
+        } else {
+            return false;
         }
 
         while (next != null) {
@@ -257,11 +255,9 @@ public class FileMessageFactory {
                 cleanup();
                 return true;
             }
-            synchronized (this) {
-                next = msgBuffer.get(Long.valueOf(lastMessageProcessed.get() + 1));
-                if (next == null) {
-                    isWriting = false;
-                }
+            next = msgBuffer.get(Long.valueOf(lastMessageProcessed.get() + 1));
+            if (next == null) {
+                isWriting = false;
             }
         }
 
@@ -271,7 +267,7 @@ public class FileMessageFactory {
     /**
      * Closes the factory, its streams and sets all its references to null
      */
-    public void cleanup() {
+    public synchronized void cleanup() {
         if (in != null) {
             try {
                 in.close();
@@ -294,7 +290,8 @@ public class FileMessageFactory {
         nrOfMessagesProcessed = 0;
         totalNrOfMessages = 0;
         msgBuffer.clear();
-        lastMessageProcessed = null;
+        lastMessageProcessed.set(0);
+        isWriting = false;
     }
 
     /**
@@ -320,10 +317,21 @@ public class FileMessageFactory {
         }
     }
 
+    /**
+     * Returns the file associated with this factory.
+     *
+     * @return The file
+     */
     public File getFile() {
         return file;
     }
 
+    /**
+     * Checks if this factory instance is still valid based on the maximum valid time.
+     * If the instance has been idle longer than maxValidTime, it will be cleaned up.
+     *
+     * @return True if the factory is still valid, false if it has expired
+     */
     public boolean isValid() {
         if (maxValidTime > 0) {
             long timeNow = System.currentTimeMillis();
@@ -343,10 +351,20 @@ public class FileMessageFactory {
         return true;
     }
 
+    /**
+     * Returns the maximum time in seconds that this factory instance is allowed to exist from last modification.
+     *
+     * @return The maximum valid time in seconds
+     */
     public int getMaxValidTime() {
         return maxValidTime;
     }
 
+    /**
+     * Sets the maximum time in seconds that this factory instance is allowed to exist from last modification.
+     *
+     * @param maxValidTime The maximum valid time in seconds
+     */
     public void setMaxValidTime(int maxValidTime) {
         this.maxValidTime = maxValidTime;
     }

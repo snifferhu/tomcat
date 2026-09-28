@@ -74,6 +74,9 @@ public class Catalina {
      */
     protected static final StringManager sm = StringManager.getManager(Constants.Package);
 
+    /**
+     * Default path to the server configuration file.
+     */
     public static final String SERVER_XML = "conf/server.xml";
 
     // ----------------------------------------------------- Instance Variables
@@ -88,7 +91,6 @@ public class Catalina {
      */
     protected String configFile = SERVER_XML;
 
-    // XXX Should be moved to embedded
     /**
      * The shared extensions class loader for this server.
      */
@@ -123,6 +125,12 @@ public class Catalina {
      * Prevent duplicate loads.
      */
     protected boolean loaded = false;
+
+
+    /**
+     * Prevent duplicate log lines when clustering is unavailable.
+     */
+    protected boolean clusterUnavailabilityLogged = false;
 
 
     /**
@@ -163,6 +171,9 @@ public class Catalina {
 
     // ----------------------------------------------------------- Constructors
 
+    /**
+     * Default constructor.
+     */
     public Catalina() {
         ExceptionUtils.preload();
     }
@@ -170,67 +181,129 @@ public class Catalina {
 
     // ------------------------------------------------------------- Properties
 
+    /**
+     * Set the pathname to the server configuration file.
+     *
+     * @param file The new configuration file path
+     */
     public void setConfigFile(String file) {
         configFile = file;
     }
 
 
+    /**
+     * Return the pathname to the server configuration file.
+     *
+     * @return the configuration file path
+     */
     public String getConfigFile() {
         return configFile;
     }
 
 
+    /**
+     * Set whether to use a shutdown hook.
+     *
+     * @param useShutdownHook The new use shutdown hook value
+     */
     public void setUseShutdownHook(boolean useShutdownHook) {
         this.useShutdownHook = useShutdownHook;
     }
 
 
+    /**
+     * Return whether a shutdown hook is used.
+     *
+     * @return <code>true</code> if a shutdown hook is used
+     */
     public boolean getUseShutdownHook() {
         return useShutdownHook;
     }
 
 
+    /**
+     * Return whether code generation is enabled.
+     *
+     * @return <code>true</code> if code generation is enabled
+     */
     public boolean getGenerateCode() {
         return this.generateCode;
     }
 
 
+    /**
+     * Set whether code generation is enabled.
+     *
+     * @param generateCode The new code generation value
+     */
     public void setGenerateCode(boolean generateCode) {
         this.generateCode = generateCode;
     }
 
 
+    /**
+     * Return whether generated code should be used.
+     *
+     * @return <code>true</code> if generated code should be used
+     */
     public boolean getUseGeneratedCode() {
         return this.useGeneratedCode;
     }
 
 
+    /**
+     * Set whether generated code should be used.
+     *
+     * @param useGeneratedCode The new use generated code value
+     */
     public void setUseGeneratedCode(boolean useGeneratedCode) {
         this.useGeneratedCode = useGeneratedCode;
     }
 
 
+    /**
+     * Return the location of generated sources.
+     *
+     * @return the generated code location
+     */
     public File getGeneratedCodeLocation() {
         return this.generatedCodeLocation;
     }
 
 
+    /**
+     * Set the location of generated sources.
+     *
+     * @param generatedCodeLocation The new generated code location
+     */
     public void setGeneratedCodeLocation(File generatedCodeLocation) {
         this.generatedCodeLocation = generatedCodeLocation;
     }
 
 
+    /**
+     * Return the top package name for generated source.
+     *
+     * @return the generated code package name
+     */
     public String getGeneratedCodePackage() {
         return this.generatedCodePackage;
     }
 
 
+    /**
+     * Set the top package name for generated source.
+     *
+     * @param generatedCodePackage The new generated code package name
+     */
     public void setGeneratedCodePackage(String generatedCodePackage) {
         this.generatedCodePackage = generatedCodePackage;
     }
 
 
     /**
+     * Return whether an exception should be thrown if an error occurs during server init.
+     *
      * @return <code>true</code> if an exception should be thrown if an error occurs during server init
      */
     public boolean getThrowOnInitFailure() {
@@ -257,6 +330,11 @@ public class Catalina {
         this.parentClassLoader = parentClassLoader;
     }
 
+    /**
+     * Return the shared extensions class loader.
+     *
+     * @return the shared extensions class loader
+     */
     public ClassLoader getParentClassLoader() {
         if (parentClassLoader != null) {
             return parentClassLoader;
@@ -264,17 +342,29 @@ public class Catalina {
         return ClassLoader.getSystemClassLoader();
     }
 
+    /**
+     * Set the server component.
+     *
+     * @param server The server component
+     */
     public void setServer(Server server) {
         this.server = server;
     }
 
 
+    /**
+     * Return the server component.
+     *
+     * @return the server component
+     */
     public Server getServer() {
         return server;
     }
 
 
     /**
+     * Return whether naming is enabled.
+     *
      * @return <code>true</code> if naming is enabled.
      */
     public boolean isUseNaming() {
@@ -291,10 +381,20 @@ public class Catalina {
         this.useNaming = useNaming;
     }
 
+    /**
+     * Set the await flag.
+     *
+     * @param b The new await value
+     */
     public void setAwait(boolean b) {
         await = b;
     }
 
+    /**
+     * Return the await flag.
+     *
+     * @return <code>true</code> if await is enabled
+     */
     public boolean isAwait() {
         return await;
     }
@@ -448,6 +548,11 @@ public class Catalina {
         digester.addSetNext("Server/Service/Connector/SSLHostConfig/Certificate", "addCertificate",
                 "org.apache.tomcat.util.net.SSLHostConfigCertificate");
 
+        digester.addRule("Server/Service/Connector/SSLHostConfig/PreSharedKey", new PreSharedKeyCreateRule());
+        digester.addSetProperties("Server/Service/Connector/SSLHostConfig/PreSharedKey");
+        digester.addSetNext("Server/Service/Connector/SSLHostConfig/PreSharedKey", "addPreSharedKey",
+                "org.apache.tomcat.util.net.SSLHostConfigPreSharedKey");
+
         digester.addObjectCreate("Server/Service/Connector/SSLHostConfig/OpenSSLConf",
                 "org.apache.tomcat.util.net.openssl.OpenSSLConf");
         digester.addSetProperties("Server/Service/Connector/SSLHostConfig/OpenSSLConf");
@@ -496,14 +601,24 @@ public class Catalina {
         Constructor<?> constructor;
         try {
             clazz = Class.forName("org.apache.catalina.ha.ClusterRuleSet");
+            Class.forName("org.apache.catalina.tribes.Channel");
             constructor = clazz.getConstructor(String.class);
             RuleSet ruleSet = (RuleSet) constructor.newInstance(prefix);
+
+            String clusterPrefix = prefix.substring(0, prefix.length() - 1);
+            digester.addObjectCreate(clusterPrefix, null, "className");
+            digester.addSetProperties(clusterPrefix);
+            digester.addSetNext(clusterPrefix, "setCluster", "org.apache.catalina.Cluster");
+
             digester.addRuleSet(ruleSet);
         } catch (Exception e) {
-            if (log.isDebugEnabled()) {
-                log.debug(sm.getString("catalina.noCluster", e.getClass().getName() + ": " + e.getMessage()), e);
-            } else if (log.isInfoEnabled()) {
-                log.info(sm.getString("catalina.noCluster", e.getClass().getName() + ": " + e.getMessage()));
+            if (!clusterUnavailabilityLogged) {
+                if (log.isDebugEnabled()) {
+                    log.debug(sm.getString("catalina.noCluster", e.getClass().getName() + ": " + e.getMessage()), e);
+                } else if (log.isInfoEnabled()) {
+                    log.info(sm.getString("catalina.noCluster", e.getClass().getName() + ": " + e.getMessage()));
+                }
+                clusterUnavailabilityLogged = true;
             }
         }
     }
@@ -529,6 +644,11 @@ public class Catalina {
     }
 
 
+    /**
+     * Parse the server.xml configuration file.
+     *
+     * @param start <code>true</code> if parsing for start, <code>false</code> if parsing for stop
+     */
     protected void parseServerXml(boolean start) {
         // Set configuration source
         ConfigFileLoader
@@ -618,10 +738,18 @@ public class Catalina {
         }
     }
 
+    /**
+     * Stop the currently running server instance.
+     */
     public void stopServer() {
         stopServer(null);
     }
 
+    /**
+     * Stop the currently running server instance.
+     *
+     * @param arguments Command line arguments
+     */
     public void stopServer(String[] arguments) {
 
         if (arguments != null) {
@@ -681,6 +809,7 @@ public class Catalina {
         if (loaded) {
             return;
         }
+        // No load retry after a failure
         loaded = true;
 
         long t1 = System.nanoTime();
@@ -706,7 +835,14 @@ public class Catalina {
         try {
             getServer().init();
         } catch (LifecycleException e) {
-            if (throwOnInitFailure) {
+            /*
+             * The server will be in the FAILED state. If start() is then called, that will first call stop() to
+             * clean-up before trying to start the server. Calling stop() means a future call to getServer().await()
+             * will return immediately. That in turn means if the call to start() succeeds it will be immediately
+             * followed by another call to stop(). If await is enabled then it is better to throw the error here than to
+             * start the Server only to immediately stop it again.
+             */
+            if (throwOnInitFailure || await) {
                 throw new Error(e);
             } else {
                 log.error(sm.getString("catalina.initError"), e);
@@ -720,8 +856,10 @@ public class Catalina {
     }
 
 
-    /*
-     * Load using arguments
+    /**
+     * Load the server configuration and initialize the server using the specified command line arguments.
+     *
+     * @param args Command line arguments
      */
     public void load(String[] args) {
 
@@ -741,7 +879,21 @@ public class Catalina {
     public void start() {
 
         if (getServer() == null) {
-            load();
+            try {
+                load();
+            } catch (Throwable t) {
+                // Re-throw critical errors immediately. Otherwise, try and clean-up first.
+                ExceptionUtils.handleThrowable(t);
+                log.fatal(sm.getString("catalina.initError"), t);
+                if (getServer() != null) {
+                    try {
+                        getServer().destroy();
+                    } catch (LifecycleException e) {
+                        log.debug(sm.getString("catalina.destroyFail"), e);
+                    }
+                }
+                return;
+            }
         }
 
         if (getServer() == null) {
@@ -817,8 +969,7 @@ public class Catalina {
             }
         } catch (Throwable t) {
             ExceptionUtils.handleThrowable(t);
-            // This will fail on JDK 1.2. Ignoring, as Tomcat can run
-            // fine without the shutdown hook.
+            // Failure to remove the shutdown hook is non-fatal
         }
 
         // Shut down the server
@@ -858,6 +1009,9 @@ public class Catalina {
     }
 
 
+    /**
+     * Initialize output stream redirection.
+     */
     protected void initStreams() {
         // Replace System.out and System.err with a custom PrintStream
         System.setOut(new SystemLogHandler(System.out));
@@ -865,6 +1019,9 @@ public class Catalina {
     }
 
 
+    /**
+     * Initialize naming support.
+     */
     protected void initNaming() {
         // Setting additional variables
         if (!useNaming) {
@@ -892,6 +1049,9 @@ public class Catalina {
     }
 
 
+    /**
+     * Generate the loader class for generated code.
+     */
     protected void generateLoader() {
         String loaderClassName = "DigesterGeneratedCodeLoader";
         StringBuilder code = new StringBuilder();
@@ -917,6 +1077,12 @@ public class Catalina {
     }
 
 
+    /**
+     * Generate the class header for generated code.
+     *
+     * @param digester The digester instance
+     * @param start <code>true</code> if generating start code, <code>false</code> if generating stop code
+     */
     protected void generateClassHeader(Digester digester, boolean start) {
         StringBuilder code = digester.getGeneratedCode();
         code.append("package ").append(generatedCodePackage).append(';').append(System.lineSeparator());
@@ -932,6 +1098,11 @@ public class Catalina {
     }
 
 
+    /**
+     * Generate the class footer for generated code.
+     *
+     * @param digester The digester instance
+     */
     protected void generateClassFooter(Digester digester) {
         StringBuilder code = digester.getGeneratedCode();
         code.append('}').append(System.lineSeparator());
@@ -939,7 +1110,17 @@ public class Catalina {
     }
 
 
+    /**
+     * Interface for generated server XML loading classes.
+     */
     public interface ServerXml {
+        /**
+         * Load the server configuration into the specified Catalina instance.
+         *
+         * @param catalina The Catalina instance
+         *
+         * @throws Exception if an error occurs during loading
+         */
         void load(Catalina catalina) throws Exception;
     }
 
@@ -951,6 +1132,12 @@ public class Catalina {
      * Shutdown hook which will perform a clean shutdown of Catalina if needed.
      */
     protected class CatalinaShutdownHook extends Thread {
+
+        /**
+         * Default constructor.
+         */
+        public CatalinaShutdownHook() {
+        }
 
         @Override
         public void run() {

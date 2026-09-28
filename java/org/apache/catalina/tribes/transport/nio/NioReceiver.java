@@ -18,6 +18,8 @@ package org.apache.catalina.tribes.transport.nio;
 
 import java.io.IOException;
 import java.net.ServerSocket;
+import java.net.Socket;
+import java.nio.ByteBuffer;
 import java.nio.channels.CancelledKeyException;
 import java.nio.channels.ClosedSelectorException;
 import java.nio.channels.DatagramChannel;
@@ -29,11 +31,19 @@ import java.nio.channels.SocketChannel;
 import java.util.Deque;
 import java.util.Iterator;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedDeque;
+import java.util.concurrent.Semaphore;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
+import org.apache.catalina.tribes.ChannelMessage;
+import org.apache.catalina.tribes.group.GroupChannel;
+import org.apache.catalina.tribes.group.TribesSslContext;
+import org.apache.catalina.tribes.io.ChannelData;
 import org.apache.catalina.tribes.io.ObjectReader;
 import org.apache.catalina.tribes.transport.AbstractRxTask;
+import org.apache.catalina.tribes.transport.Constants;
 import org.apache.catalina.tribes.transport.ReceiverBase;
 import org.apache.catalina.tribes.transport.RxTaskPool;
 import org.apache.catalina.tribes.util.ExceptionUtils;
@@ -41,6 +51,9 @@ import org.apache.catalina.tribes.util.StringManager;
 import org.apache.juli.logging.Log;
 import org.apache.juli.logging.LogFactory;
 
+/**
+ * NIO-based receiver for cluster communication.
+ */
 public class NioReceiver extends ReceiverBase implements Runnable, NioReceiverMBean {
 
     private static final Log log = LogFactory.getLog(NioReceiver.class);
@@ -54,17 +67,150 @@ public class NioReceiver extends ReceiverBase implements Runnable, NioReceiverMB
 
     private final AtomicReference<Selector> selector = new AtomicReference<>();
     private ServerSocketChannel serverChannel = null;
+    private volatile ServerSocketChannel secureServerChannel = null;
     private DatagramChannel datagramChannel = null;
+    private final Set<SocketChannel> secureSockets = ConcurrentHashMap.newKeySet();
+    private volatile Semaphore secureConnectionSlots;
 
+    /**
+     * Queue of events to be processed by the selector thread.
+     */
     protected final Deque<Runnable> events = new ConcurrentLinkedDeque<>();
 
+    /**
+     * Default constructor.
+     */
     public NioReceiver() {
+    }
+
+    private void startSecureListener() throws IOException {
+        if (getSecurePort() < 0) {
+            return;
+        }
+        if (!(getChannel() instanceof GroupChannel groupChannel)) {
+            return;
+        }
+        if (groupChannel.getSslContext() == null) {
+            if (groupChannel.getSecure()) {
+                throw new IOException(sm.getString("nioReceiver.tlsUnavailable"));
+            }
+            setSecurePort(-1);
+            return;
+        }
+        secureServerChannel = ServerSocketChannel.open();
+        bind(secureServerChannel.socket(), getSecurePort(), getAutoBind(), true);
+        secureConnectionSlots = new Semaphore(Math.max(1, getMaxTasks()));
+        Thread thread = new Thread(() -> runSecureListener(groupChannel.getSslContext()), "NioReceiver-TLS");
+        thread.setDaemon(true);
+        thread.start();
+    }
+
+    private void runSecureListener(TribesSslContext sslContext) {
+        ServerSocketChannel server = secureServerChannel;
+        while (server != null && server.isOpen()) {
+            try {
+                SocketChannel socket = server.accept();
+                socket.configureBlocking(true);
+                socket.socket().setSoTimeout(getTimeout());
+                Semaphore connectionSlots = secureConnectionSlots;
+                if (connectionSlots == null || !connectionSlots.tryAcquire()) {
+                    socket.close();
+                    continue;
+                }
+                secureSockets.add(socket);
+                try {
+                    getExecutor().execute(() -> {
+                        try {
+                            processSecureConnection(socket, sslContext);
+                        } finally {
+                            secureSockets.remove(socket);
+                            connectionSlots.release();
+                        }
+                    });
+                } catch (RuntimeException re) {
+                    secureSockets.remove(socket);
+                    connectionSlots.release();
+                    socket.close();
+                    log.warn(sm.getString("nioReceiver.requestError"), re);
+                }
+            } catch (IOException ioe) {
+                if (isListening()) {
+                    log.warn(sm.getString("nioReceiver.requestError"), ioe);
+                }
+            }
+        }
+    }
+
+    private void processSecureConnection(SocketChannel socketChannel, TribesSslContext sslContext) {
+        try (Socket socket = socketChannel.socket()) {
+            try (TlsChannel channel = new TlsChannel(socket, sslContext.createServerEngine())) {
+                ObjectReader reader = new ObjectReader(getRxBufSize());
+                ByteBuffer buffer = ByteBuffer.allocate(getRxBufSize());
+                while (channel.isOpen()) {
+                    int read = channel.read(buffer);
+                    if (read < 0) {
+                        return;
+                    }
+                    buffer.flip();
+                    reader.append(buffer, read, false);
+                    buffer.clear();
+                    for (ChannelMessage message : reader.execute()) {
+                        if (ChannelData.sendAckAsync(message.getOptions())) {
+                            channel.write(ByteBuffer.wrap(Constants.ACK_COMMAND));
+                        }
+                        try {
+                            messageDataReceived(message);
+                            if (ChannelData.sendAckSync(message.getOptions())) {
+                                channel.write(ByteBuffer.wrap(Constants.ACK_COMMAND));
+                            }
+                        } catch (RuntimeException re) {
+                            if (ChannelData.sendAckSync(message.getOptions())) {
+                                channel.write(ByteBuffer.wrap(Constants.FAIL_ACK_COMMAND));
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (IOException ioe) {
+            if (log.isDebugEnabled()) {
+                log.debug(sm.getString("nioReceiver.requestError"), ioe);
+            }
+        } catch (RuntimeException re) {
+            log.warn(sm.getString("nioReceiver.requestError"), re);
+        }
     }
 
     @Override
     public void stop() {
         this.stopListening();
+        if (secureServerChannel != null) {
+            try {
+                secureServerChannel.close();
+            } catch (IOException ioe) {
+                log.debug(sm.getString("nioReceiver.closeError"), ioe);
+            }
+            secureServerChannel = null;
+        }
+        for (SocketChannel socket : secureSockets) {
+            try {
+                socket.close();
+            } catch (IOException ioe) {
+                log.debug(sm.getString("nioReceiver.closeError"), ioe);
+            }
+        }
+        secureSockets.clear();
+        secureConnectionSlots = null;
         super.stop();
+        if ((getChannel() instanceof GroupChannel groupChannel) && groupChannel.getSecure()) {
+            try {
+                // Should stop a lot faster than this as all the sockets have been closed.
+                if (!getExecutor().awaitTermination(60, TimeUnit.SECONDS)) {
+                    log.warn(sm.getString("nioReceiver.stop.executor.timeout"));
+                }
+            } catch (InterruptedException e) {
+                log.warn(sm.getString("nioReceiver.stop.executor.interrupted"));
+            }
+        }
     }
 
     @Override
@@ -82,7 +228,17 @@ public class NioReceiver extends ReceiverBase implements Runnable, NioReceiverMB
         }
         try {
             getBind();
-            bind();
+            boolean tlsOnly = getChannel() instanceof GroupChannel groupChannel && groupChannel.getSecure();
+            if (!tlsOnly) {
+                bind();
+            }
+            startSecureListener();
+            if (tlsOnly) {
+                // Disable non-secure port
+                setPort(-1);
+                setListen(true);
+                return;
+            }
             String channelName = "";
             if (getChannel().getName() != null) {
                 channelName = "[" + getChannel().getName() + "]";
@@ -110,6 +266,11 @@ public class NioReceiver extends ReceiverBase implements Runnable, NioReceiverMB
     }
 
 
+    /**
+     * Binds the server socket and datagram channels to their respective ports.
+     *
+     * @throws IOException If binding fails
+     */
     protected void bind() throws IOException {
         // allocate an unbound server socket channel
         serverChannel = ServerSocketChannel.open();
@@ -119,7 +280,7 @@ public class NioReceiver extends ReceiverBase implements Runnable, NioReceiverMB
         this.selector.set(Selector.open());
         // set the port the server channel will listen to
         // serverSocket.bind(new InetSocketAddress(getBind(), getTcpListenPort()));
-        bind(serverSocket, getPort(), getAutoBind());
+        bind(serverSocket, getPort(), getAutoBind(), false);
         // set non-blocking mode for the listening socket
         serverChannel.configureBlocking(false);
         // register the ServerSocketChannel with the Selector
@@ -143,6 +304,11 @@ public class NioReceiver extends ReceiverBase implements Runnable, NioReceiverMB
         datagramChannel.socket().setTrafficClass(getSoTrafficClass());
     }
 
+    /**
+     * Adds a runnable event to the selector's event queue.
+     *
+     * @param event The event to add
+     */
     public void addEvent(Runnable event) {
         Selector selector = this.selector.get();
         if (selector != null) {
@@ -151,11 +317,18 @@ public class NioReceiver extends ReceiverBase implements Runnable, NioReceiverMB
                 log.trace("Adding event to selector:" + event);
             }
             if (isListening()) {
-                selector.wakeup();
+                try {
+                    selector.wakeup();
+                } catch (ClosedSelectorException ignore) {
+                    // Selector already closed during shutdown
+                }
             }
         }
     }
 
+    /**
+     * Processes all pending events in the event queue.
+     */
     public void events() {
         if (events.isEmpty()) {
             return;
@@ -173,6 +346,11 @@ public class NioReceiver extends ReceiverBase implements Runnable, NioReceiverMB
         }
     }
 
+    /**
+     * Handles a cancelled selection key by closing associated channels and cleaning up resources.
+     *
+     * @param key The cancelled selection key
+     */
     public static void cancelledKey(SelectionKey key) {
         ObjectReader reader = (ObjectReader) key.attachment();
         if (reader != null) {
@@ -209,8 +387,14 @@ public class NioReceiver extends ReceiverBase implements Runnable, NioReceiverMB
 
     }
 
+    /**
+     * Timestamp of the last socket timeout check.
+     */
     protected long lastCheck = System.currentTimeMillis();
 
+    /**
+     * Checks for socket timeouts and handles expired connections.
+     */
     protected void socketTimeouts() {
         long now = System.currentTimeMillis();
         if ((now - lastCheck) < getSelectorTimeout()) {
@@ -265,7 +449,7 @@ public class NioReceiver extends ReceiverBase implements Runnable, NioReceiverMB
      * @throws IOException IO error
      */
     protected void listen() throws Exception {
-        if (doListen()) {
+        if (isListening()) {
             log.warn(sm.getString("nioReceiver.alreadyStarted"));
             return;
         }
@@ -280,7 +464,7 @@ public class NioReceiver extends ReceiverBase implements Runnable, NioReceiverMB
             registerChannel(selector, datagramChannel, SelectionKey.OP_READ, oreader);
         }
 
-        while (doListen() && selector != null) {
+        while (isListening() && selector != null) {
             // this may block for a long time, upon return the
             // selected set contains keys of the ready channels
             try {
@@ -466,9 +650,8 @@ public class NioReceiver extends ReceiverBase implements Runnable, NioReceiverMB
         NioReplicationTask task = (NioReplicationTask) getTaskPool().getRxTask();
         if (task == null) {
             // No threads/tasks available, do nothing, the selection
-            // loop will keep calling this method until a
-            // thread becomes available, the thread pool itself has a waiting mechanism
-            // so we will not wait here.
+            // loop will keep calling this method. getRxTask() blocks until a task
+            // is released, so it only returns null after the pool has been stopped.
             if (log.isDebugEnabled()) {
                 log.debug(sm.getString("nioReceiver.noThread"));
             }

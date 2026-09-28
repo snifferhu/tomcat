@@ -36,6 +36,13 @@ import org.apache.tomcat.util.modeler.Registry;
  */
 public class DataSourceUserDatabaseMBean extends BaseModelMBean {
 
+    /**
+     * Default constructor.
+     */
+    public DataSourceUserDatabaseMBean() {
+    }
+
+
     // ----------------------------------------------------- Instance Variables
 
     /**
@@ -53,6 +60,8 @@ public class DataSourceUserDatabaseMBean extends BaseModelMBean {
     // ------------------------------------------------------------- Attributes
 
     /**
+     * Get the names of all groups defined in this database.
+     *
      * @return the names of all groups defined in this database.
      */
     public String[] getGroups() {
@@ -68,6 +77,8 @@ public class DataSourceUserDatabaseMBean extends BaseModelMBean {
 
 
     /**
+     * Get the names of all roles defined in this database.
+     *
      * @return the names of all roles defined in this database.
      */
     public String[] getRoles() {
@@ -83,6 +94,8 @@ public class DataSourceUserDatabaseMBean extends BaseModelMBean {
 
 
     /**
+     * Get the names of all users defined in this database.
+     *
      * @return the names of all users defined in this database.
      */
     public String[] getUsers() {
@@ -102,7 +115,7 @@ public class DataSourceUserDatabaseMBean extends BaseModelMBean {
     /**
      * Create a new Group and return the corresponding name.
      *
-     * @param groupname   Group name of the new group
+     * @param groupname    Group name of the new group
      * @param description Description of the new group
      *
      * @return the new group name
@@ -110,22 +123,22 @@ public class DataSourceUserDatabaseMBean extends BaseModelMBean {
     public String createGroup(String groupname, String description) {
         UserDatabase database = (UserDatabase) this.resource;
         Group group = database.createGroup(groupname, description);
-        return group.getGroupname();
+        return group == null ? null : group.getGroupname();
     }
 
 
     /**
      * Create a new Role and return the corresponding name.
      *
-     * @param rolename    Group name of the new group
-     * @param description Description of the new group
+     * @param rolename    Role name of the new role
+     * @param description Description of the new role
      *
      * @return the new role name
      */
     public String createRole(String rolename, String description) {
         UserDatabase database = (UserDatabase) this.resource;
         Role role = database.createRole(rolename, description);
-        return role.getRolename();
+        return role == null ? null : role.getRolename();
     }
 
 
@@ -141,7 +154,7 @@ public class DataSourceUserDatabaseMBean extends BaseModelMBean {
     public String createUser(String username, String password, String fullName) {
         UserDatabase database = (UserDatabase) this.resource;
         User user = database.createUser(username, password, fullName);
-        return user.getUsername();
+        return user == null ? null : user.getUsername();
     }
 
 

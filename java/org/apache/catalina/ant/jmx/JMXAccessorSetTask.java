@@ -29,9 +29,9 @@ import org.apache.tools.ant.BuildException;
 /**
  * Access <em>JMX</em> JSR 160 MBeans Server.
  * <ul>
- * <li>Get Mbeans attributes</li>
- * <li>Show Get result as Ant console log</li>
- * <li>Bind Get result as Ant properties</li>
+ * <li>Set Mbeans attributes</li>
+ * <li>Show Set result as Ant console log</li>
+ * <li>Bind Set result as Ant properties</li>
  * </ul>
  * <p>
  * Examples: Set a Mbean Manager attribute maxActiveSessions. Set this attribute with fresh jmx connection without save
@@ -43,12 +43,11 @@ import org.apache.tools.ant.BuildException;
  *           host="127.0.0.1"
  *           port="9014"
  *           ref=""
- *           name="Catalina:type=Manager,context="/ClusterTest",host=localhost"
+ *           name="Catalina:type=Manager,context=&quot;/ClusterTest&quot;,host=localhost"
  *           attribute="maxActiveSessions"
  *           value="100"
  *           type="int"
- *           echo="false"&gt;
- *       /&gt;
+ *           echo="false" /&gt;
  * </pre>
  * <p>
  * First call to a remote MBean server save the JMXConnection a reference <em>jmx.server</em>
@@ -58,6 +57,12 @@ import org.apache.tools.ant.BuildException;
  * @since 5.5.10
  */
 public class JMXAccessorSetTask extends JMXAccessorTask {
+
+    /**
+     * Constructs a new JMXAccessorSetTask.
+     */
+    public JMXAccessorSetTask() {
+    }
 
     // ----------------------------------------------------- Instance Variables
 
@@ -69,28 +74,36 @@ public class JMXAccessorSetTask extends JMXAccessorTask {
     // ------------------------------------------------------------- Properties
 
     /**
-     * @return Returns the attribute.
+     * Get the MBean attribute name.
+     *
+     * @return the attribute name
      */
     public String getAttribute() {
         return attribute;
     }
 
     /**
-     * @param attribute The attribute to set.
+     * Set the MBean attribute name.
+     *
+     * @param attribute the attribute to set
      */
     public void setAttribute(String attribute) {
         this.attribute = attribute;
     }
 
     /**
-     * @return Returns the value.
+     * Get the attribute value.
+     *
+     * @return the value
      */
     public String getValue() {
         return value;
     }
 
     /**
-     * @param value The value to set.
+     * Set the attribute value.
+     *
+     * @param value the value to set
      */
     public void setValue(String value) {
         this.value = value;
@@ -98,14 +111,18 @@ public class JMXAccessorSetTask extends JMXAccessorTask {
 
 
     /**
-     * @return Returns the type.
+     * Get the value type.
+     *
+     * @return the type
      */
     public String getType() {
         return type;
     }
 
     /**
-     * @param valueType The type to set.
+     * Set the value type.
+     *
+     * @param valueType the type to set
      */
     public void setType(String valueType) {
         this.type = valueType;
@@ -113,14 +130,18 @@ public class JMXAccessorSetTask extends JMXAccessorTask {
 
 
     /**
-     * @return Returns the convert.
+     * Get the convert flag.
+     *
+     * @return the convert flag
      */
     public boolean isConvert() {
         return convert;
     }
 
     /**
-     * @param convert The convert to set.
+     * Set the convert flag.
+     *
+     * @param convert the flag to set
      */
     public void setConvert(boolean convert) {
         this.convert = convert;
@@ -129,12 +150,14 @@ public class JMXAccessorSetTask extends JMXAccessorTask {
 
     @Override
     public String jmxExecute(MBeanServerConnection jmxServerConnection) throws Exception {
-
         if (getName() == null) {
             throw new BuildException("Must specify a 'name'");
         }
         if ((attribute == null || value == null)) {
             throw new BuildException("Must specify a 'attribute' and 'value' for set");
+        }
+        if (jmxServerConnection == null) {
+            throw new BuildException("Must open a connection!");
         }
         return jmxSet(jmxServerConnection, getName());
     }

@@ -12,6 +12,8 @@
 
 name: Smoke Test - MacOS
 
+# The purpose of this configuration is to test with MacOS's default LibreSSL implementation
+
 on:
   push:
     branches:
@@ -19,6 +21,9 @@ on:
   pull_request:
     branches:
       - main
+
+permissions:
+  contents: read
 
 env:
   LC_ALL: en_US.UTF-8
@@ -31,7 +36,7 @@ jobs:
     runs-on: macos-latest
     steps:
     - name: Git Checkout
-      uses: actions/checkout@v6
+      uses: actions/checkout@v7
     - name: Set up Java
       uses: actions/setup-java@v5
       with:
@@ -45,7 +50,7 @@ jobs:
 
     - name: Upload logs
       if: ${{ !cancelled() }}
-      uses: actions/upload-artifact@v6
+      uses: actions/upload-artifact@v7
       with:
         name: JDK25-macos-latest-logs
         path: |

@@ -24,6 +24,9 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
 
+import jakarta.servlet.AsyncContext;
+import jakarta.servlet.AsyncEvent;
+import jakarta.servlet.AsyncListener;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletResponse;
 
@@ -37,6 +40,8 @@ import org.apache.catalina.Store;
 import org.apache.catalina.StoreManager;
 import org.apache.catalina.connector.Request;
 import org.apache.catalina.connector.Response;
+import org.apache.juli.logging.Log;
+import org.apache.juli.logging.LogFactory;
 
 /**
  * Valve that implements per-request session persistence. It is intended to be used with non-sticky load-balancers and a
@@ -45,8 +50,7 @@ import org.apache.catalina.connector.Response;
  * <p>
  * To avoid conflicts and/or errors when updating the session store, each session must only be accessed by no more than
  * one concurrent request. The {@code filter} field can be used to define requests (e.g. those for static resources)
- * that do not need access to the session and can Requests for resources that do not need to access the session and can
- * bypass the session load/save functionality provided by this Valve.
+ * that do not need access to the session and can bypass the session load/save functionality provided by this Valve.
  * <p>
  * The Valve uses a per session {@code Semaphore} to ensure that each session is accessed by no more than one request at
  * a time within a single Tomcat instance. The behaviour if multiple requests try to access the session concurrently can
@@ -67,6 +71,8 @@ import org.apache.catalina.connector.Response;
  */
 public class PersistentValve extends ValveBase {
 
+    private static final Log log = LogFactory.getLog(PersistentValve.class);
+
     // Saves a couple of calls to getClassLoader() on every request. Under high
     // load these calls took just long enough to appear as a hot spot (although
     // a very minor one) in a profiler.
@@ -74,6 +80,9 @@ public class PersistentValve extends ValveBase {
 
     private volatile boolean clBindRequired;
 
+    /**
+     * Regular expression pattern used to filter requests that should bypass session persistence.
+     */
     protected Pattern filter = null;
 
     private final ConcurrentMap<String,UsageCountingSemaphore> sessionToSemaphoreMap = new ConcurrentHashMap<>();
@@ -85,6 +94,9 @@ public class PersistentValve extends ValveBase {
     private boolean semaphoreAcquireUninterruptibly = true;
 
 
+    /**
+     * Constructs a new PersistentValve instance.
+     */
     public PersistentValve() {
         super(true);
     }
@@ -118,68 +130,84 @@ public class PersistentValve extends ValveBase {
             return;
         }
 
+        boolean asyncOnEntry = request.isAsync();
+
         String sessionId = request.getRequestedSessionId();
         UsageCountingSemaphore semaphore = null;
         boolean mustReleaseSemaphore = true;
 
         try {
-            // Acquire the per session semaphore
-            if (sessionId != null) {
-                semaphore = sessionToSemaphoreMap.compute(sessionId,
-                        (k, v) -> v == null ? new UsageCountingSemaphore(semaphoreFairness) : v.incrementUsageCount());
-                if (semaphoreBlockOnAcquire) {
-                    if (semaphoreAcquireUninterruptibly) {
-                        semaphore.acquireUninterruptibly();
+            /*
+             * If the request was in asynchronous mode when it entered the Valve, the semaphore was acquired during the
+             * original request where asynchronous processing started and does not need to be acquired again.
+             */
+            if (!asyncOnEntry) {
+                /*
+                 * Acquire the per session semaphore.
+                 */
+                if (sessionId != null) {
+                    semaphore = sessionToSemaphoreMap.compute(sessionId, (k,
+                            v) -> v == null ? new UsageCountingSemaphore(semaphoreFairness) : v.incrementUsageCount());
+                    if (semaphoreBlockOnAcquire) {
+                        if (semaphoreAcquireUninterruptibly) {
+                            semaphore.acquireUninterruptibly();
+                        } else {
+                            try {
+                                semaphore.acquire();
+                            } catch (InterruptedException e) {
+                                mustReleaseSemaphore = false;
+                                onSemaphoreNotAcquired(request, response);
+                                if (containerLog.isDebugEnabled()) {
+                                    containerLog.debug(sm.getString("persistentValve.acquireInterrupted",
+                                            request.getDecodedRequestURI()));
+                                }
+                                return;
+                            }
+                        }
                     } else {
-                        try {
-                            semaphore.acquire();
-                        } catch (InterruptedException e) {
+                        if (!semaphore.tryAcquire()) {
                             mustReleaseSemaphore = false;
                             onSemaphoreNotAcquired(request, response);
                             if (containerLog.isDebugEnabled()) {
-                                containerLog.debug(sm.getString("persistentValve.acquireInterrupted",
-                                        request.getDecodedRequestURI()));
+                                containerLog.debug(
+                                        sm.getString("persistentValve.acquireFailed", request.getDecodedRequestURI()));
                             }
                             return;
                         }
                     }
-                } else {
-                    if (!semaphore.tryAcquire()) {
-                        onSemaphoreNotAcquired(request, response);
-                        if (containerLog.isDebugEnabled()) {
-                            containerLog.debug(
-                                    sm.getString("persistentValve.acquireFailed", request.getDecodedRequestURI()));
-                        }
-                        return;
-                    }
                 }
-            }
 
-            // Update the session last access time for our session (if any)
-            Manager manager = context.getManager();
-            if (sessionId != null && manager instanceof StoreManager) {
-                Store store = ((StoreManager) manager).getStore();
-                if (store != null) {
-                    Session session = null;
-                    try {
-                        session = store.load(sessionId);
-                    } catch (Exception e) {
-                        containerLog.error(sm.getString("persistentValve.sessionLoadFail", sessionId));
-                    }
-                    if (session != null) {
-                        if (!session.isValid() || isSessionStale(session, System.currentTimeMillis())) {
-                            if (containerLog.isTraceEnabled()) {
-                                containerLog.trace("session swapped in is invalid or expired");
+                // Update the session last access time for our session (if any)
+                Manager manager = context.getManager();
+                if (sessionId != null && manager instanceof StoreManager) {
+                    Store store = ((StoreManager) manager).getStore();
+                    if (store != null) {
+                        Session session = null;
+                        try {
+                            session = store.load(sessionId);
+                        } catch (Exception e) {
+                            containerLog.error(sm.getString("persistentValve.sessionLoadFail", sessionId));
+                        }
+                        if (session != null) {
+                            if (!session.isValid() || isSessionStale(session, System.currentTimeMillis())) {
+                                if (containerLog.isTraceEnabled()) {
+                                    containerLog.trace("session swapped in is invalid or expired");
+                                }
+                                session.expire();
+                                store.remove(sessionId);
+                            } else if (!session.getIdInternal().equals(sessionId)) {
+                                if (containerLog.isTraceEnabled()) {
+                                    containerLog.trace("session swapped in has wrong session ID");
+                                }
+                                store.remove(sessionId);
+                            } else {
+                                session.setManager(manager);
+                                // session.setId(sessionId); Only if new ???
+                                manager.add(session);
+                                // ((StandardSession)session).activate();
+                                session.access();
+                                session.endAccess();
                             }
-                            session.expire();
-                            store.remove(sessionId);
-                        } else {
-                            session.setManager(manager);
-                            // session.setId(sessionId); Only if new ???
-                            manager.add(session);
-                            // ((StandardSession)session).activate();
-                            session.access();
-                            session.endAccess();
                         }
                     }
                 }
@@ -190,31 +218,53 @@ public class PersistentValve extends ValveBase {
 
             // Ask the next valve to process the request.
             getNext().invoke(request, response);
+        } finally {
+            if (request.isAsync()) {
+                /*
+                 * Need to continue to hold the semaphore until asynchronous processing is complete. Register a listener
+                 * that will release the Semaphore once asynchronous processing is complete. Also need to delay session
+                 * persistence until completion of the asynchronous processing.
+                 *
+                 * The listener must only be added once so it is only added when the request was not in asynchronous
+                 * mode on entry.
+                 */
+                if (!asyncOnEntry) {
+                    AsyncContext asyncContext = request.getAsyncContext();
+                    asyncContext.addListener(new StoreSessionAsyncListener(request, context, sessionId, semaphore,
+                            mustReleaseSemaphore));
+                }
+            } else {
+                storeSession(request, context, sessionId, semaphore, mustReleaseSemaphore);
+            }
+        }
+    }
 
-            // If still processing async, don't try to store the session
-            if (!request.isAsync()) {
-                // Read the sessionid after the response.
-                // HttpSession hsess = hreq.getSession(false);
-                Session hsess;
+
+    private void storeSession(Request request, Context context, String originalSessionId,
+            UsageCountingSemaphore semaphore, boolean mustReleaseSemaphore) {
+        try {
+            Manager manager = context.getManager();
+            Session hsess;
+            try {
+                hsess = request.getSessionInternal(false);
+            } catch (Exception e) {
+                hsess = null;
+            }
+            String newsessionId = null;
+            if (hsess != null) {
+                newsessionId = hsess.getIdInternal();
+            }
+
+            if (containerLog.isTraceEnabled()) {
+                containerLog.trace("newsessionId: " + newsessionId);
+            }
+            if (newsessionId != null) {
                 try {
-                    hsess = request.getSessionInternal(false);
-                } catch (Exception e) {
-                    hsess = null;
-                }
-                String newsessionId = null;
-                if (hsess != null) {
-                    newsessionId = hsess.getIdInternal();
-                }
+                    bind(context);
 
-                if (containerLog.isTraceEnabled()) {
-                    containerLog.trace("newsessionId: " + newsessionId);
-                }
-                if (newsessionId != null) {
-                    try {
-                        bind(context);
-
-                        /* store the session and remove it from the manager */
-                        if (manager instanceof StoreManager) {
+                    /* store the session and remove it from the manager */
+                    if (manager instanceof StoreManager) {
+                        try {
                             Session session = manager.findSession(newsessionId);
                             Store store = ((StoreManager) manager).getStore();
                             boolean stored = false;
@@ -235,14 +285,16 @@ public class PersistentValve extends ValveBase {
                                                     " stale: " + isSessionStale(session, System.currentTimeMillis()));
                                 }
                             }
-                        } else {
-                            if (containerLog.isTraceEnabled()) {
-                                containerLog.trace("newsessionId Manager: " + manager);
-                            }
+                        } catch (IOException ioe) {
+                            containerLog.warn(sm.getString("persistentValve.sessionSaveFail", newsessionId));
                         }
-                    } finally {
-                        unbind(context);
+                    } else {
+                        if (containerLog.isTraceEnabled()) {
+                            containerLog.trace("newsessionId Manager: " + manager);
+                        }
                     }
+                } finally {
+                    unbind(context);
                 }
             }
         } finally {
@@ -250,7 +302,7 @@ public class PersistentValve extends ValveBase {
                 if (mustReleaseSemaphore) {
                     semaphore.release();
                 }
-                sessionToSemaphoreMap.computeIfPresent(sessionId,
+                sessionToSemaphoreMap.computeIfPresent(originalSessionId,
                         (k, v) -> v.decrementAndGetUsageCount() == 0 ? null : v);
             }
         }
@@ -267,7 +319,7 @@ public class PersistentValve extends ValveBase {
      * @throws IOException If an I/O error occurs while working with the request or response
      */
     protected void onSemaphoreNotAcquired(Request request, Response response) throws IOException {
-        response.sendError(429);
+        response.sendError(HttpServletResponse.SC_TOO_MANY_REQUESTS);
     }
 
 
@@ -284,7 +336,7 @@ public class PersistentValve extends ValveBase {
         if (session != null) {
             int maxInactiveInterval = session.getMaxInactiveInterval();
             if (maxInactiveInterval > 0) {
-                int timeIdle = (int) (session.getIdleTimeInternal() / 1000L);
+                long timeIdle = session.getIdleTimeInternal() / 1000L;
                 return timeIdle >= maxInactiveInterval;
             }
         }
@@ -306,11 +358,23 @@ public class PersistentValve extends ValveBase {
         }
     }
 
+    /**
+     * Determines whether the given URI should bypass session persistence based on the configured filter.
+     *
+     * @param uri the request URI to check
+     *
+     * @return {@code true} if the request should bypass session persistence, otherwise {@code false}
+     */
     protected boolean isRequestWithoutSession(String uri) {
         Pattern f = filter;
         return f != null && f.matcher(uri).matches();
     }
 
+    /**
+     * Returns the filter pattern used to identify requests that should bypass session persistence.
+     *
+     * @return the filter pattern, or {@code null} if no filter is configured
+     */
     public String getFilter() {
         if (filter == null) {
             return null;
@@ -318,6 +382,11 @@ public class PersistentValve extends ValveBase {
         return filter.toString();
     }
 
+    /**
+     * Sets the filter pattern used to identify requests that should bypass session persistence.
+     *
+     * @param filter the regular expression pattern, or {@code null} to disable filtering
+     */
     public void setFilter(String filter) {
         if (filter == null || filter.isEmpty()) {
             this.filter = null;
@@ -325,7 +394,7 @@ public class PersistentValve extends ValveBase {
             try {
                 this.filter = Pattern.compile(filter);
             } catch (PatternSyntaxException pse) {
-                container.getLogger().error(sm.getString("persistentValve.filter.failure", filter), pse);
+                log.error(sm.getString("persistentValve.filter.failure", filter), pse);
             }
         }
     }
@@ -436,6 +505,46 @@ public class PersistentValve extends ValveBase {
 
         private void release() {
             semaphore.release();
+        }
+    }
+
+
+    private class StoreSessionAsyncListener implements AsyncListener {
+
+        private final Request request;
+        private final Context context;
+        private final String originalSessionId;
+        private final UsageCountingSemaphore semaphore;
+        private final boolean mustReleaseSemaphore;
+
+        StoreSessionAsyncListener(Request request, Context context, String originalSessionId,
+                UsageCountingSemaphore semaphore, boolean mustReleaseSemaphore) {
+            this.request = request;
+            this.context = context;
+            this.originalSessionId = originalSessionId;
+            this.semaphore = semaphore;
+            this.mustReleaseSemaphore = mustReleaseSemaphore;
+        }
+
+
+        @Override
+        public void onComplete(AsyncEvent event) throws IOException {
+            storeSession(request, context, originalSessionId, semaphore, mustReleaseSemaphore);
+        }
+
+        @Override
+        public void onTimeout(AsyncEvent event) throws IOException {
+            // NO-OP.
+        }
+
+        @Override
+        public void onError(AsyncEvent event) throws IOException {
+            // NO-OP.
+        }
+
+        @Override
+        public void onStartAsync(AsyncEvent event) throws IOException {
+            event.getAsyncContext().addListener(this);
         }
     }
 }

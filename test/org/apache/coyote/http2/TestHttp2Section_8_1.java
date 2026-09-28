@@ -28,6 +28,7 @@ import org.apache.catalina.startup.Tomcat;
 import org.apache.coyote.ContinueResponseTiming;
 import org.apache.coyote.http11.AbstractHttp11Protocol;
 import org.apache.tomcat.util.http.Method;
+import org.apache.tomcat.util.http.MimeHeaders;
 
 /**
  * Unit tests for Section 8.1 of <a href="https://tools.ietf.org/html/rfc7540">RFC 7540</a>. <br>
@@ -281,6 +282,54 @@ public class TestHttp2Section_8_1 extends Http2TestBase {
 
 
     @Test
+    public void testHostHeaderInvalid() throws Exception {
+        http2Connect();
+
+        List<Header> headers = new ArrayList<>(4);
+        headers.add(new Header(":method", Method.GET));
+        headers.add(new Header(":scheme", "http"));
+        headers.add(new Header(":path", "/simple"));
+        headers.add(new Header("host", "local!host:" + getPort()));
+
+        byte[] headersFrameHeader = new byte[9];
+        ByteBuffer headersPayload = ByteBuffer.allocate(128);
+
+        buildGetRequest(headersFrameHeader, headersPayload, null, headers, 3);
+
+        writeFrame(headersFrameHeader, headersPayload);
+
+        parser.readFrame();
+
+        String trace = output.getTrace();
+        Assert.assertTrue(trace, trace.contains("3-RST-[1]"));
+    }
+
+
+    @Test
+    public void testAuthorityHeaderInvalid() throws Exception {
+        http2Connect();
+
+        List<Header> headers = new ArrayList<>(4);
+        headers.add(new Header(":method", Method.GET));
+        headers.add(new Header(":scheme", "http"));
+        headers.add(new Header(":path", "/simple"));
+        headers.add(new Header(":authority", "local!host:" + getPort()));
+
+        byte[] headersFrameHeader = new byte[9];
+        ByteBuffer headersPayload = ByteBuffer.allocate(128);
+
+        buildGetRequest(headersFrameHeader, headersPayload, null, headers, 3);
+
+        writeFrame(headersFrameHeader, headersPayload);
+
+        parser.readFrame();
+
+        String trace = output.getTrace();
+        Assert.assertTrue(trace, trace.contains("3-RST-[1]"));
+    }
+
+
+    @Test
     public void testHostHeaderDuplicate() throws Exception {
         http2Connect();
 
@@ -301,7 +350,7 @@ public class TestHttp2Section_8_1 extends Http2TestBase {
         parser.readFrame();
 
         String trace = output.getTrace();
-        Assert.assertTrue(trace, trace.contains("0-Goaway-[1]-[9]"));
+        Assert.assertTrue(trace, trace.contains("3-RST-[1]"));
     }
 
 
@@ -413,7 +462,7 @@ public class TestHttp2Section_8_1 extends Http2TestBase {
         parser.readFrame();
 
         String trace = output.getTrace();
-        Assert.assertTrue(trace, trace.contains("0-Goaway-[1]-[9]"));
+        Assert.assertTrue(trace, trace.contains("3-RST-[1]"));
     }
 
 
@@ -506,6 +555,151 @@ public class TestHttp2Section_8_1 extends Http2TestBase {
         headers.add(new Header(":path", "/simple"));
         headers.add(new Header("host", "localhost:" + getPort()));
 
-        doInvalidPseudoHeaderTest(headers, "0-Goaway-[3]-[1]-");
+        doInvalidPseudoHeaderTest(headers, "3-RST-[1]\n");
+    }
+
+
+    @Test
+    public void testMethodHeaderInvalid() throws Exception {
+        http2Connect();
+
+        List<Header> headers = new ArrayList<>(4);
+        headers.add(new Header(":method", "GET\r\n"));
+        headers.add(new Header(":scheme", "http"));
+        headers.add(new Header(":path", "/simple"));
+        headers.add(new Header("host", "localhost:" + getPort()));
+
+        byte[] headersFrameHeader = new byte[9];
+        ByteBuffer headersPayload = ByteBuffer.allocate(128);
+
+        buildGetRequest(headersFrameHeader, headersPayload, null, headers, 3);
+
+        writeFrame(headersFrameHeader, headersPayload);
+
+        parser.readFrame();
+
+        String trace = output.getTrace();
+        Assert.assertTrue(trace, trace.contains("3-RST-[1]"));
+    }
+
+
+    @Test
+    public void testMalformedTrailers() throws Exception {
+        http2Connect();
+
+        ((AbstractHttp11Protocol<?>) http2Protocol.getHttp11Protocol())
+                .setAllowedTrailerHeaders(TRAILER_HEADER_NAME);
+
+        // Disable overhead protection for window update as it breaks some tests
+        http2Protocol.setOverheadWindowUpdateThreshold(0);
+
+        byte[] headersFrameHeader = new byte[9];
+        ByteBuffer headersPayload = ByteBuffer.allocate(128);
+        byte[] dataFrameHeader = new byte[9];
+        ByteBuffer dataPayload = ByteBuffer.allocate(256);
+        byte[] trailerFrameHeader = new byte[9];
+        ByteBuffer trailerPayload = ByteBuffer.allocate(256);
+
+        buildPostRequest(headersFrameHeader, headersPayload, false, null, dataPayload.capacity(), "/simple",
+                dataFrameHeader,dataPayload, null, true, 3);
+
+        // Write the headers
+        writeFrame(headersFrameHeader, headersPayload);
+        // Body
+        writeFrame(dataFrameHeader, dataPayload);
+
+        // Trailers
+        buildTrailerHeaders(trailerFrameHeader, trailerPayload, 3);
+        // Remove the end of stream flag (0x01) but leave end of headers (0x04)
+        trailerFrameHeader[4] = 0x04;
+        writeFrame(trailerFrameHeader, trailerPayload);
+
+        // Expect 2 window updates and a reset due to a protocol error. Order may vary.
+        StringBuilder filteredTrace = new StringBuilder();
+        filterTrace(filteredTrace, 1, "WindowSize");
+        String actual = filteredTrace.toString();
+        Assert.assertTrue(actual, actual.toString().contains("3-RST-[1]"));
+
+        // Ensure connection is still valid
+        sendSimpleGetRequest(5);
+        // Expect 2 frames: headers and body.
+        // In async mode, may see multiple resets for Stream 3 and/or remaining window updates.
+        filteredTrace = new StringBuilder();
+        filterTrace(filteredTrace, 2, "WindowSize", "3-RST");
+        actual = filteredTrace.toString();
+        Assert.assertEquals(actual, getSimpleResponseTrace(5), actual);
+    }
+
+
+    @Test
+    public void testPayloadTooSmall() throws Exception {
+        doTest1kPayload(2048);
+    }
+
+
+    @Test
+    public void testPayloadTooBig() throws Exception {
+        doTest1kPayload(512);
+    }
+
+
+    private void doTest1kPayload(int contentLength) throws Exception {
+        http2Connect();
+
+        // Set up a POST request
+        // Generate headers
+        byte[] headersFrameHeader = new byte[9];
+        ByteBuffer headersPayload = ByteBuffer.allocate(128);
+
+        MimeHeaders headers = new MimeHeaders();
+        headers.addValue(":method").setString(Method.POST);
+        headers.addValue(":scheme").setString("http");
+        headers.addValue(":path").setString("/simple");
+        headers.addValue(":authority").setString("localhost:" + getPort());
+        headers.addValue("content-length").setLong(contentLength);
+        hpackEncoder.encode(headers, headersPayload);
+
+        headersPayload.flip();
+
+        ByteUtil.setThreeBytes(headersFrameHeader, 0, headersPayload.limit());
+        headersFrameHeader[3] = FrameType.HEADERS.getIdByte();
+        // Flags. end of headers (0x04)
+        headersFrameHeader[4] = 0x04;
+        // Stream id
+        ByteUtil.set31Bits(headersFrameHeader, 5, 3);
+
+        writeFrame(headersFrameHeader, headersPayload);
+
+        // Generate body
+        byte[] dataFrameHeader = new byte[9];
+        ByteBuffer dataPayload = ByteBuffer.allocate(1024);
+        while (dataPayload.hasRemaining()) {
+            dataPayload.put((byte) 'x');
+        }
+        dataPayload.flip();
+
+        // Size
+        ByteUtil.setThreeBytes(dataFrameHeader, 0, dataPayload.limit());
+        // Flags - end of stream 0x01
+        dataFrameHeader[4] = 0x01;
+        // Stream ID
+        ByteUtil.set31Bits(dataFrameHeader, 5, 3);
+
+        writeFrame(dataFrameHeader, dataPayload);
+
+        // Expect 2 window updates and a reset due to a protocol error. Order may vary.
+        StringBuilder filteredTrace = new StringBuilder();
+        filterTrace(filteredTrace, 1, "WindowSize");
+        String actual = filteredTrace.toString();
+        Assert.assertTrue(actual, actual.toString().contains("3-RST-[1]"));
+
+        // Ensure connection is still valid
+        sendSimpleGetRequest(5);
+        // Expect 2 frames: headers and body.
+        // In async mode, may see multiple resets for Stream 3 and/or remaining window updates.
+        filteredTrace = new StringBuilder();
+        filterTrace(filteredTrace, 2, "WindowSize", "3-RST");
+        actual = filteredTrace.toString();
+        Assert.assertEquals(actual, getSimpleResponseTrace(5), actual);
     }
 }

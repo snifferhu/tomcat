@@ -43,7 +43,7 @@ import org.apache.tools.ant.BuildException;
  *           className="org.apache.catalina.mbeans.MBeanFactory"
  *           classLoader="Catalina:type=ServerClassLoader,name=server"&gt;
  *            &lt;Arg value="org.apache.catalina.mbeans.MBeanFactory" /&gt;
- *   &lt;/jmxCreate/&gt;
+ *   &lt;/jmx:create&gt;
  * </pre>
  * <p>
  * <b>WARNING</b>Not all Tomcat MBeans can create remotely and auto register by its parents! Please, use the
@@ -57,6 +57,13 @@ import org.apache.tools.ant.BuildException;
  * @since 5.5.12
  */
 public class JMXAccessorCreateTask extends JMXAccessorTask {
+
+    /**
+     * Constructs a new JMXAccessorCreateTask.
+     */
+    public JMXAccessorCreateTask() {
+    }
+
     // ----------------------------------------------------- Instance Variables
 
     private String className;
@@ -66,46 +73,63 @@ public class JMXAccessorCreateTask extends JMXAccessorTask {
     // ------------------------------------------------------------- Properties
 
     /**
-     * @return Returns the classLoader.
+     * Get the class loader for MBean creation.
+     *
+     * @return the class loader
      */
     public String getClassLoader() {
         return classLoader;
     }
 
     /**
-     * @param classLoaderName The classLoader to set.
+     * Set the class loader for MBean creation.
+     *
+     * @param classLoaderName the class loader to set
      */
     public void setClassLoader(String classLoaderName) {
         this.classLoader = classLoaderName;
     }
 
     /**
-     * @return Returns the className.
+     * Get the MBean class name.
+     *
+     * @return the class name
      */
     public String getClassName() {
         return className;
     }
 
     /**
-     * @param className The className to set.
+     * Set the MBean class name.
+     *
+     * @param className the class name to set
      */
     public void setClassName(String className) {
         this.className = className;
     }
 
+    /**
+     * Add an argument for MBean creation.
+     *
+     * @param arg the argument to add
+     */
     public void addArg(Arg arg) {
         args.add(arg);
     }
 
     /**
-     * @return Returns the args.
+     * Get the arguments for MBean creation.
+     *
+     * @return the arguments
      */
     public List<Arg> getArgs() {
         return args;
     }
 
     /**
-     * @param args The args to set.
+     * Set the arguments for MBean creation.
+     *
+     * @param args the arguments to set
      */
     public void setArgs(List<Arg> args) {
         this.args = args;
@@ -115,12 +139,14 @@ public class JMXAccessorCreateTask extends JMXAccessorTask {
 
     @Override
     public String jmxExecute(MBeanServerConnection jmxServerConnection) throws Exception {
-
         if (getName() == null) {
             throw new BuildException("Must specify a 'name'");
         }
         if ((className == null)) {
-            throw new BuildException("Must specify a 'className' for get");
+            throw new BuildException("Must specify a 'className' for create");
+        }
+        if (jmxServerConnection == null) {
+            throw new BuildException("Must open a connection!");
         }
         jmxCreate(jmxServerConnection, getName());
         return null;

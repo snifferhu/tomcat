@@ -43,6 +43,13 @@ import org.apache.tomcat.util.res.StringManager;
  */
 public class SparseUserDatabaseMBean extends BaseModelMBean {
 
+    /**
+     * Default constructor required for JMX instantiation.
+     */
+    public SparseUserDatabaseMBean() {
+        super();
+    }
+
     private static final StringManager sm = StringManager.getManager(SparseUserDatabaseMBean.class);
 
     // ----------------------------------------------------- Instance Variables
@@ -72,7 +79,7 @@ public class SparseUserDatabaseMBean extends BaseModelMBean {
 
 
     /**
-     * The <code>ManagedBean</code> information describing Group MBeans.
+     * The <code>ManagedBean</code> information describing Role MBeans.
      */
     protected final ManagedBean managedRole = registry.findManagedBean("Role");
 
@@ -86,7 +93,9 @@ public class SparseUserDatabaseMBean extends BaseModelMBean {
     // ------------------------------------------------------------- Attributes
 
     /**
-     * @return the MBean Names of all groups defined in this database.
+     * Return the MBean Names of all groups defined in this database.
+     *
+     * @return the MBean Names of all groups defined in this database
      */
     public String[] getGroups() {
         UserDatabase database = (UserDatabase) this.resource;
@@ -101,7 +110,9 @@ public class SparseUserDatabaseMBean extends BaseModelMBean {
 
 
     /**
-     * @return the MBean Names of all roles defined in this database.
+     * Return the MBean Names of all roles defined in this database.
+     *
+     * @return the MBean Names of all roles defined in this database
      */
     public String[] getRoles() {
         UserDatabase database = (UserDatabase) this.resource;
@@ -116,7 +127,9 @@ public class SparseUserDatabaseMBean extends BaseModelMBean {
 
 
     /**
-     * @return the MBean Names of all users defined in this database.
+     * Return the MBean Names of all users defined in this database.
+     *
+     * @return the MBean Names of all users defined in this database
      */
     public String[] getUsers() {
         UserDatabase database = (UserDatabase) this.resource;
@@ -143,6 +156,9 @@ public class SparseUserDatabaseMBean extends BaseModelMBean {
     public String createGroup(String groupname, String description) {
         UserDatabase database = (UserDatabase) this.resource;
         Group group = database.createGroup(groupname, description);
+        if (group == null) {
+            return null;
+        }
         try {
             MBeanUtils.createMBean(group);
         } catch (Exception e) {
@@ -155,14 +171,17 @@ public class SparseUserDatabaseMBean extends BaseModelMBean {
     /**
      * Create a new Role and return the corresponding MBean Name.
      *
-     * @param rolename    Group name of the new group
-     * @param description Description of the new group
+     * @param rolename    Role name of the new role
+     * @param description Description of the new role
      *
      * @return the new role object name
      */
     public String createRole(String rolename, String description) {
         UserDatabase database = (UserDatabase) this.resource;
         Role role = database.createRole(rolename, description);
+        if (role == null) {
+            return null;
+        }
         try {
             MBeanUtils.createMBean(role);
         } catch (Exception e) {
@@ -184,6 +203,9 @@ public class SparseUserDatabaseMBean extends BaseModelMBean {
     public String createUser(String username, String password, String fullName) {
         UserDatabase database = (UserDatabase) this.resource;
         User user = database.createUser(username, password, fullName);
+        if (user == null) {
+            return null;
+        }
         try {
             MBeanUtils.createMBean(user);
         } catch (Exception e) {

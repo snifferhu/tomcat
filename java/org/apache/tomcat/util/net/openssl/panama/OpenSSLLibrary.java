@@ -26,6 +26,7 @@ import java.util.List;
 
 import static org.apache.tomcat.util.openssl.openssl_h.*;
 import static org.apache.tomcat.util.openssl.openssl_h_Compatibility.*;
+import static org.apache.tomcat.util.openssl.openssl_h_Macros.*;
 import org.apache.juli.logging.Log;
 import org.apache.juli.logging.LogFactory;
 import org.apache.tomcat.util.net.openssl.OpenSSLStatus;
@@ -178,6 +179,8 @@ public class OpenSSLLibrary {
                 initLibrary();
 
                 OpenSSLStatus.setVersion(OpenSSL_version_num());
+                OpenSSLStatus.setMajorVersion(openssl_h_Compatibility.MAJOR);
+                OpenSSLStatus.setMinorVersion(openssl_h_Compatibility.MINOR);
                 if (openssl_h_Compatibility.OPENSSL3) {
                     OpenSSLStatus.setName(OpenSSLStatus.Name.OPENSSL3);
                 } else if (openssl_h_Compatibility.OPENSSL) {
@@ -200,7 +203,7 @@ public class OpenSSLLibrary {
                         enginePointer = ENGINE_by_id(engine);
                         if (MemorySegment.NULL.equals(enginePointer)) {
                             enginePointer = ENGINE_by_id(memorySession.allocateFrom("dynamic"));
-                            if (enginePointer != null) {
+                            if (!MemorySegment.NULL.equals(enginePointer)) {
                                 if (ENGINE_ctrl_cmd_string(enginePointer, memorySession.allocateFrom("SO_PATH"), engine,
                                         0) == 0 ||
                                         ENGINE_ctrl_cmd_string(enginePointer, memorySession.allocateFrom("LOAD"),
@@ -425,6 +428,18 @@ public class OpenSSLLibrary {
         return fipsModeActive;
     }
 
+    public static String getVersionString() {
+        if (!OpenSSLStatus.isAvailable()) {
+            return null;
+        }
+
+        try {
+            return OpenSSL_version(0).getString(0);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
     public static List<String> findCiphers(String ciphers) {
         ArrayList<String> ciphersList = new ArrayList<>();
         try (var localArena = Arena.ofConfined()) {
@@ -502,5 +517,25 @@ public class OpenSSLLibrary {
         return sslError;
     }
 
-
+    static boolean populateCertificateChain(Arena localArena, MemorySegment /* STACK_OF(X509) */ sk,
+            byte[][] certificateChain) {
+        for (int i = 0; i < certificateChain.length; i++) {
+            MemorySegment/* (X509*) */ x509 = openssl_h_Compatibility.OPENSSL_sk_value(sk, i);
+            MemorySegment bufPointer = localArena.allocateFrom(ValueLayout.ADDRESS, MemorySegment.NULL);
+            int length = i2d_X509(x509, bufPointer);
+            MemorySegment buf = bufPointer.get(ValueLayout.ADDRESS, 0);
+            if (length <= 0) {
+                if (!MemorySegment.NULL.equals(buf)) {
+                    OPENSSL_free(buf);
+                }
+                return false;
+            }
+            try {
+                certificateChain[i] = buf.reinterpret(length, localArena, null).toArray(ValueLayout.JAVA_BYTE);
+            } finally {
+                OPENSSL_free(buf);
+            }
+        }
+        return true;
+    }
 }

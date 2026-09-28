@@ -32,6 +32,9 @@ import org.apache.tomcat.util.descriptor.web.FilterDef;
 import org.apache.tomcat.util.descriptor.web.FilterMap;
 import org.apache.tomcat.util.res.StringManager;
 
+/**
+ * Dynamic filter registration implementation.
+ */
 public class ApplicationFilterRegistration implements FilterRegistration.Dynamic {
 
     /**
@@ -42,6 +45,12 @@ public class ApplicationFilterRegistration implements FilterRegistration.Dynamic
     private final FilterDef filterDef;
     private final Context context;
 
+    /**
+     * Constructs a new ApplicationFilterRegistration.
+     *
+     * @param filterDef the filter definition
+     * @param context the context
+     */
     public ApplicationFilterRegistration(FilterDef filterDef, Context context) {
         this.filterDef = filterDef;
         this.context = context;
@@ -62,8 +71,11 @@ public class ApplicationFilterRegistration implements FilterRegistration.Dynamic
             }
         }
 
-        if (servletNames != null) {
+        if (servletNames != null && servletNames.length > 0) {
             for (String servletName : servletNames) {
+                if (servletName == null) {
+                    throw new IllegalArgumentException(sm.getString("applicationFilterRegistration.nullServletName"));
+                }
                 filterMap.addServletName(servletName);
             }
 
@@ -72,8 +84,9 @@ public class ApplicationFilterRegistration implements FilterRegistration.Dynamic
             } else {
                 context.addFilterMapBefore(filterMap);
             }
+        } else {
+            throw new IllegalArgumentException(sm.getString("applicationFilterRegistration.nullServletName"));
         }
-        // else error?
     }
 
     @Override
@@ -90,9 +103,11 @@ public class ApplicationFilterRegistration implements FilterRegistration.Dynamic
             }
         }
 
-        if (urlPatterns != null) {
-            // % decoded (if necessary) using UTF-8
+        if (urlPatterns != null && urlPatterns.length > 0) {
             for (String urlPattern : urlPatterns) {
+                if (urlPattern == null) {
+                    throw new IllegalArgumentException(sm.getString("applicationFilterRegistration.nullUrlPattern"));
+                }
                 filterMap.addURLPattern(urlPattern);
             }
 
@@ -101,8 +116,9 @@ public class ApplicationFilterRegistration implements FilterRegistration.Dynamic
             } else {
                 context.addFilterMapBefore(filterMap);
             }
+        } else {
+            throw new IllegalArgumentException(sm.getString("applicationFilterRegistration.nullUrlPattern"));
         }
-        // else error?
 
     }
 
@@ -189,8 +205,10 @@ public class ApplicationFilterRegistration implements FilterRegistration.Dynamic
 
         // Have to add in a separate loop since spec requires no updates at all
         // if there is an issue
-        for (Map.Entry<String,String> entry : initParameters.entrySet()) {
-            setInitParameter(entry.getKey(), entry.getValue());
+        if (conflicts.isEmpty()) {
+            for (Map.Entry<String,String> entry : initParameters.entrySet()) {
+                setInitParameter(entry.getKey(), entry.getValue());
+            }
         }
 
         return conflicts;

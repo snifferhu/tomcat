@@ -39,6 +39,13 @@ public abstract class GenericFilter implements Filter, FilterConfig, Serializabl
      */
     private volatile FilterConfig filterConfig;
 
+    /**
+     * Constructs a new GenericFilter.
+     */
+    public GenericFilter() {
+        // NO-OP
+    }
+
 
     @Override
     public String getInitParameter(String name) {

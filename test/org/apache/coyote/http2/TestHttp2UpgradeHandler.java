@@ -18,6 +18,7 @@ package org.apache.coyote.http2;
 
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 
 import org.junit.Assert;
 import org.junit.Test;
@@ -37,9 +38,9 @@ public class TestHttp2UpgradeHandler extends Http2TestBase {
 
         Context ctxt = getProgrammaticRootContext();
         Tomcat.addServlet(ctxt, "simple", new SimpleServlet());
-        ctxt.addServletMappingDecoded("/simple", "simple");
+        ctxt.addServletMapping("/simple", "simple");
         Tomcat.addServlet(ctxt, "large", new LargeHeaderServlet());
-        ctxt.addServletMappingDecoded("/large", "large");
+        ctxt.addServletMapping("/large", "large");
 
         tomcat.start();
 
@@ -63,6 +64,30 @@ public class TestHttp2UpgradeHandler extends Http2TestBase {
                 "3-Header-[content-type]-[text/plain;charset=UTF-8]\n" + "3-Header-[content-length]-[2]\n" +
                 "3-Header-[date]-[Wed, 11 Nov 2015 19:18:42 GMT]\n" + "3-HeadersEnd\n" + "3-Body-2\n" +
                 "3-EndOfStream\n", output.getTrace());
+    }
+
+
+    @Test
+    public void testUpgradeWithRequestBodyNoSavePostSize() throws Exception {
+        enableHttp2();
+
+        Tomcat tomcat = getTomcatInstance();
+        tomcat.getConnector().setProperty("maxSavePostSize", "0");
+        configureAndStartWebApplication();
+
+        openClientConnection();
+
+        byte[] upgradeRequest =
+                ("GET /simple HTTP/1.1\r\n" + "Host: localhost:" + getPort() + "\r\n" + "Content-Length: 18\r\n" +
+                        "Connection: Upgrade,HTTP2-Settings\r\n" + "Upgrade: h2c\r\n" + EMPTY_HTTP2_SETTINGS_HEADER +
+                        "\r\n" + "Small request body").getBytes(StandardCharsets.ISO_8859_1);
+        os.write(upgradeRequest);
+        os.flush();
+
+        Assert.assertTrue("Failed to read HTTP Upgrade response", readHttpUpgradeResponse());
+
+        sendClientPreface();
+        validateHttp2InitialResponse();
     }
 
 
@@ -121,7 +146,7 @@ public class TestHttp2UpgradeHandler extends Http2TestBase {
 
         Context ctxt = getProgrammaticRootContext();
         Tomcat.addServlet(ctxt, "ReadRequestBodyServlet", new ReadRequestBodyServlet());
-        ctxt.addServletMappingDecoded("/", "ReadRequestBodyServlet");
+        ctxt.addServletMapping("/", "ReadRequestBodyServlet");
 
         if (tooBig) {
             // Reduce maxSavePostSize rather than use a larger request body
@@ -171,6 +196,61 @@ public class TestHttp2UpgradeHandler extends Http2TestBase {
 
 
     @Test
+    public void testUpgradeAdvertisedInitialWindowSize() throws Exception {
+        enableHttp2();
+
+        Tomcat tomcat = getTomcatInstance();
+
+        Context ctxt = getProgrammaticRootContext();
+        Tomcat.addServlet(ctxt, "simple", new SimpleServlet());
+        ctxt.addServletMapping("/simple", "simple");
+
+        tomcat.start();
+
+        openClientConnection();
+
+        // Advertise an initial window size that is smaller than the default
+        int initialWindowSize = 4096;
+        byte[] settingsPayload = new byte[6];
+        ByteUtil.setTwoBytes(settingsPayload, 0, Setting.INITIAL_WINDOW_SIZE.getId());
+        ByteUtil.setFourBytes(settingsPayload, 2, initialWindowSize);
+        String settingsHeader = "HTTP2-Settings: " + Base64.getUrlEncoder().encodeToString(settingsPayload) + "\r\n";
+
+        doHttpUpgrade(DEFAULT_CONNECTION_HEADER_VALUE, "h2c", settingsHeader, true);
+
+        sendClientPreface();
+
+        // - 101 response acts as acknowledgement of the HTTP2-Settings header
+        // Need to read 5 frames
+        // - settings (server settings - must be first)
+        // - settings ack (for the settings frame in the client preface)
+        // - ping
+        // - headers (for response)
+        // - data (for response body, limited to the advertised initial window)
+        parser.readFrame();
+        parser.readFrame();
+        parser.readFrame();
+        parser.readFrame();
+        parser.readFrame();
+
+        Assert.assertEquals("0-Settings-[3]-[200]\n" + "0-Settings-End\n" + "0-Settings-Ack\n" +
+                "0-Ping-[0,0,0,0,0,0,0,1]\n" + "1-HeadersStart\n" + "1-Header-[:status]-[200]\n" +
+                "1-Header-[content-type]-[application/octet-stream]\n" + "1-Header-[content-length]-[" +
+                SimpleServlet.CONTENT_LENGTH + "]\n" + "1-Header-[date]-[" + DEFAULT_DATE + "]\n" + "1-HeadersEnd\n" +
+                "1-Body-" + initialWindowSize + "\n", output.getTrace());
+        output.clearTrace();
+
+        // The advertised stream window is now exhausted. Expand it and the
+        // rest of the response should follow.
+        sendWindowUpdate(1, initialWindowSize);
+        parser.readFrame();
+
+        Assert.assertEquals("1-Body-" + (SimpleServlet.CONTENT_LENGTH - initialWindowSize) + "\n" + "1-EndOfStream\n",
+                output.getTrace());
+    }
+
+
+    @Test
     public void testActiveConnectionCountAndClientTimeout() throws Exception {
 
         enableHttp2(2, false, 10000, 10000, 4000, 2000, 2000);
@@ -179,7 +259,7 @@ public class TestHttp2UpgradeHandler extends Http2TestBase {
 
         Context ctxt = getProgrammaticRootContext();
         Tomcat.addServlet(ctxt, "simple", new SimpleServlet());
-        ctxt.addServletMappingDecoded("/simple", "simple");
+        ctxt.addServletMapping("/simple", "simple");
 
         tomcat.start();
 

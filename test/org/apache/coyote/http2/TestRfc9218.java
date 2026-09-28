@@ -78,7 +78,9 @@ public class TestRfc9218 extends Http2TestBase {
         // Add 1k to the connection window. Should be used for stream 17.
         sendWindowUpdate(0, 1024);
         parser.readFrame();
-        Assert.assertEquals("17-Body-1024\n", output.getTrace());
+        trace = output.getTrace();
+        Assert.assertEquals("17-Body-1024\n", trace);
+        System.out.println(trace);
         output.clearTrace();
 
         // 17 - 6k body left
@@ -93,7 +95,9 @@ public class TestRfc9218 extends Http2TestBase {
         sendWindowUpdate(0, 1024);
         parser.readFrame();
 
-        Assert.assertEquals("21-Body-1024\n", output.getTrace());
+        trace = output.getTrace();
+        Assert.assertEquals("21-Body-1024\n", trace);
+        System.out.println(trace);
         output.clearTrace();
 
         // 17 - 6k body left
@@ -112,6 +116,7 @@ public class TestRfc9218 extends Http2TestBase {
         parser.readFrame();
 
         trace = output.getTrace();
+        System.out.println(trace);
         Assert.assertTrue(trace.contains("17-Body-877\n"));
         trace = trace.replace("17-Body-877\n", "");
         Assert.assertTrue(trace.contains("19-Body-1170\n"));
@@ -129,10 +134,13 @@ public class TestRfc9218 extends Http2TestBase {
         // Add 1 byte to the connection window. Due to rounding up, each stream should get 1 byte.
         sendWindowUpdate(0, 1);
         parser.readFrame();
+        System.out.println(output.getTrace());
         parser.readFrame();
+        System.out.println(output.getTrace());
         parser.readFrame();
 
         trace = output.getTrace();
+        System.out.println(trace);
         Assert.assertTrue(trace.contains("17-Body-1\n"));
         trace = trace.replace("17-Body-1\n", "");
         Assert.assertTrue(trace.contains("19-Body-1\n"));

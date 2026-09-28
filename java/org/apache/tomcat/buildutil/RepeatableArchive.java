@@ -47,6 +47,12 @@ import org.apache.tools.ant.types.FileSet;
  */
 public class RepeatableArchive extends Task {
 
+    /**
+     * Default constructor.
+     */
+    public RepeatableArchive() {
+    }
+
     private final List<FileSet> filesets = new ArrayList<>();
 
     private String datetime;
@@ -62,11 +68,21 @@ public class RepeatableArchive extends Task {
     }
 
 
+    /**
+     * Set the datetime string.
+     *
+     * @param datetime the datetime string
+     */
     public void setDatetime(String datetime) {
         this.datetime = datetime;
     }
 
 
+    /**
+     * Set the datetime pattern.
+     *
+     * @param pattern the datetime pattern
+     */
     public void setPattern(String pattern) {
         this.pattern = pattern;
     }

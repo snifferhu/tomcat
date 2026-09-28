@@ -44,8 +44,7 @@ import org.apache.juli.logging.LogFactory;
 import org.apache.tomcat.util.res.StringManager;
 
 /**
- * Wraps the {@link AsynchronousSocketChannel} with SSL/TLS. This needs a lot more testing before it can be considered
- * robust.
+ * Wraps the {@link AsynchronousSocketChannel} with SSL/TLS.
  */
 public class AsyncChannelWrapperSecure implements AsyncChannelWrapper {
 
@@ -62,6 +61,12 @@ public class AsyncChannelWrapperSecure implements AsyncChannelWrapper {
     private final AtomicBoolean writing = new AtomicBoolean(false);
     private final AtomicBoolean reading = new AtomicBoolean(false);
 
+    /**
+     * Constructs a new secure wrapper for the given channel and SSL engine.
+     *
+     * @param socketChannel the underlying {@link AsynchronousSocketChannel}
+     * @param sslEngine the SSL engine for encryption
+     */
     public AsyncChannelWrapperSecure(AsynchronousSocketChannel socketChannel, SSLEngine sslEngine) {
         this.socketChannel = socketChannel;
         this.sslEngine = sslEngine;
@@ -259,10 +264,7 @@ public class AsyncChannelWrapperSecure implements AsyncChannelWrapper {
                     if (forceRead) {
                         forceRead = false;
                         Future<Integer> f = socketChannel.read(socketReadBuffer);
-                        Integer socketRead = f.get();
-                        if (socketRead.intValue() == -1) {
-                            throw new EOFException(sm.getString("asyncChannelWrapperSecure.eof"));
-                        }
+                        checkFutureRead(f);
                     }
 
                     socketReadBuffer.flip();
@@ -333,6 +335,14 @@ public class AsyncChannelWrapperSecure implements AsyncChannelWrapper {
     }
 
 
+    private static void checkFutureRead(Future<Integer> future) throws EOFException, ExecutionException,
+            InterruptedException {
+        Integer bytesRead = future.get();
+        if (bytesRead.intValue() < 0) {
+            throw new EOFException(sm.getString("asyncChannelWrapperSecure.eof"));
+        }
+    }
+
     private class WebSocketSslHandshakeThread extends Thread {
 
         private final WrapperFuture<Void,Void> hFuture;
@@ -363,15 +373,17 @@ public class AsyncChannelWrapperSecure implements AsyncChannelWrapper {
                             SSLEngineResult r = sslEngine.wrap(DUMMY, socketWriteBuffer);
                             checkResult(r, true);
                             socketWriteBuffer.flip();
-                            Future<Integer> fWrite = socketChannel.write(socketWriteBuffer);
-                            fWrite.get();
+                            while (socketWriteBuffer.hasRemaining()) {
+                                Future<Integer> fWrite = socketChannel.write(socketWriteBuffer);
+                                fWrite.get();
+                            }
                             break;
                         }
                         case NEED_UNWRAP: {
                             socketReadBuffer.compact();
                             if (socketReadBuffer.position() == 0 || resultStatus == Status.BUFFER_UNDERFLOW) {
                                 Future<Integer> fRead = socketChannel.read(socketReadBuffer);
-                                fRead.get();
+                                checkFutureRead(fRead);
                             }
                             socketReadBuffer.flip();
                             SSLEngineResult r = sslEngine.unwrap(socketReadBuffer, DUMMY);
@@ -473,7 +485,7 @@ public class AsyncChannelWrapperSecure implements AsyncChannelWrapper {
 
         @Override
         public final boolean isDone() {
-            return completionLatch.getCount() > 0;
+            return completionLatch.getCount() == 0;
         }
 
         @Override

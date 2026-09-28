@@ -422,7 +422,7 @@ public final class StandardServer extends LifecycleMBeanBase implements Server {
 
 
     /**
-     * Set the utility threads daemon flag. The default value is true.
+     * Set the utility threads daemon flag. The default value is false.
      *
      * @param utilityThreadsAsDaemon the new thread daemon flag
      */
@@ -432,6 +432,8 @@ public final class StandardServer extends LifecycleMBeanBase implements Server {
 
 
     /**
+     * Return the period between two lifecycle events, in seconds.
+     *
      * @return The period between two lifecycle events, in seconds
      */
     public int getPeriodicEventDelay() {
@@ -479,6 +481,9 @@ public final class StandardServer extends LifecycleMBeanBase implements Server {
         support.firePropertyChange("service", null, service);
     }
 
+    /**
+     * Stop the await thread by closing the await socket and interrupting the thread.
+     */
     public void stopAwait() {
         stopAwait = true;
         Thread t = awaitThread;
@@ -549,7 +554,7 @@ public final class StandardServer extends LifecycleMBeanBase implements Server {
                 StringBuilder command = new StringBuilder();
                 try {
                     InputStream stream;
-                    long acceptStartTime = System.currentTimeMillis();
+                    long acceptStartTime = System.nanoTime();
                     try {
                         socket = serverSocket.accept();
                         socket.setSoTimeout(10 * 1000); // Ten seconds
@@ -558,7 +563,7 @@ public final class StandardServer extends LifecycleMBeanBase implements Server {
                         // This should never happen but bug 56684 suggests that
                         // it does.
                         log.warn(sm.getString("standardServer.accept.timeout",
-                                Long.valueOf(System.currentTimeMillis() - acceptStartTime)), ste);
+                                Long.valueOf(TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - acceptStartTime))), ste);
                         continue;
                     } catch (IOException ioe) {
                         if (stopAwait) {
@@ -662,6 +667,8 @@ public final class StandardServer extends LifecycleMBeanBase implements Server {
     }
 
     /**
+     * Return the JMX ObjectNames for all configured services.
+     *
      * @return the JMX service names.
      */
     public ObjectName[] getServiceNames() {
@@ -820,7 +827,7 @@ public final class StandardServer extends LifecycleMBeanBase implements Server {
             ObjectName sname = new ObjectName("Catalina:type=StoreConfig");
             MBeanServer server = Registry.getRegistry(null).getMBeanServer();
             if (server.isRegistered(sname)) {
-                server.invoke(sname, "store", new Object[] { context }, new String[] { "java.lang.String" });
+                server.invoke(sname, "store", new Object[] { context }, new String[] { "org.apache.catalina.Context" });
             } else {
                 log.error(sm.getString("standardServer.storeConfig.notAvailable", sname));
             }

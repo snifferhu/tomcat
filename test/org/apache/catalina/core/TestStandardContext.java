@@ -19,9 +19,13 @@ package org.apache.catalina.core;
 import java.io.File;
 import java.io.IOException;
 import java.io.PrintWriter;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
+import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.atomic.AtomicReference;
 
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.GenericFilter;
@@ -141,13 +145,13 @@ public class TestStandardContext extends TomcatBaseTest {
         context.addFilterDef(filterDef);
         FilterMap filterMap = new FilterMap();
         filterMap.setFilterName("Bug46243");
-        filterMap.addURLPatternDecoded("*");
+        filterMap.addURLPattern("*");
         context.addFilterMap(filterMap);
 
         // Add a test servlet so there is something to generate a response if
         // it works (although it shouldn't)
         Tomcat.addServlet(context, "Bug46243", new HelloWorldServlet());
-        context.addServletMappingDecoded("/", "Bug46243");
+        context.addServletMapping("/", "Bug46243");
     }
 
     private static final class Bug46243Client extends SimpleHttpClient {
@@ -711,8 +715,8 @@ public class TestStandardContext extends TomcatBaseTest {
             // to set our own MultipartConfigElement.
             w.setMultipartConfigElement(new MultipartConfigElement(""));
 
-            context.addServletMappingDecoded("/regular", "regular");
-            context.addServletMappingDecoded("/multipart", "multipart");
+            context.addServletMapping("/regular", "regular");
+            context.addServletMapping("/multipart", "multipart");
             tomcat.start();
 
             setPort(tomcat.getConnector().getLocalPort());
@@ -1037,6 +1041,56 @@ public class TestStandardContext extends TomcatBaseTest {
         Assert.assertTrue(containerListenerOk);
         Assert.assertTrue(lifecycleListenerOk);
     }
+
+    @Test
+    public void testGetServletContextReturnsSameInstanceUnderConcurrency() throws Exception {
+        Tomcat tomcat = getTomcatInstance();
+        File appDir = new File(tomcat.getHost().getAppBaseFile(), "ROOT");
+        if (!appDir.mkdirs() && !appDir.isDirectory()) {
+            Assert.fail("Unable to create appDir");
+        }
+
+        StandardContext standardContext = (StandardContext) tomcat.addContext("", appDir.getAbsolutePath());
+        tomcat.start();
+
+        // Null the context field to simulate the window during reload
+        standardContext.context = null;
+
+        int numThreads = 20;
+        CyclicBarrier barrier = new CyclicBarrier(numThreads);
+        List<Thread> threads = new ArrayList<>();
+        ServletContext[] results = new ServletContext[numThreads];
+        AtomicReference<Throwable> failure = new AtomicReference<>();
+
+        for (int numOfThread = 0; numOfThread < numThreads; numOfThread++) {
+            final int index = numOfThread;
+            Thread thread = new Thread(() -> {
+                try {
+                    barrier.await();
+                    results[index] = standardContext.getServletContext();
+                } catch (Throwable ex) {
+                    failure.set(ex);
+                }
+            });
+            thread.start();
+            threads.add(thread);
+        }
+
+        for (Thread thread : threads) {
+            thread.join(5000);
+        }
+
+        if (failure.get() != null) {
+            Assert.fail("Thread failed: " + failure.get());
+        }
+
+        ServletContext first = results[0];
+        Assert.assertNotNull(first);
+        for (int i = 1; i < numThreads; i++) {
+            Assert.assertSame(first, results[i]);
+        }
+    }
+
 
     private static boolean customWrapperClassOk = false;
 

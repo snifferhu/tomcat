@@ -27,19 +27,42 @@ import java.util.logging.LogRecord;
  *  log4j.appender.A1=org.apache.log4j.ConsoleAppender
  *  log4j.appender.A1.layout=org.apache.log4j.PatternLayout
  *  log4j.appender.A1.Target=System.err
- *  log4j.appender.A1.layout.ConversionPattern=%r %-15.15c{2} %-1.1p %m %n
+ *  log4j.appender.A1.layout.ConversionPattern=%r %-20.20c{2} %-1.1p %m %n
  * </pre>
  *
  * Example: 1130122891846 Http11BaseProtocol I Initializing Coyote HTTP/1.1 on http-8800
  */
 public class JdkLoggerFormatter extends Formatter {
 
-    // values from JDK Level
+    /**
+     * Constructs a new JdkLoggerFormatter.
+     */
+    public JdkLoggerFormatter() {
+    }
+
+    /**
+     * Log level value for TRACE.
+     */
     public static final int LOG_LEVEL_TRACE = 400;
+    /**
+     * Log level value for DEBUG.
+     */
     public static final int LOG_LEVEL_DEBUG = 500;
+    /**
+     * Log level value for INFO.
+     */
     public static final int LOG_LEVEL_INFO = 800;
+    /**
+     * Log level value for WARN.
+     */
     public static final int LOG_LEVEL_WARN = 900;
+    /**
+     * Log level value for ERROR.
+     */
     public static final int LOG_LEVEL_ERROR = 1000;
+    /**
+     * Log level value for FATAL.
+     */
     public static final int LOG_LEVEL_FATAL = 1000;
 
     @Override
@@ -50,7 +73,9 @@ public class JdkLoggerFormatter extends Formatter {
         long time = record.getMillis();
         String message = formatMessage(record);
 
-
+        if (name == null) {
+            name = "";
+        }
         if (name.indexOf('.') >= 0) {
             name = name.substring(name.lastIndexOf('.') + 1);
         }
@@ -59,9 +84,6 @@ public class JdkLoggerFormatter extends Formatter {
         StringBuilder buf = new StringBuilder();
 
         buf.append(time);
-
-        // pad to 8 to make it more readable
-        buf.append(" ".repeat(Math.max(0, 8 - buf.length())));
 
         // Append a readable representation of the log level.
         switch (level) {
@@ -85,13 +107,12 @@ public class JdkLoggerFormatter extends Formatter {
                 buf.append("   ");
         }
 
-
         // Append the name of the log instance if so configured
         buf.append(name);
         buf.append(' ');
 
         // pad to 20 chars
-        buf.append(" ".repeat(Math.max(0, 8 - buf.length())));
+        buf.append(" ".repeat(Math.max(0, 20 - (name.length() + 1))));
 
         // Append the message
         buf.append(LogUtil.escape(message));

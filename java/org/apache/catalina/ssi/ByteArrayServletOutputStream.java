@@ -23,7 +23,8 @@ import jakarta.servlet.WriteListener;
 
 
 /**
- * Class that extends ServletOutputStream, used as a wrapper from within <code>SsiInclude</code>
+ * Class that extends ServletOutputStream to capture output into an in-memory byte array. Used by
+ * <code>SSIFilter</code> and <code>SSIServletExternalResolver</code>.
  *
  * @see ServletOutputStream and ByteArrayOutputStream
  */
@@ -43,7 +44,9 @@ public class ByteArrayServletOutputStream extends ServletOutputStream {
 
 
     /**
-     * @return the byte array.
+     * Returns the underlying byte array.
+     *
+     * @return the byte array
      */
     public byte[] toByteArray() {
         return buf.toByteArray();
@@ -60,23 +63,14 @@ public class ByteArrayServletOutputStream extends ServletOutputStream {
         buf.write(b);
     }
 
-    /**
-     * TODO SERVLET 3.1
-     */
     @Override
     public boolean isReady() {
-        // TODO Auto-generated method stub
-        return false;
+        return true;
     }
 
 
-    /**
-     * TODO SERVLET 3.1
-     */
     @Override
     public void setWriteListener(WriteListener listener) {
-        // TODO Auto-generated method stub
-
     }
 
 

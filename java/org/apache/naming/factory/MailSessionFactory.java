@@ -55,6 +55,11 @@ import jakarta.mail.Session;
  */
 public class MailSessionFactory implements ObjectFactory {
 
+    /**
+     * Default constructor.
+     */
+    public MailSessionFactory() {
+    }
 
     /**
      * The Java type for which this factory knows how to create objects.
@@ -62,11 +67,29 @@ public class MailSessionFactory implements ObjectFactory {
     protected static final String factoryType = "jakarta.mail.Session";
 
 
+    /**
+     * Create a new resource instance.
+     * <p>
+     * The {@code password} attribute is only used when {@code mail.smtp.user} or {@code mail.user} is also
+     * configured; a password without a user is ignored.
+     * </p>
+     *
+     * @param refObj      The reference object describing the Session
+     * @param name        the bound name
+     * @param context     unused
+     * @param env         unused
+     *
+     * @return the object instance
+     *
+     * @throws Exception if an error occurs creating the instance
+     */
     @Override
     public Object getObjectInstance(Object refObj, Name name, Context context, Hashtable<?,?> env) throws Exception {
 
+        if (!(refObj instanceof Reference ref)) {
+            return null;
+        }
         // Return null if we cannot create an object of the requested type
-        final Reference ref = (Reference) refObj;
         if (!ref.getClassName().equals(factoryType)) {
             return null;
         }
@@ -113,5 +136,6 @@ public class MailSessionFactory implements ObjectFactory {
 
         // Create and return the new Session object
         return Session.getInstance(props, auth);
+
     }
 }

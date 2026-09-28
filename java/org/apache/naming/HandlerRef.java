@@ -48,25 +48,25 @@ public class HandlerRef extends AbstractRef {
 
 
     /**
-     * Handler Classname address type.
+     * Handler Classname local part address type.
      */
     public static final String HANDLER_LOCALPART = "handlerlocalpart";
 
 
     /**
-     * Handler Classname address type.
+     * Handler Classname namespace address type.
      */
     public static final String HANDLER_NAMESPACE = "handlernamespace";
 
 
     /**
-     * Handler Classname address type.
+     * Handler param name address type.
      */
     public static final String HANDLER_PARAMNAME = "handlerparamname";
 
 
     /**
-     * Handler Classname address type.
+     * Handler param value address type.
      */
     public static final String HANDLER_PARAMVALUE = "handlerparamvalue";
 
@@ -83,11 +83,25 @@ public class HandlerRef extends AbstractRef {
     public static final String HANDLER_PORTNAME = "handlerportname";
 
 
+    /**
+     * Create a new HandlerRef with the specified reference name and handler class.
+     *
+     * @param refname      The reference name
+     * @param handlerClass The handler class name
+     */
     public HandlerRef(String refname, String handlerClass) {
         this(refname, handlerClass, null, null);
     }
 
 
+    /**
+     * Create a new HandlerRef with the specified parameters.
+     *
+     * @param refname           The reference name
+     * @param handlerClass      The handler class name
+     * @param factory           The factory class name
+     * @param factoryLocation   The factory location
+     */
     public HandlerRef(String refname, String handlerClass, String factory, String factoryLocation) {
         super(refname, factory, factoryLocation);
         StringRefAddr refAddr;

@@ -35,6 +35,12 @@ import org.apache.tomcat.util.res.StringManager;
  */
 public class NetMaskSet {
 
+    /**
+     * Default constructor.
+     */
+    public NetMaskSet() {
+    }
+
     private static final StringManager sm = StringManager.getManager(NetMaskSet.class);
 
     private final Set<NetMask> netmasks = new HashSet<>();
@@ -60,11 +66,11 @@ public class NetMaskSet {
     /**
      * Tests if the provided IP address matches any of the {@link NetMask}s in the set.
      *
-     * @param ipAddress an IP address to check
+     * @param ipAddress an IP address or hostname to check
      *
      * @return {@code true} if the passed IP address is matched by any of the {@link NetMask}s in the set
      *
-     * @throws UnknownHostException if the passed input is not a valid IP address
+     * @throws UnknownHostException if the passed input cannot be resolved to an IP address
      */
     public boolean contains(String ipAddress) throws UnknownHostException {
 
@@ -98,7 +104,7 @@ public class NetMaskSet {
     }
 
     /**
-     * removes all entries from the set
+     * Removes all entries from the set.
      */
     public void clear() {
         netmasks.clear();
@@ -163,6 +169,15 @@ public class NetMaskSet {
     }
 
 
+    /**
+     * Parses a comma-separated list of IP addresses and CIDR ranges into a NetMaskSet.
+     *
+     * @param input The comma-separated string of IP addresses and CIDR ranges
+     *
+     * @return A new NetMaskSet containing the parsed entries
+     *
+     * @throws IllegalArgumentException If the input contains invalid entries
+     */
     public static NetMaskSet parse(String input) {
         NetMaskSet result = new NetMaskSet();
 

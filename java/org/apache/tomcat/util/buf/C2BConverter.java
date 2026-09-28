@@ -42,10 +42,15 @@ public final class C2BConverter {
     private CharBuffer cb = null;
 
     /**
-     * Leftover buffer used for multi-characters characters.
+     * Leftover buffer used for multi-character characters.
      */
     private final CharBuffer leftovers;
 
+    /**
+     * Constructs a C2BConverter for the given charset.
+     *
+     * @param charset the charset to use for encoding
+     */
     public C2BConverter(Charset charset) {
         encoder = charset.newEncoder();
         encoder.onUnmappableCharacter(CodingErrorAction.REPLACE).onMalformedInput(CodingErrorAction.REPLACE);
@@ -61,15 +66,26 @@ public final class C2BConverter {
             encoder.reset();
         } catch (Throwable t) {
             ExceptionUtils.handleThrowable(t);
-            log.warn(sm.getString("c2bConverter.decoderResetFail", encoder.charset()), t);
+            log.warn(sm.getString("c2bConverter.encoderResetFail", encoder.charset()), t);
         }
         leftovers.position(0);
     }
 
+    /**
+     * Returns whether there are leftover characters pending encoding.
+     *
+     * @return true if there are leftovers
+     */
     public boolean isUnderflow() {
         return (leftovers.position() > 0);
     }
 
+    /**
+     * Returns whether there are leftover characters pending encoding.
+     *
+     * @return true if there are leftovers
+     */
+    @Deprecated
     public boolean isUndeflow() {
         return isUnderflow();
     }
@@ -105,7 +121,13 @@ public final class C2BConverter {
             int pos = bb.position();
             // Loop until one char is encoded or there is an encoder error
             do {
-                leftovers.put((char) cc.subtract());
+                int c = cc.subtract();
+                if (c < 0) {
+                    leftovers.flip();
+                    result = encoder.encode(leftovers, bb, false);
+                    break;
+                }
+                leftovers.put((char) c);
                 leftovers.flip();
                 result = encoder.encode(leftovers, bb, false);
                 leftovers.position(leftovers.limit());
@@ -117,7 +139,7 @@ public final class C2BConverter {
             cb.position(cc.getStart());
             leftovers.position(0);
         }
-        // Do the decoding and get the results into the byte chunk and the char
+        // Do the encoding and get the results into the byte chunk and the char
         // chunk
         result = encoder.encode(cb, bb, false);
         if (result.isError() || result.isMalformed()) {
@@ -170,6 +192,11 @@ public final class C2BConverter {
             int pos = bb.position();
             // Loop until one char is encoded or there is an encoder error
             do {
+                if (!cc.hasRemaining()) {
+                    leftovers.flip();
+                    result = encoder.encode(leftovers, bb, false);
+                    break;
+                }
                 leftovers.put(cc.get());
                 leftovers.flip();
                 result = encoder.encode(leftovers, bb, false);
@@ -182,7 +209,7 @@ public final class C2BConverter {
             cb.position(cc.position());
             leftovers.position(0);
         }
-        // Do the decoding and get the results into the byte chunk and the char
+        // Do the encoding and get the results into the byte chunk and the char
         // chunk
         result = encoder.encode(cb, bb, false);
         if (result.isError() || result.isMalformed()) {
@@ -204,6 +231,11 @@ public final class C2BConverter {
         }
     }
 
+    /**
+     * Returns the charset used by this converter.
+     *
+     * @return the charset
+     */
     public Charset getCharset() {
         return encoder.charset();
     }

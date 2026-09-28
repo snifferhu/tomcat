@@ -18,11 +18,11 @@
 package org.apache.tomcat.util.openssl;
 
 import java.lang.invoke.MethodHandle;
+
 import java.lang.foreign.*;
 import static java.lang.foreign.ValueLayout.*;
 import static org.apache.tomcat.util.openssl.openssl_h.OpenSSL_version;
 import static org.apache.tomcat.util.openssl.openssl_h.OpenSSL_version_num;
-import static org.apache.tomcat.util.openssl.openssl_h.SSL_get1_peer_certificate;
 
 /**
  * Methods used present in older OpenSSL versions but not in the current major version or OpenSSL derivatives.
@@ -31,19 +31,50 @@ import static org.apache.tomcat.util.openssl.openssl_h.SSL_get1_peer_certificate
 public class openssl_h_Compatibility {
 
     public static final boolean OPENSSL;
+    public static final boolean OPENSSL1;
     public static final boolean OPENSSL3;
     public static final boolean BORINGSSL;
     public static final boolean LIBRESSL;
+
+    public static final int MAJOR;
+    public static final int MINOR;
+
     static {
         String versionString = OpenSSL_version(0).getString(0);
         OPENSSL = versionString.contains("OpenSSL");
+        OPENSSL1 = OPENSSL && OpenSSL_version_num() < 0x3000000fL;
         OPENSSL3 = OPENSSL && OpenSSL_version_num() >= 0x3000000fL;
         BORINGSSL = versionString.contains("BoringSSL");
         LIBRESSL = versionString.contains("LibreSSL");
+        int majorVersion = 0;
+        int minorVersion = 0;
+        try {
+            String[] blocks = versionString.split("\\s");
+            if (blocks.length >= 2) {
+                versionString = blocks[1];
+            }
+            String[] versionNumberStrings = versionString.split("\\.");
+            if (versionNumberStrings.length >= 2) {
+                majorVersion = Integer.parseInt(versionNumberStrings[0]);
+                minorVersion = Integer.parseInt(versionNumberStrings[1]);
+            }
+        } catch (Exception e) {
+            // Ignore, default to 0
+        } finally {
+            MAJOR = majorVersion;
+            MINOR = minorVersion;
+        }
+    }
+
+    public static boolean isLibreSSLPre35() {
+        return LIBRESSL && ((MAJOR == 3 && MINOR < 5) || MAJOR < 3);
     }
 
     // OpenSSL 1.1 FIPS_mode
     public static int FIPS_mode() {
+        if (isLibreSSLPre35()) {
+            return 0;
+        }
         class Holder {
             static final String NAME = "FIPS_mode";
             static final FunctionDescriptor DESC = FunctionDescriptor.of(JAVA_INT);
@@ -62,6 +93,9 @@ public class openssl_h_Compatibility {
 
     // OpenSSL 1.1 FIPS_mode_set
     public static int FIPS_mode_set(int r) {
+        if (isLibreSSLPre35()) {
+            return 0;
+        }
         class Holder {
             static final String NAME = "FIPS_mode_set";
             static final FunctionDescriptor DESC = FunctionDescriptor.of(JAVA_INT, JAVA_INT);
@@ -117,22 +151,23 @@ public class openssl_h_Compatibility {
     // OpenSSL 1.1 SSL_get_peer_certificate
     public static MemorySegment SSL_get_peer_certificate(MemorySegment s) {
         if (OPENSSL3) {
-            return SSL_get1_peer_certificate(s);
-        } else {
-            class Holder {
-                static final String NAME = "SSL_get_peer_certificate";
-                static final FunctionDescriptor DESC = FunctionDescriptor.of(openssl_h.C_POINTER, openssl_h.C_POINTER);
-                static final MethodHandle MH = Linker.nativeLinker().downcallHandle(openssl_h.findOrThrow(NAME), DESC);
+            // This could be using SSL_get1_peer_certificate instead, as all the other implementations
+            // use SSL_get_peer_certificate which is equivalent to SSL_get1_peer_certificate
+            return MemorySegment.NULL;
+        }
+        class Holder {
+            static final String NAME = "SSL_get_peer_certificate";
+            static final FunctionDescriptor DESC = FunctionDescriptor.of(openssl_h.C_POINTER, openssl_h.C_POINTER);
+            static final MethodHandle MH = Linker.nativeLinker().downcallHandle(openssl_h.findOrThrow(NAME), DESC);
+        }
+        var mh$ = Holder.MH;
+        try {
+            if (openssl_h.TRACE_DOWNCALLS) {
+                openssl_h.traceDowncall(Holder.NAME, s);
             }
-            var mh$ = Holder.MH;
-            try {
-                if (openssl_h.TRACE_DOWNCALLS) {
-                    openssl_h.traceDowncall(Holder.NAME, s);
-                }
-                return (java.lang.foreign.MemorySegment) mh$.invokeExact(s);
-            } catch (Throwable ex$) {
-                throw new AssertionError("should not reach here", ex$);
-            }
+            return (java.lang.foreign.MemorySegment) mh$.invokeExact(s);
+        } catch (Throwable ex$) {
+            throw new AssertionError("should not reach here", ex$);
         }
     }
 
@@ -438,4 +473,47 @@ public class openssl_h_Compatibility {
         return ENGINE_METHOD_ALL;
     }
 
+    /**
+     * Function descriptor for:
+     * {@snippet lang = c : * int SSL_in_init(const SSL *s)
+     * }
+     */
+    public static int SSL_in_init(MemorySegment e) {
+        if (OPENSSL3 || BORINGSSL) {
+            class Holder {
+                static final FunctionDescriptor DESC = FunctionDescriptor.of(openssl_h.C_INT, openssl_h.C_POINTER);
+
+                static final MethodHandle MH = Linker.nativeLinker()
+                        .downcallHandle(openssl_h.findOrThrow("SSL_in_init"), DESC);
+            }
+            var mh$ = Holder.MH;
+            try {
+                return (int) mh$.invokeExact(e);
+            } catch (Throwable ex$) {
+                throw new AssertionError("should not reach here", ex$);
+            }
+        } else if (LIBRESSL) {
+            // Here it is a macro:
+            // #define SSL_ST_CONNECT 0x1000
+            // #define SSL_ST_ACCEPT 0x2000
+            // #define SSL_ST_INIT (SSL_ST_CONNECT|SSL_ST_ACCEPT)
+            // #define SSL_in_init (SSL_state((a))&SSL_ST_INIT)
+            final int SSL_ST_CONNECT = 0x1000;
+            final int SSL_ST_ACCEPT = 0x2000;
+            class Holder {
+                static final FunctionDescriptor DESC = FunctionDescriptor.of(openssl_h.C_INT, openssl_h.C_POINTER);
+
+                static final MethodHandle MH = Linker.nativeLinker()
+                        .downcallHandle(openssl_h.findOrThrow("SSL_state"), DESC);
+            }
+            var mh$ = Holder.MH;
+            try {
+                return ((int) mh$.invokeExact(e) & ((SSL_ST_CONNECT | SSL_ST_ACCEPT)));
+            } catch (Throwable ex$) {
+                throw new AssertionError("should not reach here", ex$);
+            }
+        } else {
+            return 0;
+        }
+    }
 }

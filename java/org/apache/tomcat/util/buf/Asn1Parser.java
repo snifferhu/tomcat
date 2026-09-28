@@ -26,19 +26,38 @@ import org.apache.tomcat.util.res.StringManager;
 /**
  * This is a very basic ASN.1 parser that provides the limited functionality required by Tomcat. It is a long way from a
  * complete parser.
- * <p>
- * TODO: Consider extending/re-writing this parser and refactoring the SpnegoTokenFixer to use it.
  */
 public class Asn1Parser {
 
     private static final StringManager sm = StringManager.getManager(Asn1Parser.class);
 
+    /**
+     * ASN.1 tag for INTEGER type.
+     */
     public static final int TAG_INTEGER = 0x02;
+    /**
+     * ASN.1 tag for OCTET STRING type.
+     */
     public static final int TAG_OCTET_STRING = 0x04;
+    /**
+     * ASN.1 tag for NULL type.
+     */
     public static final int TAG_NULL = 0x05;
+    /**
+     * ASN.1 tag for OID type.
+     */
     public static final int TAG_OID = 0x06;
+    /**
+     * ASN.1 tag for UTF8String type.
+     */
     public static final int TAG_UTF8STRING = 0x0C;
+    /**
+     * ASN.1 tag for SEQUENCE type.
+     */
     public static final int TAG_SEQUENCE = 0x30;
+    /**
+     * Base value for ASN.1 context-specific attribute tags.
+     */
     public static final int TAG_ATTRIBUTE_BASE = 0xA0;
 
     private final byte[] source;
@@ -55,21 +74,43 @@ public class Asn1Parser {
     private final Deque<Integer> nestedSequenceEndPositions = new ArrayDeque<>();
 
 
+    /**
+     * Constructs a new Asn1Parser.
+     *
+     * @param source the source byte array to parse
+     */
     public Asn1Parser(byte[] source) {
         this.source = source;
     }
 
 
+    /**
+     * Returns whether the end of the source data has been reached.
+     *
+     * @return {@code true} if the end of the source data has been reached
+     */
     public boolean eof() {
         return pos == source.length;
     }
 
 
+    /**
+     * Returns the next ASN.1 tag byte without advancing the position.
+     *
+     * @return the next tag byte value
+     */
     public int peekTag() {
+        if (pos >= source.length) {
+            throw new IllegalArgumentException(
+                    sm.getString("asn1Parser.truncatedData", Integer.valueOf(1), Integer.valueOf(0)));
+        }
         return source[pos] & 0xFF;
     }
 
 
+    /**
+     * Parses a SEQUENCE tag and tracks nesting.
+     */
     public void parseTagSequence() {
         /*
          * Check to see if the parser has completely parsed, based on end position for the sequence, any previous
@@ -89,6 +130,24 @@ public class Asn1Parser {
     }
 
 
+    /**
+     * Is the parser at the expected end of a sequence (based on the stated length of the sequence).
+     *
+     * @return {@code true} if the parser is at the expected end of the sequence, otherwise {@code false}
+     */
+    public boolean isAtEndOfSequence() {
+        if (!nestedSequenceEndPositions.isEmpty() && nestedSequenceEndPositions.peekLast().intValue() == pos) {
+            return true;
+        }
+        return false;
+    }
+
+
+    /**
+     * Parses and validates an expected tag.
+     *
+     * @param tag the expected tag value
+     */
     public void parseTag(int tag) {
         int value = next();
         if (value != tag) {
@@ -98,25 +157,46 @@ public class Asn1Parser {
     }
 
 
+    /**
+     * Validates that the remaining data matches the parsed length.
+     */
     public void parseFullLength() {
         int len = parseLength();
-        if (len + pos != source.length) {
+        if (source.length - pos != len) {
             throw new IllegalArgumentException(sm.getString("asn1Parser.lengthInvalid", Integer.valueOf(len),
                     Integer.valueOf(source.length - pos)));
         }
     }
 
 
+    /**
+     * Parses an ASN.1 length field.
+     *
+     * @return the parsed length value
+     */
     public int parseLength() {
         int len = next();
         if (len > 127) {
             int bytes = len - 128;
+            if (bytes > 4) {
+                throw new IllegalArgumentException(sm.getString("asn1Parser.lengthInvalid", Integer.valueOf(-1),
+                        Integer.valueOf(source.length - pos)));
+            }
             len = 0;
             for (int i = 0; i < bytes; i++) {
                 len = len << 8;
                 len = len + next();
             }
+            if (len < 0) {
+                throw new IllegalArgumentException(sm.getString("asn1Parser.lengthInvalid", Integer.valueOf(-1),
+                        Integer.valueOf(source.length - pos)));
+            }
         }
+        if (source.length - pos < len) {
+            throw new IllegalArgumentException(sm.getString("asn1Parser.lengthInvalid", Integer.valueOf(-1),
+                    Integer.valueOf(source.length - pos)));
+        }
+
         /*
          * If this is the first length parsed after a sequence has been added to the sequence nesting tracking mechanism
          * it must be the length of the sequence so update the entry to record the end position of the sequence. Note
@@ -130,33 +210,62 @@ public class Asn1Parser {
     }
 
 
+    /**
+     * Parses an INTEGER value.
+     *
+     * @return the parsed integer as a {@link BigInteger}
+     */
     public BigInteger parseInt() {
         byte[] val = parseBytes(TAG_INTEGER);
         return new BigInteger(val);
     }
 
 
+    /**
+     * Parses an OCTET STRING value.
+     *
+     * @return the parsed octet string bytes
+     */
     public byte[] parseOctetString() {
         return parseBytes(TAG_OCTET_STRING);
     }
 
 
+    /**
+     * Parses a NULL value.
+     */
     public void parseNull() {
         parseBytes(TAG_NULL);
     }
 
 
+    /**
+     * Parses an OID value as raw bytes.
+     *
+     * @return the parsed OID bytes
+     */
     public byte[] parseOIDAsBytes() {
         return parseBytes(TAG_OID);
     }
 
 
+    /**
+     * Parses a UTF8String value.
+     *
+     * @return the parsed UTF-8 string
+     */
     public String parseUTF8String() {
         byte[] val = parseBytes(TAG_UTF8STRING);
         return new String(val, StandardCharsets.UTF_8);
     }
 
 
+    /**
+     * Parses a context-specific attribute value as raw bytes.
+     *
+     * @param index the context-specific attribute index
+     * @return the parsed attribute bytes
+     */
     public byte[] parseAttributeAsBytes(int index) {
         return parseBytes(TAG_ATTRIBUTE_BASE + index);
     }
@@ -166,23 +275,45 @@ public class Asn1Parser {
         parseTag(tag);
         int len = parseLength();
         byte[] result = new byte[len];
+        if (result.length > source.length - pos) {
+            throw new IllegalArgumentException(sm.getString("asn1Parser.truncatedData", Integer.valueOf(result.length),
+                    Integer.valueOf(source.length - pos)));
+        }
         System.arraycopy(source, pos, result, 0, result.length);
         pos += result.length;
         return result;
     }
 
 
+    /**
+     * Reads raw bytes into the destination array.
+     *
+     * @param dest the destination byte array
+     */
     public void parseBytes(byte[] dest) {
+        if (dest.length > source.length - pos) {
+            throw new IllegalArgumentException(sm.getString("asn1Parser.truncatedData", Integer.valueOf(dest.length),
+                    Integer.valueOf(source.length - pos)));
+        }
         System.arraycopy(source, pos, dest, 0, dest.length);
         pos += dest.length;
     }
 
 
     private int next() {
+        if (pos >= source.length) {
+            throw new IllegalArgumentException(
+                    sm.getString("asn1Parser.truncatedData", Integer.valueOf(1), Integer.valueOf(0)));
+        }
         return source[pos++] & 0xFF;
     }
 
 
+    /**
+     * Returns the current nesting level of SEQUENCE tags.
+     *
+     * @return the number of nested SEQUENCE tags
+     */
     public int getNestedSequenceLevel() {
         return nestedSequenceEndPositions.size();
     }

@@ -22,6 +22,12 @@ package org.apache.tomcat.jni;
 public class Pool {
 
     /**
+     * Default constructor required by JNI.
+     */
+    public Pool() {
+    }
+
+    /**
      * Create a new pool.
      *
      * @param parent The parent pool. If this is 0, the new pool is a root pool. If it is non-zero, the new pool will
@@ -33,7 +39,7 @@ public class Pool {
 
     /**
      * Destroy the pool. This takes similar action as apr_pool_clear() and then frees all the memory. This will actually
-     * free the memory.
+     * free the memory. Calling this more than once for a pool will trigger a JVM crash.
      *
      * @param pool The pool to destroy
      */

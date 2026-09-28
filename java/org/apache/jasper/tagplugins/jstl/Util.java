@@ -42,8 +42,17 @@ import org.apache.jasper.compiler.Localizer;
 
 public class Util {
 
+    /**
+     * Constructs a new Util instance. This class consists only of static methods and instances hold no state.
+     */
+    public Util() {
+    }
+
     private static final String VALID_SCHEME_CHAR = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789+.-";
 
+    /**
+     * The default character encoding used for URL operations.
+     */
     public static final String DEFAULT_ENCODING = "ISO-8859-1";
 
     private static final int HIGHEST_SPECIAL = '>';
@@ -153,9 +162,35 @@ public class Util {
     }
 
     /**
+     * Strips a servlet session ID from <code>url</code>.  The session ID
+     * is encoded as a URL "path parameter" beginning with "jsessionid=".
+     * We thus remove anything we find between ";jsessionid=" (inclusive)
+     * and either EOS or a subsequent ';' (exclusive).
+     *
+     * taken from org.apache.taglibs.standard.tag.common.core.ImportSupport
+     * @param url The URL
+     * @return the URL without a user submitted session id parameter
+     */
+    public static String stripSession(String url) {
+        StringBuilder u = new StringBuilder(url);
+        int sessionStart;
+        while ((sessionStart = u.toString().indexOf(";" + "jsessionid" + "=")) != -1) {
+            int sessionEnd = u.toString().indexOf(';', sessionStart + 1);
+            if (sessionEnd == -1) {
+                sessionEnd = u.toString().indexOf('?', sessionStart + 1);
+            }
+            if (sessionEnd == -1) {
+                sessionEnd = u.length();
+            }
+            u.delete(sessionStart, sessionEnd);
+        }
+        return u.toString();
+    }
+
+    /**
      * Performs the following substring replacements (to facilitate output to XML/HTML pages):
      * <ul>
-     * <li>{@code &} -&gt; {@code &amp}</li>
+     * <li>{@code &} -&gt; {@code &amp;}</li>
      * <li>{@code <} -&gt; {@code &lt;}</li>
      * <li>{@code >} -&gt; {@code &gt;}</li>
      * <li>{@code "} -&gt; {@code &#034;}</li>
@@ -172,7 +207,15 @@ public class Util {
         return Objects.requireNonNullElse(result, buffer);
     }
 
-    @SuppressWarnings("null") // escapedBuffer cannot be null
+    /**
+     * Escapes XML special characters in the given character array buffer.
+     *
+     * @param arrayBuffer The character array to escape
+     * @param length      The length of the buffer to process
+     *
+     * @return The escaped string, or {@code null} if no escaping was necessary
+     */
+    @SuppressWarnings("null") // escapedBuffer is non-null once a special character has been found
     public static String escapeXml(char[] arrayBuffer, int length) {
         int start = 0;
         StringBuilder escapedBuffer = null;
@@ -216,7 +259,8 @@ public class Util {
      *
      * @return the absolute URL
      *
-     * @throws JspException If the URL doesn't start with '/'
+     * @throws JspException If the context is non-{@code null} and either the context or the URL doesn't start with
+     *             '/'
      */
     public static String resolveUrl(String url, String context, PageContext pageContext) throws JspException {
         // don't touch absolute URLs
@@ -263,8 +307,7 @@ public class Util {
 
             @Override
             public boolean isReady() {
-                // Non-blocking IO not supported
-                return false;
+                return true;
             }
 
             @Override
@@ -280,6 +323,11 @@ public class Util {
         private int status = 200;
         private String charEncoding;
 
+        /**
+         * Constructs a new ImportResponseWrapper.
+         *
+         * @param arg0 The HttpServletResponse to wrap
+         */
         public ImportResponseWrapper(HttpServletResponse arg0) {
             super(arg0);
         }
@@ -322,14 +370,31 @@ public class Util {
             return status;
         }
 
+        /**
+         * Returns the character encoding of the response.
+         *
+         * @return the character encoding
+         */
         public String getCharEncoding() {
             return this.charEncoding;
         }
 
+        /**
+         * Sets the character encoding of the response.
+         *
+         * @param ce The character encoding
+         */
         public void setCharEncoding(String ce) {
             this.charEncoding = ce;
         }
 
+        /**
+         * Returns the response body as a string.
+         *
+         * @return the response body string
+         *
+         * @throws UnsupportedEncodingException If the character encoding is not supported
+         */
         public String getString() throws UnsupportedEncodingException {
             if (isWriterUsed) {
                 return sw.toString();

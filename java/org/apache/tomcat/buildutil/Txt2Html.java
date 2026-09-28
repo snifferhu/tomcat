@@ -42,6 +42,12 @@ import org.apache.tools.ant.types.FileSet;
  */
 public class Txt2Html extends Task {
 
+    /**
+     * Constructs a new Txt2Html task.
+     */
+    public Txt2Html() {
+    }
+
     /** The directory to contain the resulting files */
     private File todir;
 
@@ -49,7 +55,8 @@ public class Txt2Html extends Task {
     private final List<FileSet> filesets = new ArrayList<>();
 
     /**
-     * The encoding of the source files (.java and .jsp). Once they use UTF-8, this will need to be updated.
+     * The encoding used to read the source files (.java and .jsp). All the files this task converts are
+     * ASCII only, so ISO-8859-1 is safe.
      */
     private static final String SOURCE_ENCODING = "ISO-8859-1";
 

@@ -24,6 +24,7 @@ import java.io.File;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -36,13 +37,51 @@ import org.apache.tomcat.util.IntrospectionUtils;
 import org.apache.tomcat.util.net.SocketProperties;
 
 /**
- * Store the Connector attributes. Connector has really special design. A Connector is only a startup Wrapper for a
- * ProtocolHandler. This meant that ProtocolHandler get all there attributes from the Connector attribute map. Strange
- * is that some attributes change their name.
+ * Specialized {@link StoreAppender} for persisting
+ * {@link org.apache.catalina.connector.Connector} instances to XML configuration.
+ * <p>
+ * A {@code Connector} acts as a wrapper around a {@link org.apache.coyote.ProtocolHandler},
+ * meaning configuration attributes are spread across both objects. This appender
+ * collects properties from the Connector, its ProtocolHandler, and its
+ * {@link org.apache.tomcat.util.net.SocketProperties}, applying the following
+ * transformations during persistence:
+ * </p>
+ * <ul>
+ * <li>Maps certain attribute names to their XML equivalents (e.g., {@code timeout} to
+ * {@code connectionUploadTimeout})</li>
+ * <li>Filters internal executor attributes when an external executor is configured</li>
+ * <li>Prefixes socket properties with {@code socket.}</li>
+ * <li>Suppresses default values by comparing against a freshly created Connector</li>
+ * <li>Handles special cases such as {@code jkHome} and catalina.base path resolution</li>
+ * </ul>
+ *
+ * @see org.apache.catalina.connector.Connector
+ * @see org.apache.coyote.ProtocolHandler
+ * @see StoreAppender
  */
 public class ConnectorStoreAppender extends StoreAppender {
 
+    /**
+     * Creates a new ConnectorStoreAppender instance.
+     */
+    public ConnectorStoreAppender() {
+        super();
+    }
+
+    /**
+     * Map of attribute names stored in the socket properties but present as properties on the endpoint.
+     */
+    protected static final Set<String> derivedEndpointAttributes =
+            new HashSet<>(Arrays.asList("connectionTimeout", "connectionLinger"));
+
+    /**
+     * Map of attribute name replacements for connector properties.
+     */
     protected static final HashMap<String,String> replacements = new HashMap<>();
+
+    /**
+     * Set of attribute names that belong to the internal executor.
+     */
     protected static final Set<String> internalExecutorAttributes = new HashSet<>();
     static {
         replacements.put("timeout", "connectionUploadTimeout");
@@ -68,7 +107,7 @@ public class ConnectorStoreAppender extends StoreAppender {
         String protocol = connector.getProtocol();
         List<String> propertyKeys = getPropertyKeys(connector);
         // Create blank instance
-        Object bean2 = new Connector(protocol);// defaultInstance(bean);
+        Object bean2 = new Connector(protocol);
         for (String key : propertyKeys) {
             Object value = IntrospectionUtils.getProperty(bean, key);
             if (desc.isTransientAttribute(key)) {
@@ -110,9 +149,8 @@ public class ConnectorStoreAppender extends StoreAppender {
      */
     protected List<String> getPropertyKeys(Connector bean) throws IntrospectionException {
         List<String> propertyKeys = new ArrayList<>();
-        // Acquire the list of properties for this bean
         ProtocolHandler protocolHandler = bean.getProtocolHandler();
-        // Acquire the list of properties for this bean
+        // Acquire the list of property descriptors for this bean
         PropertyDescriptor[] descriptors = Introspector.getBeanInfo(bean.getClass()).getPropertyDescriptors();
         if (descriptors == null) {
             descriptors = new PropertyDescriptor[0];
@@ -131,7 +169,11 @@ public class ConnectorStoreAppender extends StoreAppender {
             propertyKeys.add(descriptor.getName());
         }
         // Add the properties of the protocol handler
-        descriptors = Introspector.getBeanInfo(protocolHandler.getClass()).getPropertyDescriptors();
+        if (protocolHandler != null) {
+            descriptors = Introspector.getBeanInfo(protocolHandler.getClass()).getPropertyDescriptors();
+        } else {
+            descriptors = null;
+        }
         if (descriptors == null) {
             descriptors = new PropertyDescriptor[0];
         }
@@ -146,6 +188,10 @@ public class ConnectorStoreAppender extends StoreAppender {
             String key = descriptor.getName();
             if (!Connector.INTERNAL_EXECUTOR_NAME.equals(bean.getExecutorName()) &&
                     internalExecutorAttributes.contains(key)) {
+                continue;
+            }
+            // Avoid duplicating properties, so properties saved to the socket will be saved there
+            if (derivedEndpointAttributes.contains(key)) {
                 continue;
             }
             if (replacements.get(key) != null) {
@@ -229,7 +275,6 @@ public class ConnectorStoreAppender extends StoreAppender {
      * <ul>
      * <li>Special handling to default jkHome.</li>
      * <li>Don't save catalina.base path at server.xml</li>
-     * <li>
      * </ul>
      *
      * @see org.apache.catalina.storeconfig.StoreAppender#isPrintValue(Object, Object, String, StoreDescription)
@@ -243,12 +288,25 @@ public class ConnectorStoreAppender extends StoreAppender {
                 File catalinaBase = getCatalinaBase();
                 File jkHomeBase = getJkHomeBase((String) connector.getProperty("jkHome"), catalinaBase);
                 isPrint = !catalinaBase.equals(jkHomeBase);
-
+            } else if ("keepAliveTimeout".equals(attrName)) {
+                /*
+                 * When keepAliveTimeout has not been explicitly configured, the endpoint reports the value of
+                 * connectionTimeout. Storing that derived value would duplicate the connectionTimeout configuration, so
+                 * suppress it unless it differs from connectionTimeout.
+                 */
+                Object keepAliveTimeout = IntrospectionUtils.getProperty(bean, "keepAliveTimeout");
+                Object connectionTimeout = IntrospectionUtils.getProperty(bean, "connectionTimeout");
+                isPrint = (keepAliveTimeout == null) || (connectionTimeout == null) ||
+                        !keepAliveTimeout.equals(connectionTimeout);
             }
         }
         return isPrint;
     }
 
+    /**
+     * Returns the canonical catalina base directory.
+     * @return the catalina base file path
+     */
     protected File getCatalinaBase() {
 
         File file = new File(System.getProperty(Globals.CATALINA_BASE_PROP));
@@ -260,9 +318,18 @@ public class ConnectorStoreAppender extends StoreAppender {
         return file;
     }
 
+    /**
+     * Returns the canonical JK home base directory.
+     * @param jkHome the JK home path
+     * @param appBase the application base directory
+     * @return the canonical JK home file path
+     */
     protected File getJkHomeBase(String jkHome, File appBase) {
 
         File jkHomeBase;
+        if (jkHome == null) {
+            return null;
+        }
         File file = new File(jkHome);
         if (!file.isAbsolute()) {
             file = new File(appBase, jkHome);

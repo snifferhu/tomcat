@@ -51,19 +51,30 @@ public class ProxyErrorReportValve extends ErrorReportValve {
     private static final Log log = LogFactory.getLog(ProxyErrorReportValve.class);
 
     /**
-     * Use a redirect or proxy the response to the specified location. Default to redirect.
+     * Default constructor.
      */
-    protected boolean useRedirect = true;
+    public ProxyErrorReportValve() {
+        super();
+    }
 
     /**
-     * @return the useRedirect
+     * Use a redirect or proxy the response to the specified location. Default to not redirect.
+     */
+    protected boolean useRedirect = false;
+
+    /**
+     * Returns whether a redirect is used to send the error report to the specified location.
+     *
+     * @return {@code true} if a redirect is used, {@code false} if a proxy is used
      */
     public boolean getUseRedirect() {
         return this.useRedirect;
     }
 
     /**
-     * @param useRedirect the useRedirect to set
+     * Sets whether to use a redirect or proxy for the error report.
+     *
+     * @param useRedirect {@code true} to use a redirect, {@code false} to use a proxy
      */
     public void setUseRedirect(boolean useRedirect) {
         this.useRedirect = useRedirect;
@@ -75,14 +86,18 @@ public class ProxyErrorReportValve extends ErrorReportValve {
     protected boolean usePropertiesFile = false;
 
     /**
-     * @return the usePropertiesFile
+     * Returns whether a properties file is used to determine the redirect URLs.
+     *
+     * @return {@code true} if a properties file is used, {@code false} otherwise
      */
     public boolean getUsePropertiesFile() {
         return this.usePropertiesFile;
     }
 
     /**
-     * @param usePropertiesFile the usePropertiesFile to set
+     * Sets whether to use a properties file for the redirect URLs.
+     *
+     * @param usePropertiesFile {@code true} to use a properties file, {@code false} otherwise
      */
     public void setUsePropertiesFile(boolean usePropertiesFile) {
         this.usePropertiesFile = usePropertiesFile;
@@ -106,6 +121,13 @@ public class ProxyErrorReportValve extends ErrorReportValve {
         return redirectUrl;
     }
 
+    /**
+     * Reports the error by redirecting or proxying to the configured error URL.
+     *
+     * @param request   the servlet request
+     * @param response  the servlet response
+     * @param throwable the exception that caused the error, or {@code null}
+     */
     @Override
     protected void report(Request request, Response response, Throwable throwable) {
 
@@ -171,19 +193,22 @@ public class ProxyErrorReportValve extends ErrorReportValve {
             reason = smClient.getString("errorReportValve.unknownReason");
             description = smClient.getString("errorReportValve.noDescription");
         }
-        stringBuilder.append("&statusDescription=");
-        stringBuilder.append(URLEncoder.encode(description, StandardCharsets.UTF_8));
         stringBuilder.append("&statusReason=");
         stringBuilder.append(URLEncoder.encode(reason, StandardCharsets.UTF_8));
 
-        String message = response.getMessage();
-        if (message != null) {
-            stringBuilder.append("&message=");
-            stringBuilder.append(URLEncoder.encode(message, StandardCharsets.UTF_8));
-        }
-        if (throwable != null) {
-            stringBuilder.append("&throwable=");
-            stringBuilder.append(URLEncoder.encode(throwable.toString(), StandardCharsets.UTF_8));
+        if (isShowReport()) {
+            stringBuilder.append("&statusDescription=");
+            stringBuilder.append(URLEncoder.encode(description, StandardCharsets.UTF_8));
+
+            String message = response.getMessage();
+            if (message != null) {
+                stringBuilder.append("&message=");
+                stringBuilder.append(URLEncoder.encode(message, StandardCharsets.UTF_8));
+            }
+            if (throwable != null) {
+                stringBuilder.append("&throwable=");
+                stringBuilder.append(URLEncoder.encode(throwable.toString(), StandardCharsets.UTF_8));
+            }
         }
 
         urlString = stringBuilder.toString();
@@ -208,7 +233,7 @@ public class ProxyErrorReportValve extends ErrorReportValve {
                 response.setContentType(httpURLConnection.getContentType());
                 response.setContentLength(httpURLConnection.getContentLength());
                 OutputStream outputStream = response.getOutputStream();
-                InputStream inputStream = url.openStream();
+                InputStream inputStream = httpURLConnection.getInputStream();
                 IOTools.flow(inputStream, outputStream);
             } catch (URISyntaxException | IOException | IllegalArgumentException e) {
                 if (log.isDebugEnabled()) {

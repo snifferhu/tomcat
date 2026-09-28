@@ -18,17 +18,22 @@ package org.apache.catalina.storeconfig;
 
 import java.io.PrintWriter;
 
+/**
+ * Interface for storing XML elements to a configuration file.
+ */
 public interface IStoreFactory {
 
     /**
-     * @return the writer
+     * Get the store appender.
+     *
+     * @return the store appender
      */
     StoreAppender getStoreAppender();
 
     /**
      * Set the store appender.
      *
-     * @param storeWriter the writer
+     * @param storeWriter the store appender
      */
     void setStoreAppender(StoreAppender storeWriter);
 
@@ -40,6 +45,8 @@ public interface IStoreFactory {
     void setRegistry(StoreRegistry aRegistry);
 
     /**
+     * Get the associated registry.
+     *
      * @return the associated registry
      */
     StoreRegistry getRegistry();

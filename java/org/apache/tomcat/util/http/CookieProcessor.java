@@ -21,6 +21,9 @@ import java.nio.charset.Charset;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 
+/**
+ * Interface for processing HTTP cookies.
+ */
 public interface CookieProcessor {
 
     /**
@@ -38,8 +41,8 @@ public interface CookieProcessor {
      * are browser versions incompatible with the SameSite attribute. This is described by
      * <a href="https://www.chromium.org/updates/same-site/incompatible-clients">the Chromium project</a>.
      *
-     * @param request The servlet request
      * @param cookie  The cookie for which the header will be generated
+     * @param request The servlet request
      *
      * @return The header value in a form that can be added directly to the response
      */

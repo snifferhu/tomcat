@@ -36,12 +36,8 @@ import org.apache.tomcat.util.file.ConfigurationSource.Resource;
  *             default="true"
  *             tagClass="org.apache.catalina.core.StandardServer"
  *             storeFactoryClass="org.apache.catalina.storeconfig.StandardServerSF">
- *           <TransientAttributes>
- *             <Attribute></Attribute>
- *           </TransientAttributes>
- *           <TransientChildren>
- *             <Child></Child>
- *           </TransientChildren>
+ *           <TransientAttribute>domain</TransientAttribute>
+ *           <TransientChild>org.apache.catalina.core.StandardContext</TransientChild>
  *         </Description>
  *   ...
  *       </Registry>
@@ -50,21 +46,19 @@ import org.apache.tomcat.util.file.ConfigurationSource.Resource;
  *
  * Convention:
  * <ul>
- * <li>Factories at subpackage <i>org.apache.catalina.core.storeconfig.xxxSF </i>.</li>
+ * <li>Factories at subpackage <i>org.apache.catalina.storeconfig.xxxSF</i>.</li>
  * <li>Element name are the unique Class name</li>
  * <li>SF for StoreFactory</li>
- * <li>standard implementation is false</li>
- * </ul>
- * other things:
- * <ul>
- * <li>Registry XML format is a very good option</li>
- * <li>Store format is not fix</li>
- * <li>We hope with the parent declaration we can build recursive child store operation //dream</li>
- * <li>Problem is to access child data from array,collections or normal detail object</li>
- * <li>Default definitions for Listener, Valve Resource? - Based on interface type!</li>
+ * <li>standard implementation is true</li>
  * </ul>
  */
 public class StoreLoader {
+
+    /**
+     * Constructs a new StoreLoader for parsing store registry XML descriptors.
+     */
+    public StoreLoader() {
+    }
 
     /**
      * The <code>Digester</code> instance used to parse registry descriptors.
@@ -76,14 +70,18 @@ public class StoreLoader {
     private URL registryResource;
 
     /**
-     * @return Returns the registry.
+     * Returns the StoreRegistry instance loaded from the configuration.
+     *
+     * @return the StoreRegistry instance
      */
     public StoreRegistry getRegistry() {
         return registry;
     }
 
     /**
-     * @param registry The registry to set.
+     * Sets the StoreRegistry instance to use.
+     *
+     * @param registry the StoreRegistry instance
      */
     public void setRegistry(StoreRegistry registry) {
         this.registry = registry;
@@ -150,7 +148,9 @@ public class StoreLoader {
     }
 
     /**
-     * @return the registryResource.
+     * Returns the URL of the registry resource that was loaded.
+     *
+     * @return the registry resource URL
      */
     public URL getRegistryResource() {
         return registryResource;

@@ -17,11 +17,11 @@
 package org.apache.catalina.valves.rewrite;
 
 import java.io.BufferedReader;
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.StringReader;
-import java.net.URLDecoder;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -126,15 +126,28 @@ public class RewriteValve extends ValveBase {
     protected ArrayList<String> mapsConfiguration = new ArrayList<>();
 
 
+    /**
+     * Create a new RewriteValve instance.
+     */
     public RewriteValve() {
         super(true);
     }
 
 
+    /**
+     * Get whether the rewrite valve is enabled.
+     *
+     * @return {@code true} if the valve is enabled
+     */
     public boolean getEnabled() {
         return enabled;
     }
 
+    /**
+     * Set whether the rewrite valve is enabled.
+     *
+     * @param enabled {@code true} to enable the valve
+     */
     public void setEnabled(boolean enabled) {
         this.enabled = enabled;
     }
@@ -160,7 +173,8 @@ public class RewriteValve extends ValveBase {
             String webInfResourcePath = "/WEB-INF/" + resourcePath;
             is = ((Context) getContainer()).getServletContext().getResourceAsStream(webInfResourcePath);
             if (is == null) {
-                if (containerLog.isInfoEnabled()) {
+                // Don't log if the rules have been set directly via setConfiguration()
+                if (containerLog.isInfoEnabled() && rules == null) {
                     containerLog.info(sm.getString("rewriteValve.noConfiguration", webInfResourcePath));
                 }
             } else {
@@ -173,6 +187,13 @@ public class RewriteValve extends ValveBase {
             try {
                 ConfigurationSource.Resource resource = ConfigFileLoader.getSource().getResource(resourceName);
                 is = resource.getInputStream();
+            } catch (FileNotFoundException fnfe) {
+                // Don't log if the rules have been set directly via setConfiguration()
+                if (rules == null) {
+                    if (containerLog.isInfoEnabled()) {
+                        containerLog.info(sm.getString("rewriteValve.noConfiguration", resourceName), fnfe);
+                    }
+                }
             } catch (IOException ioe) {
                 if (containerLog.isInfoEnabled()) {
                     containerLog.info(sm.getString("rewriteValve.noConfiguration", resourceName), ioe);
@@ -200,6 +221,13 @@ public class RewriteValve extends ValveBase {
 
     }
 
+    /**
+     * Set the rewrite configuration.
+     *
+     * @param configuration The rewrite configuration string
+     *
+     * @throws Exception if the configuration cannot be parsed
+     */
     public void setConfiguration(String configuration) throws Exception {
         if (containerLog == null) {
             containerLog = LogFactory.getLog(getContainer().getLogName() + ".rewrite");
@@ -213,6 +241,11 @@ public class RewriteValve extends ValveBase {
         parse(new BufferedReader(new StringReader(configuration)));
     }
 
+    /**
+     * Get the rewrite configuration.
+     *
+     * @return The rewrite configuration string
+     */
     public String getConfiguration() {
         StringBuilder buffer = new StringBuilder();
         for (String mapConfiguration : mapsConfiguration) {
@@ -230,6 +263,13 @@ public class RewriteValve extends ValveBase {
         return buffer.toString();
     }
 
+    /**
+     * Parse the rewrite configuration from the given reader.
+     *
+     * @param reader The reader containing the rewrite configuration
+     *
+     * @throws LifecycleException if the configuration cannot be parsed
+     */
     protected void parse(BufferedReader reader) throws LifecycleException {
         List<RewriteRule> rules = new ArrayList<>();
         List<RewriteCond> conditions = new ArrayList<>();
@@ -245,11 +285,6 @@ public class RewriteValve extends ValveBase {
                     if (containerLog.isTraceEnabled()) {
                         containerLog.trace("Add rule with pattern " + rule.getPatternString() + " and substitution " +
                                 rule.getSubstitutionString());
-                    }
-                    for (int i = (conditions.size() - 1); i > 0; i--) {
-                        if (conditions.get(i - 1).isOrnext()) {
-                            conditions.get(i).setOrnext(true);
-                        }
                     }
                     for (RewriteCond condition : conditions) {
                         if (containerLog.isTraceEnabled()) {
@@ -277,6 +312,7 @@ public class RewriteValve extends ValveBase {
                 }
             } catch (IOException ioe) {
                 containerLog.error(sm.getString("rewriteValve.readError"), ioe);
+                break;
             }
         }
         this.mapsConfiguration = mapsConfiguration;
@@ -440,11 +476,7 @@ public class RewriteValve extends ValveBase {
                                         REWRITE_QUERY_ENCODER.encode(rewrittenQueryStringRewriteEncoded, uriCharset));
                                 urlStringEncoded.append('&');
                                 urlStringEncoded.append(queryStringOriginalEncoded);
-                            } else if (index == urlStringEncoded.length() - 1) {
-                                // if the ? is the last character delete it, its only purpose was to
-                                // prevent the rewrite module from appending the query string
-                                urlStringEncoded.deleteCharAt(index);
-                            } else {
+                            } else if (!rewrittenQueryStringRewriteEncoded.isEmpty()) {
                                 urlStringEncoded.append('?');
                                 urlStringEncoded.append(
                                         REWRITE_QUERY_ENCODER.encode(rewrittenQueryStringRewriteEncoded, uriCharset));
@@ -503,12 +535,13 @@ public class RewriteValve extends ValveBase {
 
                 // - chain (skip remaining chained rules if this one does not match)
                 if (rule.isChain() && newtest == null) {
-                    for (int j = i; j < rules.length; j++) {
-                        if (!rules[j].isChain()) {
-                            i = j;
-                            break;
-                        }
+                    // Skip the remaining rules in the chain, including the
+                    // terminal rule that does not have the chain flag set.
+                    int j = i + 1;
+                    while (j < rules.length && rules[j].isChain()) {
+                        j++;
                     }
+                    i = j;
                     continue;
                 }
                 // - last (stop rewriting here)
@@ -517,7 +550,7 @@ public class RewriteValve extends ValveBase {
                 }
                 // - next (redo again)
                 if (rule.isNext() && newtest != null) {
-                    i = 0;
+                    i = -1;
                     continue;
                 }
                 // - skip (n rules)
@@ -557,8 +590,14 @@ public class RewriteValve extends ValveBase {
                     chunk.append(REWRITE_DEFAULT_ENCODER.encode(urlStringRewriteEncoded, uriCharset));
                     // Rewriting may have denormalized the URL and added encoded characters
                     // Decode then normalize
-                    String urlStringRewriteDecoded = URLDecoder.decode(urlStringRewriteEncoded, uriCharset);
+                    String urlStringRewriteDecoded = UDecoder.URLDecode(urlStringRewriteEncoded, uriCharset);
                     urlStringRewriteDecoded = RequestUtil.normalize(urlStringRewriteDecoded);
+                    if (urlStringRewriteDecoded == null) {
+                        // Assume bad input caused the re-write to try and escape root
+                        response.sendError(HttpServletResponse.SC_BAD_REQUEST);
+                        return;
+                    }
+
                     request.getCoyoteRequest().decodedURI().setChars(MessageBytes.EMPTY_CHAR_ARRAY, 0, 0);
                     chunk = request.getCoyoteRequest().decodedURI().getCharChunk();
                     if (context) {
@@ -577,7 +616,7 @@ public class RewriteValve extends ValveBase {
                         request.getCoyoteRequest().queryString().setChars(MessageBytes.EMPTY_CHAR_ARRAY, 0, 0);
                         chunk = request.getCoyoteRequest().queryString().getCharChunk();
                         chunk.append(REWRITE_QUERY_ENCODER.encode(queryStringRewriteEncoded, uriCharset));
-                        if (qsa && queryStringOriginalEncoded != null && !queryStringOriginalEncoded.isEmpty()) {
+                        if (!qsd && qsa && queryStringOriginalEncoded != null && !queryStringOriginalEncoded.isEmpty()) {
                             chunk.append('&');
                             chunk.append(queryStringOriginalEncoded);
                         }

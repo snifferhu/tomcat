@@ -28,6 +28,7 @@ import java.nio.file.Path;
 import java.nio.file.attribute.FileTime;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -43,8 +44,16 @@ import org.apache.tomcat.util.json.JSONParser;
  * A {@link org.apache.catalina.tribes.MembershipProvider} that uses Kubernetes API to retrieve the members of a
  * cluster.<br>
  */
-
 public class KubernetesMembershipProvider extends CloudMembershipProvider {
+
+    /**
+     * Default constructor.
+     */
+    public KubernetesMembershipProvider() {
+    }
+
+    private static final String IPV6_URL = "%s://[%s]:%s/api/%s/namespaces/%s/pods";
+    private static final String URL = "%s://%s:%s/api/%s/namespaces/%s/pods";
 
     private static final Log log = LogFactory.getLog(KubernetesMembershipProvider.class);
 
@@ -68,6 +77,9 @@ public class KubernetesMembershipProvider extends CloudMembershipProvider {
         }
 
         String protocol = getEnv(CUSTOM_ENV_PREFIX + "MASTER_PROTOCOL", "KUBERNETES_MASTER_PROTOCOL");
+        if (protocol == null) {
+            protocol = "https";
+        }
         String masterHost = getEnv(CUSTOM_ENV_PREFIX + "MASTER_HOST", "KUBERNETES_SERVICE_HOST");
         String masterPort = getEnv(CUSTOM_ENV_PREFIX + "MASTER_PORT", "KUBERNETES_SERVICE_PORT");
 
@@ -79,9 +91,6 @@ public class KubernetesMembershipProvider extends CloudMembershipProvider {
         }
 
         if (clientCertificateFile == null) {
-            if (protocol == null) {
-                protocol = "https";
-            }
             String saTokenFile = getEnv(CUSTOM_ENV_PREFIX + "SA_TOKEN_FILE", "SA_TOKEN_FILE");
             if (saTokenFile == null) {
                 saTokenFile = "/var/run/secrets/kubernetes.io/serviceaccount/token";
@@ -95,9 +104,6 @@ public class KubernetesMembershipProvider extends CloudMembershipProvider {
                 log.error(sm.getString("kubernetesMembershipProvider.streamError"), ioe);
             }
         } else {
-            if (protocol == null) {
-                protocol = "http";
-            }
             String clientKeyFile = getEnv("KUBERNETES_CLIENT_KEY_FILE");
             if (clientKeyFile == null) {
                 log.error(sm.getString("kubernetesMembershipProvider.noKey"));
@@ -122,7 +128,12 @@ public class KubernetesMembershipProvider extends CloudMembershipProvider {
         namespace = URLEncoder.encode(namespace, StandardCharsets.UTF_8);
         labels = labels == null ? null : URLEncoder.encode(labels, StandardCharsets.UTF_8);
 
-        url = String.format("%s://%s:%s/api/%s/namespaces/%s/pods", protocol, masterHost, masterPort, ver, namespace);
+        String urlFormat = URL;
+        if (masterHost != null && masterHost.indexOf(':') != -1) {
+            // [] must be used around raw IPv6
+            urlFormat = IPV6_URL;
+        }
+        url = String.format(urlFormat, protocol, masterHost, masterPort, ver, namespace);
         if (labels != null && !labels.isEmpty()) {
             url = url + "?labelSelector=" + labels;
         }
@@ -145,7 +156,7 @@ public class KubernetesMembershipProvider extends CloudMembershipProvider {
     @Override
     protected Member[] fetchMembers() {
         if (streamProvider == null) {
-            return new Member[0];
+            return null;
         }
 
         reloadSaTokenIfChanged();
@@ -154,9 +165,12 @@ public class KubernetesMembershipProvider extends CloudMembershipProvider {
 
         try (InputStream stream = streamProvider.openStream(url, headers, connectionTimeout, readTimeout);
                 InputStreamReader reader = new InputStreamReader(stream, StandardCharsets.UTF_8)) {
-            parsePods(reader, members);
+            if (!parsePods(reader, members)) {
+                return null;
+            }
         } catch (IOException ioe) {
             log.error(sm.getString("kubernetesMembershipProvider.streamError"), ioe);
+            return null;
         }
 
         return members.toArray(new Member[0]);
@@ -187,15 +201,22 @@ public class KubernetesMembershipProvider extends CloudMembershipProvider {
     }
 
 
+    /**
+     * Parses the pod data from the given reader and populates the members list.
+     *
+     * @param reader The reader with pod data
+     * @param members The list to populate with members
+     * @return {@code true} if no error occurred
+     */
     @SuppressWarnings("unchecked")
-    protected void parsePods(Reader reader, List<MemberImpl> members) {
+    protected boolean parsePods(Reader reader, List<MemberImpl> members) {
         JSONParser parser = new JSONParser(reader);
         try {
             LinkedHashMap<String,Object> json = parser.object();
             Object itemsObject = json.get("items");
             if (!(itemsObject instanceof List<?>)) {
                 log.error(sm.getString("kubernetesMembershipProvider.invalidPodsList", "no items"));
-                return;
+                return false;
             }
             List<Object> items = (List<Object>) itemsObject;
             for (Object podObject : items) {
@@ -224,7 +245,7 @@ public class KubernetesMembershipProvider extends CloudMembershipProvider {
                 Object objectUid = metadata.get("uid");
                 Object creationTimestampObject = metadata.get("creationTimestamp");
                 if (creationTimestampObject == null) {
-                    log.warn(sm.getString("kubernetesMembershipProvider.invalidPod", "uid"));
+                    log.warn(sm.getString("kubernetesMembershipProvider.invalidPod", "creationTimestamp"));
                     continue;
                 }
                 // "status" contains "phase" (which must be "Running") and "podIP"
@@ -251,14 +272,19 @@ public class KubernetesMembershipProvider extends CloudMembershipProvider {
                     Member localMember = service.getLocalMember(false);
                     if (localMember.getUniqueId() == CloudMembershipService.INITIAL_ID &&
                             localMember instanceof MemberImpl) {
-                        byte[] id = md5.digest(uid.getBytes(StandardCharsets.US_ASCII));
+                        byte[] id = digest(uid.getBytes(StandardCharsets.US_ASCII));
                         ((MemberImpl) localMember).setUniqueId(id);
                     }
                     continue;
                 }
 
-                long aliveTime =
-                        Duration.between(Instant.parse(creationTimestampObject.toString()), startTime).toMillis();
+                long aliveTime;
+                try {
+                    aliveTime = Duration.between(Instant.parse(creationTimestampObject.toString()), startTime).toMillis();
+                } catch (DateTimeParseException e) {
+                    log.warn(sm.getString("kubernetesMembershipProvider.invalidPod", "creationTimestamp"), e);
+                    continue;
+                }
 
                 MemberImpl member;
                 try {
@@ -269,12 +295,14 @@ public class KubernetesMembershipProvider extends CloudMembershipProvider {
                     log.error(sm.getString("kubernetesMembershipProvider.memberError"), ioe);
                     continue;
                 }
-                byte[] id = md5.digest(uid.getBytes(StandardCharsets.US_ASCII));
+                byte[] id = digest(uid.getBytes(StandardCharsets.US_ASCII));
                 member.setUniqueId(id);
                 members.add(member);
             }
         } catch (Exception e) {
             log.error(sm.getString("kubernetesMembershipProvider.jsonError"), e);
+            return false;
         }
+        return true;
     }
 }

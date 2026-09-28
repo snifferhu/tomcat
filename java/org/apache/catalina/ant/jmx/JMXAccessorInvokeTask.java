@@ -78,13 +78,19 @@ import org.apache.tools.ant.BuildException;
  * </li>
  * </ul>
  * <p>
- * First call to a remote MBeanserver save the JMXConnection a referenz <em>jmx.server</em>
+ * First call to a remote MBeanserver save the JMXConnection a reference <em>jmx.server</em>
  * </p>
  * These tasks require Ant 1.6 or later interface.
  *
  * @since 5.5.10
  */
 public class JMXAccessorInvokeTask extends JMXAccessorTask {
+
+    /**
+     * Constructs a new JMXAccessorInvokeTask.
+     */
+    public JMXAccessorInvokeTask() {
+    }
 
 
     // ----------------------------------------------------- Instance Variables
@@ -95,32 +101,45 @@ public class JMXAccessorInvokeTask extends JMXAccessorTask {
     // ------------------------------------------------------------- Properties
 
     /**
-     * @return Returns the operation.
+     * Get the MBean operation name.
+     *
+     * @return the operation name
      */
     public String getOperation() {
         return operation;
     }
 
     /**
-     * @param operation The operation to set.
+     * Set the MBean operation name.
+     *
+     * @param operation the operation to set
      */
     public void setOperation(String operation) {
         this.operation = operation;
     }
 
+    /**
+     * Add an argument for the MBean operation.
+     *
+     * @param arg the argument to add
+     */
     public void addArg(Arg arg) {
         args.add(arg);
     }
 
     /**
-     * @return Returns the args.
+     * Get the arguments for the MBean operation.
+     *
+     * @return the arguments
      */
     public List<Arg> getArgs() {
         return args;
     }
 
     /**
-     * @param args The args to set.
+     * Set the arguments for the MBean operation.
+     *
+     * @param args the arguments to set
      */
     public void setArgs(List<Arg> args) {
         this.args = args;
@@ -136,6 +155,9 @@ public class JMXAccessorInvokeTask extends JMXAccessorTask {
         }
         if ((operation == null)) {
             throw new BuildException("Must specify a 'operation' for call");
+        }
+        if (jmxServerConnection == null) {
+            throw new BuildException("Must open a connection!");
         }
         return jmxInvoke(jmxServerConnection, getName());
     }

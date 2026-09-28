@@ -25,6 +25,8 @@ import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Properties;
+import java.util.Queue;
+import java.util.concurrent.ConcurrentLinkedQueue;
 
 import org.apache.catalina.tribes.ChannelListener;
 import org.apache.catalina.tribes.Heartbeat;
@@ -35,33 +37,93 @@ import org.apache.catalina.tribes.util.StringManager;
 import org.apache.juli.logging.Log;
 import org.apache.juli.logging.LogFactory;
 
+/**
+ * Abstract base class for cloud-based membership providers.
+ */
 public abstract class CloudMembershipProvider extends MembershipProviderBase implements Heartbeat, ChannelListener {
+
     private static final Log log = LogFactory.getLog(CloudMembershipProvider.class);
+    private static final Queue<MessageDigest> queue = new ConcurrentLinkedQueue<>();
+
+    /**
+     * String manager for this class.
+     */
     protected static final StringManager sm = StringManager.getManager(CloudMembershipProvider.class);
 
+    /**
+     * Prefix for custom environment variables.
+     */
     protected static final String CUSTOM_ENV_PREFIX = "OPENSHIFT_KUBE_PING_";
 
+    /**
+     * The URL for the cloud membership service.
+     */
     protected String url;
+    /**
+     * The provider for cloud API streams.
+     */
     protected StreamProvider streamProvider;
+    /**
+     * Connection timeout in milliseconds.
+     */
     protected int connectionTimeout;
+    /**
+     * Read timeout in milliseconds.
+     */
     protected int readTimeout;
 
+    /**
+     * The time when this provider started.
+     */
     protected Instant startTime;
-    protected MessageDigest md5;
 
+    /**
+     * HTTP headers for cloud API requests.
+     */
     protected Map<String,String> headers = new HashMap<>();
 
+    /**
+     * The local IP address.
+     */
     protected String localIp;
+    /**
+     * The local port number.
+     */
     protected int port;
 
+    /**
+     * The local secure port number.
+     */
+    protected int securePort;
+
+    /**
+     * Member expiration time in milliseconds.
+     */
     protected long expirationTime = 5000;
 
-    public CloudMembershipProvider() {
-        try {
-            md5 = MessageDigest.getInstance("md5");
-        } catch (NoSuchAlgorithmException e) {
-            // Ignore
+    /**
+     * Thread safe MD5 digest.
+     *
+     * @param input The bytes to digest
+     * @return The MD5 digest for the given input
+     */
+    /*
+     * Keep in sync with org.apache.tomcat.util.security.ConcurrentMessageDigest. Can't re-use that directly as tribes
+     * is not permitted to create a dependency on that package.
+     */
+    protected static byte[] digest(byte[] input) {
+        MessageDigest md = queue.poll();
+        if (md == null) {
+            try {
+                md = MessageDigest.getInstance("MD5");
+            } catch (NoSuchAlgorithmException e) {
+                // Newer JVMs are not required to support MD5
+                throw new IllegalStateException(sm.getString("cloudMembershipProvider.noDigest"), e);
+            }
         }
+        byte[] result = md.digest(input);
+        queue.add(md);
+        return result;
     }
 
     /**
@@ -81,6 +143,15 @@ public abstract class CloudMembershipProvider extends MembershipProviderBase imp
         }
         return val;
     }
+
+    /**
+     * Default constructor.
+     */
+    public CloudMembershipProvider() {
+        // Early check that required digest is available
+        digest(new byte[0]);
+    }
+
 
     /**
      * Get the Kubernetes namespace, or "tomcat" if the Kubernetes environment variable cannot be found (with a warning
@@ -108,6 +179,7 @@ public abstract class CloudMembershipProvider extends MembershipProviderBase imp
 
         localIp = InetAddress.getLocalHost().getHostAddress();
         port = Integer.parseInt(properties.getProperty("tcpListenPort"));
+        securePort = Integer.parseInt(properties.getProperty("tcpSecurePort"));
     }
 
     @Override
@@ -120,12 +192,16 @@ public abstract class CloudMembershipProvider extends MembershipProviderBase imp
 
     @Override
     public boolean stop(int level) throws Exception {
+        service.getChannel().removeChannelListener(this);
         return true;
     }
 
     @Override
     public void heartbeat() {
         Member[] announcedMembers = fetchMembers();
+        if (announcedMembers == null) {
+            return;
+        }
         // Add new members or refresh the members in the membership
         for (Member member : announcedMembers) {
             updateMember(member, true);
@@ -140,7 +216,7 @@ public abstract class CloudMembershipProvider extends MembershipProviderBase imp
     /**
      * Fetch current cluster members from the cloud orchestration.
      *
-     * @return the member array
+     * @return the member array, or {@code null} if an error occurred
      */
     protected abstract Member[] fetchMembers();
 
@@ -185,5 +261,4 @@ public abstract class CloudMembershipProvider extends MembershipProviderBase imp
     public boolean accept(Serializable msg, Member sender) {
         return false;
     }
-
 }

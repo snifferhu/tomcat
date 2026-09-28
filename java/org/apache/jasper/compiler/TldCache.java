@@ -18,7 +18,6 @@ package org.apache.jasper.compiler;
 
 import java.io.IOException;
 import java.net.URL;
-import java.net.URLConnection;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Map.Entry;
@@ -28,6 +27,7 @@ import jakarta.servlet.ServletContext;
 import org.apache.jasper.Constants;
 import org.apache.jasper.JasperException;
 import org.apache.tomcat.Jar;
+import org.apache.tomcat.util.buf.CloseableURLConnection;
 import org.apache.tomcat.util.descriptor.tld.TaglibXml;
 import org.apache.tomcat.util.descriptor.tld.TldParser;
 import org.apache.tomcat.util.descriptor.tld.TldResourcePath;
@@ -35,19 +35,43 @@ import org.xml.sax.SAXException;
 
 /**
  * This class caches parsed instances of TLD files to remove the need for the same TLD to be parsed for each JSP that
- * references it. It does not protect against multiple threads processing the same new TLD, but it does ensure that each
+ * references it. It does not protect against multiple threads processing the same new TLD, but it does ensure that
  * all threads will use the same TLD object after parsing.
  */
 public class TldCache {
 
+    /**
+     * The ServletContext attribute name used to store the TldCache instance.
+     */
     public static final String SERVLET_CONTEXT_ATTRIBUTE_NAME = TldCache.class.getName();
 
+    /**
+     * The servlet context associated with this cache.
+     */
     private final ServletContext servletContext;
+
+    /**
+     * Maps TLD URIs to their resource paths.
+     */
     private final Map<String,TldResourcePath> uriTldResourcePathMap = new HashMap<>();
+
+    /**
+     * Maps TLD resource paths to their cached tag library XML data.
+     */
     private final Map<TldResourcePath,TaglibXmlCacheEntry> tldResourcePathTaglibXmlMap = new HashMap<>();
+
+    /**
+     * The parser used to parse TLD files.
+     */
     private final TldParser tldParser;
 
 
+    /**
+     * Returns the TldCache instance for the given servlet context.
+     *
+     * @param servletContext the servlet context
+     * @return the TldCache instance
+     */
     public static TldCache getInstance(ServletContext servletContext) {
         if (servletContext == null) {
             throw new IllegalArgumentException(
@@ -57,6 +81,13 @@ public class TldCache {
     }
 
 
+    /**
+     * Creates a new TldCache.
+     *
+     * @param servletContext the servlet context
+     * @param uriTldResourcePathMap the pre-scanned URI to resource path mappings
+     * @param tldResourcePathTaglibXmlMap the pre-parsed TLD data
+     */
     public TldCache(ServletContext servletContext, Map<String,TldResourcePath> uriTldResourcePathMap,
             Map<TldResourcePath,TaglibXml> tldResourcePathTaglibXmlMap) {
         this.servletContext = servletContext;
@@ -81,11 +112,24 @@ public class TldCache {
     }
 
 
+    /**
+     * Returns the resource path for the given TLD URI.
+     *
+     * @param uri the TLD URI
+     * @return the resource path, or null if not found
+     */
     public TldResourcePath getTldResourcePath(String uri) {
         return uriTldResourcePathMap.get(uri);
     }
 
 
+    /**
+     * Returns the parsed tag library XML for the given resource path.
+     *
+     * @param tldResourcePath the TLD resource path
+     * @return the parsed tag library XML, or null if not found
+     * @throws JasperException if an error occurs during parsing
+     */
     public TaglibXml getTaglibXml(TldResourcePath tldResourcePath) throws JasperException {
         TaglibXmlCacheEntry cacheEntry = tldResourcePathTaglibXmlMap.get(tldResourcePath);
         if (cacheEntry == null) {
@@ -124,13 +168,8 @@ public class TldCache {
                 // webappPath will be null for JARs containing TLDs that are on
                 // the class path but not part of the web application
                 URL url = servletContext.getResource(tldResourcePath.getWebappPath());
-                URLConnection conn = url.openConnection();
-                result[0] = conn.getLastModified();
-                if ("file".equals(url.getProtocol())) {
-                    // Reading the last modified time opens an input stream so we
-                    // need to make sure it is closed again otherwise the TLD file
-                    // will be locked until GC runs.
-                    conn.getInputStream().close();
+                try (CloseableURLConnection conn = new CloseableURLConnection(url)) {
+                    result[0] = conn.getLastModified();
                 }
             }
             try (Jar jar = tldResourcePath.openJar()) {

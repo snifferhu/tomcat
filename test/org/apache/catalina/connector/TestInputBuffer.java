@@ -46,7 +46,7 @@ public class TestInputBuffer extends TomcatBaseTest {
         Tomcat tomcat = getTomcatInstance();
         Context root = tomcat.addContext("", TEMP_DIR);
         Tomcat.addServlet(root, "Echo", new Utf8Echo());
-        root.addServletMappingDecoded("/test", "Echo");
+        root.addServletMapping("/test", "Echo");
 
         tomcat.start();
 
@@ -65,7 +65,7 @@ public class TestInputBuffer extends TomcatBaseTest {
         Tomcat tomcat = getTomcatInstance();
         Context root = tomcat.addContext("", TEMP_DIR);
         Tomcat.addServlet(root, "Bug60400Servlet", new Bug60400Servlet());
-        root.addServletMappingDecoded("/", "Bug60400Servlet");
+        root.addServletMapping("/", "Bug60400Servlet");
 
         Assert.assertTrue(tomcat.getConnector().setProperty("socket.appReadBufSize", "9000"));
         tomcat.start();
@@ -74,6 +74,29 @@ public class TestInputBuffer extends TomcatBaseTest {
         byte[] requestBody = new byte[9500];
         Arrays.fill(requestBody, (byte) 1);
         int rc = postUrl(requestBody, "http://localhost:" + getPort() + "/", bc, null);
+        Assert.assertEquals(HttpServletResponse.SC_OK, rc);
+        Assert.assertEquals(requestBody.length, bc.getLength());
+    }
+
+
+    @Test
+    public void testLargeReadBufSize() throws Exception {
+        Tomcat tomcat = getTomcatInstance();
+        Context root = tomcat.addContext("", TEMP_DIR);
+        Tomcat.addServlet(root, "Echo", new Utf8Echo());
+        root.addServletMapping("/test", "Echo");
+
+        Assert.assertTrue(tomcat.getConnector().setProperty("socket.appReadBufSize", "10500"));
+
+        tomcat.start();
+
+        Assert.assertTrue(tomcat.getConnector().setProperty("socket.appReadBufSize", "10500"));
+        tomcat.start();
+
+        ByteChunk bc = new ByteChunk();
+        byte[] requestBody = new byte[95000];
+        Arrays.fill(requestBody, (byte) '0');
+        int rc = postUrl(requestBody, "http://localhost:" + getPort() + "/test", bc, null);
         Assert.assertEquals(HttpServletResponse.SC_OK, rc);
         Assert.assertEquals(requestBody.length, bc.getLength());
     }

@@ -226,7 +226,11 @@ public abstract class Http2TestBase extends TomcatBaseTest {
             String url) {
         List<Header> headers = new ArrayList<>(4);
         headers.add(new Header(":method", Method.GET));
-        headers.add(new Header(":scheme", "http"));
+        if (getTomcatInstance().getConnector().getSecure()) {
+            headers.add(new Header(":scheme", "https"));
+        } else {
+            headers.add(new Header(":scheme", "http"));
+        }
         headers.add(new Header(":path", url));
         headers.add(new Header(":authority", "localhost:" + getPort()));
 
@@ -243,7 +247,8 @@ public abstract class Http2TestBase extends TomcatBaseTest {
         for (Header header : headers) {
             mimeHeaders.addValue(header.getName()).setString(header.getValue());
         }
-        hpackEncoder.encode(mimeHeaders, headersPayload);
+        // Don't force lower case to allow testing with upper case field names
+        hpackEncoder.encode(mimeHeaders, headersPayload, false);
         if (padding != null) {
             headersPayload.put(padding);
         }
@@ -264,7 +269,11 @@ public abstract class Http2TestBase extends TomcatBaseTest {
     protected void buildSimpleGetRequestPart1(byte[] frameHeader, ByteBuffer headersPayload, int streamId) {
         List<Header> headers = new ArrayList<>(3);
         headers.add(new Header(":method", Method.GET));
-        headers.add(new Header(":scheme", "http"));
+        if (getTomcatInstance().getConnector().getSecure()) {
+            headers.add(new Header(":scheme", "https"));
+        } else {
+            headers.add(new Header(":scheme", "http"));
+        }
         headers.add(new Header(":path", "/simple"));
 
         buildSimpleGetRequestPart1(frameHeader, headersPayload, headers, streamId);
@@ -377,7 +386,11 @@ public abstract class Http2TestBase extends TomcatBaseTest {
 
         MimeHeaders headers = new MimeHeaders();
         headers.addValue(":method").setString(Method.POST);
-        headers.addValue(":scheme").setString("http");
+        if (getTomcatInstance().getConnector().getSecure()) {
+            headers.addValue(":scheme").setString("https");
+        } else {
+            headers.addValue(":scheme").setString("http");
+        }
         headers.addValue(":path").setString(path);
         headers.addValue(":authority").setString("localhost:" + getPort());
         if (useExpectation) {
@@ -453,7 +466,11 @@ public abstract class Http2TestBase extends TomcatBaseTest {
     protected void buildHeadRequest(byte[] headersFrameHeader, ByteBuffer headersPayload, int streamId, String path) {
         MimeHeaders headers = new MimeHeaders();
         headers.addValue(":method").setString(Method.HEAD);
-        headers.addValue(":scheme").setString("http");
+        if (getTomcatInstance().getConnector().getSecure()) {
+            headers.addValue(":scheme").setString("https");
+        } else {
+            headers.addValue(":scheme").setString("http");
+        }
         headers.addValue(":path").setString(path);
         headers.addValue(":authority").setString("localhost:" + getPort());
         hpackEncoder.encode(headers, headersPayload);
@@ -653,15 +670,15 @@ public abstract class Http2TestBase extends TomcatBaseTest {
 
         Context ctxt = getProgrammaticRootContext();
         Tomcat.addServlet(ctxt, "empty", new EmptyServlet());
-        ctxt.addServletMappingDecoded("/empty", "empty");
+        ctxt.addServletMapping("/empty", "empty");
         Tomcat.addServlet(ctxt, "simple", new SimpleServlet());
-        ctxt.addServletMappingDecoded("/simple", "simple");
+        ctxt.addServletMapping("/simple", "simple");
         Tomcat.addServlet(ctxt, "large", new LargeServlet());
-        ctxt.addServletMappingDecoded("/large", "large");
+        ctxt.addServletMapping("/large", "large");
         Tomcat.addServlet(ctxt, "cookie", new CookieServlet());
-        ctxt.addServletMappingDecoded("/cookie", "cookie");
+        ctxt.addServletMapping("/cookie", "cookie");
         Tomcat.addServlet(ctxt, "parameter", new ParameterServlet());
-        ctxt.addServletMappingDecoded("/parameter", "parameter");
+        ctxt.addServletMapping("/parameter", "parameter");
 
         tomcat.start();
     }
@@ -1029,6 +1046,30 @@ public abstract class Http2TestBase extends TomcatBaseTest {
     }
 
 
+    void filterTrace(StringBuilder filteredTrace, int filteredFrameCountTarget, String... ignores) throws IOException,
+            Http2Exception {
+        output.clearTrace();
+        int filteredFrameCount = 0;
+
+        while (filteredFrameCount < filteredFrameCountTarget) {
+            parser.readFrame();
+            String singleFrameTrace = output.getTrace();
+            boolean keep = true;
+            for (String ignore : ignores) {
+                if (singleFrameTrace.contains(ignore)) {
+                    keep = false;
+                    break;
+                }
+            }
+            if (keep) {
+                filteredTrace.append(singleFrameTrace);
+                filteredFrameCount++;
+            }
+            output.clearTrace();
+        }
+    }
+
+
     static void setOneBytes(byte[] output, int firstByte, int value) {
         output[firstByte] = (byte) (value & 0xFF);
     }
@@ -1184,7 +1225,7 @@ public abstract class Http2TestBase extends TomcatBaseTest {
         public void headersEnd(int streamId, boolean endOfStream) {
             trace.append(streamId + "-HeadersEnd\n");
             if (endOfStream) {
-                receivedEndOfStream(streamId) ;
+                receivedEndOfStream(streamId);
             }
         }
 
@@ -1448,7 +1489,7 @@ public abstract class Http2TestBase extends TomcatBaseTest {
         @Override
         protected void doPost(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
 
-            Map<String, String[]> params = req.getParameterMap();
+            Map<String,String[]> params = req.getParameterMap();
 
             resp.setContentType("text/plain");
             resp.setCharacterEncoding("UTF-8");

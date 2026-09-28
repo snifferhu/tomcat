@@ -26,17 +26,26 @@ import org.apache.jasper.compiler.tagplugin.TagPluginContext;
 import org.apache.jasper.tagplugins.jstl.Util;
 
 
+/**
+ * Tag plugin for the JSTL out tag.
+ */
 public final class Out implements TagPlugin {
+
+    /**
+     * Constructs an Out tag plugin.
+     */
+    public Out() {
+    }
 
     @Override
     public void doTag(TagPluginContext ctxt) {
 
-        // these two data member are to indicate
+        // these two local variables are to indicate
         // whether the corresponding attribute is specified
         boolean hasDefault = ctxt.isAttributeSpecified("default");
         boolean hasEscapeXml = ctxt.isAttributeSpecified("escapeXml");
 
-        // strValName, strEscapeXmlName & strDefName are two variables' name
+        // strValName, strEscapeXmlName & strDefName are three variables' names
         // standing for value, escapeXml and default attribute
         String strObjectName = ctxt.getTemporaryVariableName();
         String strValName = ctxt.getTemporaryVariableName();
@@ -44,7 +53,7 @@ public final class Out implements TagPlugin {
         String strEscapeXmlName = ctxt.getTemporaryVariableName();
         String strSkipBodyName = ctxt.getTemporaryVariableName();
 
-        // according to the tag file, the value attribute is mandatory.
+        // the value attribute is not mandatory; the tag body is a fallback.
         ctxt.generateImport("java.io.Reader");
         ctxt.generateJavaSource("Object " + strObjectName + "=");
         ctxt.generateAttribute("value");
@@ -85,6 +94,17 @@ public final class Out implements TagPlugin {
         ctxt.generateJavaSource("}");
     }
 
+    /**
+     * Performs output of a value to the JspWriter.
+     *
+     * @param out The JspWriter to write to
+     * @param input The input object
+     * @param value The value to output
+     * @param defaultValue The default value
+     * @param escapeXml Whether to escape XML
+     * @return true if output was performed
+     * @throws IOException if an I/O error occurs
+     */
     public static boolean output(JspWriter out, Object input, String value, String defaultValue, boolean escapeXml)
             throws IOException {
         if (input instanceof Reader) {

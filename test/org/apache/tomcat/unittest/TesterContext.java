@@ -111,6 +111,18 @@ public class TesterContext implements Context {
     }
 
 
+    private String path = "";
+    @Override
+    public String getPath() {
+        return path;
+    }
+
+    @Override
+    public void setPath(String path) {
+        this.path = path;
+    }
+
+
     @Override
     public Log getLogger() {
         return log;
@@ -552,16 +564,6 @@ public class TesterContext implements Context {
     }
 
     @Override
-    public String getPath() {
-        return null;
-    }
-
-    @Override
-    public void setPath(String path) {
-        // NO-OP
-    }
-
-    @Override
     public String getPublicId() {
         return null;
     }
@@ -781,7 +783,7 @@ public class TesterContext implements Context {
     }
 
     @Override
-    public void addServletMappingDecoded(String pattern, String name,
+    public void addServletMapping(String pattern, String name,
             boolean jspWildcard) {
         // NO-OP
     }

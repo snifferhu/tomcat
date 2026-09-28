@@ -56,7 +56,7 @@ import org.apache.tomcat.util.res.StringManager;
  *    uses, but now it is required.
  *  - some of the gratuitous flexibility removed - instead this is more predictive and
  *    strict with the use cases.
- *  - all Method and metadata is stored in ManagedBean. BaseModelBMean and ManagedBean act
+ *  - all Method and metadata is stored in ManagedBean. BaseModelMBean and ManagedBean act
  *    like Object and Class.
  *  - setModelMBean is no longer called on resources ( not used in tomcat )
  *  - no caching of Methods for now - operations and setters are not called repeatedly in most
@@ -64,9 +64,6 @@ import org.apache.tomcat.util.res.StringManager;
  *  are, the overhead of getting the method should be small compared with other JMX costs ( RMI, etc ).
  *  We can add getter cache if needed.
  *  - removed unused constructor, fields
- *
- *  TODO:
- *   - clean up catalina.mbeans, stop using weird inheritance
  */
 
 /**
@@ -88,6 +85,8 @@ import org.apache.tomcat.util.res.StringManager;
  * <ul>
  * <li>One of the Java primitive types (boolean, byte, char, double, float, integer, long, short). Corresponding value
  * will be wrapped in the appropriate wrapper class automatically.</li>
+ * <li>Any other Bean-compatible class, such as <code>String</code>, <code>String[]</code>, <code>Object[]</code>,
+ * <code>ObjectName</code>, <code>BigDecimal</code>, <code>BigInteger</code> or <code>java.io.File</code>.</li>
  * <li>Operations that return no value should declare a return type of <code>void</code>.</li>
  * </ul>
  * <li>Attribute caching is not supported</li>
@@ -95,11 +94,20 @@ import org.apache.tomcat.util.res.StringManager;
  */
 public class BaseModelMBean implements DynamicMBean, MBeanRegistration, ModelMBeanNotificationBroadcaster {
 
+    /**
+     * Default constructor.
+     */
+    public BaseModelMBean() {
+    }
+
     private static final Log log = LogFactory.getLog(BaseModelMBean.class);
     private static final StringManager sm = StringManager.getManager(BaseModelMBean.class);
 
     // ----------------------------------------------------- Instance Variables
 
+    /**
+     * The JMX ObjectName of this MBean.
+     */
     protected ObjectName oname = null;
 
     /**
@@ -126,6 +134,9 @@ public class BaseModelMBean implements DynamicMBean, MBeanRegistration, ModelMBe
     // TODO: move to ManagedBean
     static final Object[] NO_ARGS_PARAM = new Object[0];
 
+    /**
+     * The type of the managed resource.
+     */
     protected String resourceType = null;
 
     // key: operation val: invoke method
@@ -201,6 +212,11 @@ public class BaseModelMBean implements DynamicMBean, MBeanRegistration, ModelMBe
 
     }
 
+    /**
+     * Sets the metadata for this MBean.
+     *
+     * @param managedBean the managed bean metadata
+     */
     public void setManagedBean(ManagedBean managedBean) {
         this.managedBean = managedBean;
     }
@@ -449,7 +465,8 @@ public class BaseModelMBean implements DynamicMBean, MBeanRegistration, ModelMBe
      *
      * @param resource The resource object to be managed
      * @param type     The type of reference for the managed resource ("ObjectReference", "Handle", "IOR", "EJBHandle",
-     *                     or "RMIReference")
+     *                     or "RMIReference"). This parameter is not used; the resource type is derived from the
+     *                     resource object.
      *
      * @exception InstanceNotFoundException  if the managed resource object cannot be found
      * @exception MBeanException             if the initializer of the object throws an exception
@@ -669,21 +686,38 @@ public class BaseModelMBean implements DynamicMBean, MBeanRegistration, ModelMBe
     }
 
 
+    /**
+     * Returns the type of the managed resource.
+     *
+     * @return the resource type
+     */
     public String getModelerType() {
         return resourceType;
     }
 
     /**
-     * @return the fully qualified Java class name of the managed object for this MBean
+     * Returns the fully qualified Java class name of the managed object for this MBean.
+     *
+     * @return the fully qualified Java class name
      */
     public String getClassName() {
         return getModelerType();
     }
 
+    /**
+     * Returns the JMX ObjectName of this MBean.
+     *
+     * @return the JMX ObjectName
+     */
     public ObjectName getJmxName() {
         return oname;
     }
 
+    /**
+     * Returns the string representation of the JMX ObjectName.
+     *
+     * @return the ObjectName string or null
+     */
     public String getObjectName() {
         if (oname != null) {
             return oname.toString();

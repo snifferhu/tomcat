@@ -19,8 +19,6 @@ package org.apache.tomcat.util.descriptor.web;
 import java.io.File;
 import java.io.IOException;
 import java.io.StringReader;
-import java.nio.charset.StandardCharsets;
-import java.util.Collection;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
@@ -48,7 +46,7 @@ public class TestWebXml {
 
         // Defaults
         Assert.assertEquals(6, webxml.getMajorVersion());
-        Assert.assertEquals(0, webxml.getMinorVersion());
+        Assert.assertEquals(2, webxml.getMinorVersion());
 
         // Both get changed
         webxml.setVersion("2.5");
@@ -188,7 +186,39 @@ public class TestWebXml {
         doTestValidateVersion("6.0");
     }
 
+    @Test
+    public void testValidateVersion61() throws IOException, SAXException {
+        doTestValidateVersion("6.1");
+    }
+
+    @Test
+    public void testValidateVersion62() throws IOException, SAXException {
+        doTestValidateVersion("6.2");
+    }
+
+    @Test
+    public void testValidateVersion63() throws IOException, SAXException {
+        /*
+         * Partly here to test behaviour on invalid versions. Partly here as a reminder to update the tests when adding
+         * support for a new Servlet version.
+         */
+        doTestValidateVersion("6.3", "6.2");
+    }
+
+    @Test
+    public void testValidateVersion70() throws IOException, SAXException {
+        /*
+         * Partly here to test behaviour on invalid versions. Partly here as a reminder to update the tests when adding
+         * support for a new Servlet version.
+         */
+        doTestValidateVersion("7.0", "6.2");
+    }
+
     private void doTestValidateVersion(String version) throws IOException, SAXException {
+        doTestValidateVersion(version, version);
+    }
+
+    private void doTestValidateVersion(String version, String expected) throws IOException, SAXException {
         WebXml webxml = new WebXml();
 
         // Special cases
@@ -220,8 +250,8 @@ public class TestWebXml {
         Assert.assertEquals(0, handler.getErrors().size());
         Assert.assertEquals(0, handler.getWarnings().size());
 
-        Assert.assertEquals(version, webxml.getVersion());
-        Assert.assertEquals(version, webxmlResult.getVersion());
+        Assert.assertEquals(expected, webxml.getVersion());
+        Assert.assertEquals(expected, webxmlResult.getVersion());
     }
 
     // A simplified copy of ContextConfig.getDefaultWebXmlFragment().
@@ -259,7 +289,7 @@ public class TestWebXml {
 
         FilterMap filterMap = new FilterMap();
         filterMap.setFilterName("Dummy");
-        filterMap.addURLPatternDecoded("/*");
+        filterMap.addURLPattern("/*");
         webXmlDefaultFragment.addFilterMapping(filterMap);
 
         // Listeners were added in 2.3 so should be excluded in 2.2
@@ -304,7 +334,7 @@ public class TestWebXml {
         sc.setDisplayName("dummy");
         SecurityCollection collection = new SecurityCollection();
         collection.setName("dummy");
-        collection.addPatternDecoded("/*");
+        collection.addPattern("/*");
         collection.addMethod(Method.DELETE);
         sc.addCollection(collection);
         webXmlDefaultFragment.addSecurityConstraint(sc);
@@ -502,46 +532,6 @@ public class TestWebXml {
 
 
     @Test
-    public void testEncoding() {
-        WebXml webXml = new WebXml();
-        webXml.setCharset(StandardCharsets.ISO_8859_1);
-
-        webXml.addErrorPage(new ErrorPage());
-        Collection<ErrorPage> errorPages = webXml.getErrorPages().values();
-        for (ErrorPage errorPage : errorPages) {
-            Assert.assertEquals(StandardCharsets.ISO_8859_1, errorPage.getCharset());
-        }
-
-        webXml.addFilterMapping(new FilterMap());
-        Set<FilterMap> filterMaps = webXml.getFilterMappings();
-        for (FilterMap filterMap : filterMaps) {
-            Assert.assertEquals(StandardCharsets.ISO_8859_1, filterMap.getCharset());
-        }
-
-        webXml.addJspPropertyGroup(new JspPropertyGroup());
-        Set<JspPropertyGroup> jspPropertyGroups = webXml.getJspPropertyGroups();
-        for (JspPropertyGroup jspPropertyGroup : jspPropertyGroups) {
-            Assert.assertEquals(StandardCharsets.ISO_8859_1, jspPropertyGroup.getCharset());
-        }
-
-        webXml.setLoginConfig(new LoginConfig());
-        LoginConfig loginConfig = webXml.getLoginConfig();
-        Assert.assertEquals(StandardCharsets.ISO_8859_1, loginConfig.getCharset());
-
-        SecurityConstraint constraint = new SecurityConstraint();
-        constraint.addCollection(new SecurityCollection());
-        webXml.addSecurityConstraint(constraint);
-        Set<SecurityConstraint> securityConstraints = webXml.getSecurityConstraints();
-        for (SecurityConstraint securityConstraint : securityConstraints) {
-            Assert.assertEquals(StandardCharsets.ISO_8859_1, securityConstraint.getCharset());
-            for (SecurityCollection securityCollection : securityConstraint.findCollections()) {
-                Assert.assertEquals(StandardCharsets.ISO_8859_1, securityCollection.getCharset());
-            }
-        }
-    }
-
-
-    @Test
     public void testMergeSessionCookieConfig01() {
         WebXml main = new WebXml();
         WebXml fragmentA = new WebXml();
@@ -629,5 +619,177 @@ public class TestWebXml {
         fragments.add(fragmentB);
 
         Assert.assertFalse(main.merge(fragments));
+    }
+
+
+    @Test
+    public void testToXml01() throws Exception {
+        // Empty web.xml
+        doTestToXml("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" +
+                "<web-app xmlns=\"https://jakarta.ee/xml/ns/jakartaee\"\n" +
+                "         xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"\n" +
+                "         xsi:schemaLocation=\"https://jakarta.ee/xml/ns/jakartaee" +
+                " https://jakarta.ee/xml/ns/jakartaee/web-app_6_2.xsd\"\n" +
+                "         version=\"6.2\"\n" +
+                "         metadata-complete=\"true\">\n" +
+                "\n" +
+                "</web-app>");
+    }
+
+
+    @Test
+    public void testToXml02() throws Exception {
+        // Deny all
+        doTestToXml("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" +
+                "<web-app xmlns=\"https://jakarta.ee/xml/ns/jakartaee\"\n" +
+                "         xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"\n" +
+                "         xsi:schemaLocation=\"https://jakarta.ee/xml/ns/jakartaee" +
+                " https://jakarta.ee/xml/ns/jakartaee/web-app_6_2.xsd\"\n" +
+                "         version=\"6.2\"\n" +
+                "         metadata-complete=\"true\">\n" +
+                "\n" +
+                "  <security-constraint>\n" +
+                "    <web-resource-collection>\n" +
+                "      <web-resource-name>Test</web-resource-name>\n" +
+                "      <url-pattern>/deny-all</url-pattern>\n" +
+                "    </web-resource-collection>\n" +
+                "    <auth-constraint/>\n" +
+                "    <user-data-constraint>\n" +
+                "      <transport-guarantee>NONE</transport-guarantee>\n" +
+                "    </user-data-constraint>\n" +
+                "  </security-constraint>\n" +
+                "\n" +
+                "</web-app>");
+    }
+
+
+    @Test
+    public void testToXml03() throws Exception {
+        // other role plus all roles
+        doTestToXml("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" +
+                "<web-app xmlns=\"https://jakarta.ee/xml/ns/jakartaee\"\n" +
+                "         xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"\n" +
+                "         xsi:schemaLocation=\"https://jakarta.ee/xml/ns/jakartaee" +
+                " https://jakarta.ee/xml/ns/jakartaee/web-app_6_2.xsd\"\n" +
+                "         version=\"6.2\"\n" +
+                "         metadata-complete=\"true\">\n" +
+                "\n" +
+                "  <security-constraint>\n" +
+                "    <web-resource-collection>\n" +
+                "      <web-resource-name>Test</web-resource-name>\n" +
+                "      <url-pattern>/deny-all</url-pattern>\n" +
+                "    </web-resource-collection>\n" +
+                "    <auth-constraint>\n" +
+                "      <role-name>other</role-name>\n" +
+                "      <role-name>*</role-name>\n" +
+                "    </auth-constraint>\n" +
+                "    <user-data-constraint>\n" +
+                "      <transport-guarantee>NONE</transport-guarantee>\n" +
+                "    </user-data-constraint>\n" +
+                "  </security-constraint>\n" +
+                "\n" +
+                "</web-app>");
+    }
+
+
+    @Test
+    public void testToXml04() throws Exception {
+        // all roles
+        doTestToXml("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" +
+                "<web-app xmlns=\"https://jakarta.ee/xml/ns/jakartaee\"\n" +
+                "         xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"\n" +
+                "         xsi:schemaLocation=\"https://jakarta.ee/xml/ns/jakartaee" +
+                " https://jakarta.ee/xml/ns/jakartaee/web-app_6_2.xsd\"\n" +
+                "         version=\"6.2\"\n" +
+                "         metadata-complete=\"true\">\n" +
+                "\n" +
+                "  <security-constraint>\n" +
+                "    <web-resource-collection>\n" +
+                "      <web-resource-name>Test</web-resource-name>\n" +
+                "      <url-pattern>/deny-all</url-pattern>\n" +
+                "    </web-resource-collection>\n" +
+                "    <auth-constraint>\n" +
+                "      <role-name>*</role-name>\n" +
+                "    </auth-constraint>\n" +
+                "    <user-data-constraint>\n" +
+                "      <transport-guarantee>NONE</transport-guarantee>\n" +
+                "    </user-data-constraint>\n" +
+                "  </security-constraint>\n" +
+                "\n" +
+                "</web-app>");
+    }
+
+
+    @Test
+    public void testToXml05() throws Exception {
+        // other role plus authenticated users
+        doTestToXml("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" +
+                "<web-app xmlns=\"https://jakarta.ee/xml/ns/jakartaee\"\n" +
+                "         xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"\n" +
+                "         xsi:schemaLocation=\"https://jakarta.ee/xml/ns/jakartaee" +
+                " https://jakarta.ee/xml/ns/jakartaee/web-app_6_2.xsd\"\n" +
+                "         version=\"6.2\"\n" +
+                "         metadata-complete=\"true\">\n" +
+                "\n" +
+                "  <security-constraint>\n" +
+                "    <web-resource-collection>\n" +
+                "      <web-resource-name>Test</web-resource-name>\n" +
+                "      <url-pattern>/deny-all</url-pattern>\n" +
+                "    </web-resource-collection>\n" +
+                "    <auth-constraint>\n" +
+                "      <role-name>other</role-name>\n" +
+                "      <role-name>**</role-name>\n" +
+                "    </auth-constraint>\n" +
+                "    <user-data-constraint>\n" +
+                "      <transport-guarantee>NONE</transport-guarantee>\n" +
+                "    </user-data-constraint>\n" +
+                "  </security-constraint>\n" +
+                "\n" +
+                "</web-app>");
+    }
+
+
+    @Test
+    public void testToXml06() throws Exception {
+        // authenticated users
+        doTestToXml("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" +
+                "<web-app xmlns=\"https://jakarta.ee/xml/ns/jakartaee\"\n" +
+                "         xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"\n" +
+                "         xsi:schemaLocation=\"https://jakarta.ee/xml/ns/jakartaee" +
+                " https://jakarta.ee/xml/ns/jakartaee/web-app_6_2.xsd\"\n" +
+                "         version=\"6.2\"\n" +
+                "         metadata-complete=\"true\">\n" +
+                "\n" +
+                "  <security-constraint>\n" +
+                "    <web-resource-collection>\n" +
+                "      <web-resource-name>Test</web-resource-name>\n" +
+                "      <url-pattern>/deny-all</url-pattern>\n" +
+                "    </web-resource-collection>\n" +
+                "    <auth-constraint>\n" +
+                "      <role-name>**</role-name>\n" +
+                "    </auth-constraint>\n" +
+                "    <user-data-constraint>\n" +
+                "      <transport-guarantee>NONE</transport-guarantee>\n" +
+                "    </user-data-constraint>\n" +
+                "  </security-constraint>\n" +
+                "\n" +
+                "</web-app>");
+    }
+
+
+    private void doTestToXml(String input) throws Exception {
+        Digester digester = DigesterFactory.newDigester(true, true, new WebRuleSet(), true);
+
+        XmlErrorHandler handler = new XmlErrorHandler();
+        digester.setErrorHandler(handler);
+
+        InputSource is = new InputSource(new StringReader(input));
+        WebXml webxml = new WebXml();
+        digester.push(webxml);
+        digester.parse(is);
+
+        String output = webxml.toXml();
+
+        Assert.assertEquals(input, output);
     }
 }

@@ -42,6 +42,12 @@ import org.apache.juli.logging.LogFactory;
  */
 public class SmapUtil {
 
+    /**
+     * Default constructor.
+     */
+    public SmapUtil() {
+    }
+
     private static final Charset SMAP_ENCODING = StandardCharsets.UTF_8;
 
 
@@ -111,6 +117,12 @@ public class SmapUtil {
         return smapInfo;
     }
 
+    /**
+     * Installs SMAP data into the compiled class files by writing the SourceDebugExtension
+     * attribute.
+     * @param smapInfo the SMAP data keyed by fully qualified class name
+     * @throws IOException if an I/O error occurs while writing class files
+     */
     public static void installSmap(Map<String,SmapStratum> smapInfo) throws IOException {
         if (smapInfo == null) {
             return;
@@ -422,6 +434,13 @@ public class SmapUtil {
         }
     }
 
+    /**
+     * Traverses the JSP AST nodes and populates the given SmapStratum with line mapping data.
+     * @param nodes the root JSP AST nodes
+     * @param s the stratum to populate with line mappings
+     * @param innerClassMap map to collect SMAP data for inner classes
+     * @param breakAtLF whether to generate a mapping for each line feed in template text
+     */
     public static void evaluateNodes(Node.Nodes nodes, SmapStratum s, HashMap<String,SmapStratum> innerClassMap,
             boolean breakAtLF) {
         try {
@@ -656,6 +675,15 @@ public class SmapUtil {
         }
     }
 
+    /**
+     * Loads SMAP data for the given class by reading the embedded SourceDebugExtension
+     * attribute from the class file or an external .smap resource.
+     * @param className the fully qualified class name
+     * @param cl the class loader to use for loading the resource
+     * @return the parsed SmapStratum, or {@code null} if no SMAP data is found
+     * @throws NumberFormatException If the SMAP data is found but is malformed
+     * @throws ArrayIndexOutOfBoundsException If the SMAP data is found but is malformed
+     */
     public static SmapStratum loadSmap(String className, ClassLoader cl) {
         // Extract SMAP from class file. First line "SMAP" is not included
         String smap = getSmap(className, cl);
@@ -681,10 +709,16 @@ public class SmapUtil {
             String fileName = lines[lineIndex].substring(i + 1);
             smapStratum.addFile(fileName, lines[++lineIndex]);
             lineIndex++;
+            if (lineIndex == lines.length) {
+                return null;
+            }
         }
 
         // Skip *L
         lineIndex++;
+        if (lineIndex == lines.length) {
+            return null;
+        }
 
         while (!lines[lineIndex].equals("*E")) {
             LineInfo li = new LineInfo();
@@ -714,12 +748,16 @@ public class SmapUtil {
             smapStratum.addLineInfo(li);
 
             lineIndex++;
+            if (lineIndex == lines.length) {
+                return null;
+            }
         }
 
         return smapStratum;
     }
 
 
+    @SuppressWarnings("null") // is cannot be null when used
     private static String getSmap(String className, ClassLoader cl) {
         Charset encoding = StandardCharsets.ISO_8859_1;
         boolean found = false;
@@ -733,27 +771,29 @@ public class SmapUtil {
                 found = true;
             } else {
                 is = cl.getResourceAsStream(className.replace(".", "/") + ".class");
-                // Alternative approach would be to read the class file as per the
-                // JLS. That would require duplicating a lot of BCEL functionality.
-                int b = is.read();
-                while (b != -1) {
-                    if (b == 'S') {
-                        if ((b = is.read()) != 'M') {
-                            continue;
+                if (is != null) {
+                    // Alternative approach would be to read the class file as per the
+                    // JLS. That would require duplicating a lot of BCEL functionality.
+                    int b = is.read();
+                    while (b != -1) {
+                        if (b == 'S') {
+                            if ((b = is.read()) != 'M') {
+                                continue;
+                            }
+                            if ((b = is.read()) != 'A') {
+                                continue;
+                            }
+                            if ((b = is.read()) != 'P') {
+                                continue;
+                            }
+                            if ((b = is.read()) != '\n') {
+                                continue;
+                            }
+                            found = true;
+                            break;
                         }
-                        if ((b = is.read()) != 'A') {
-                            continue;
-                        }
-                        if ((b = is.read()) != 'P') {
-                            continue;
-                        }
-                        if ((b = is.read()) != '\n') {
-                            continue;
-                        }
-                        found = true;
-                        break;
+                        b = is.read();
                     }
-                    b = is.read();
                 }
             }
 

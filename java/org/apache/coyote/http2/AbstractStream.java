@@ -37,7 +37,15 @@ abstract class AbstractStream {
     private final String idAsString;
 
     private long windowSize = ConnectionSettingsBase.DEFAULT_INITIAL_WINDOW_SIZE;
+
+    /**
+     * Lock for window allocation operations.
+     */
     protected final Lock windowAllocationLock = new ReentrantLock();
+
+    /**
+     * Condition signaled when window allocation is available.
+     */
     protected final Condition windowAllocationAvailable = windowAllocationLock.newCondition();
 
     private volatile int connectionAllocationRequested = 0;
@@ -146,7 +154,7 @@ abstract class AbstractStream {
         windowAllocationLock.lock();
         try {
             // No need for overflow protection here. Decrement can never be larger
-            // the Integer.MAX_VALUE and once windowSize goes negative no further
+            // than the Integer.MAX_VALUE and once windowSize goes negative no further
             // decrements are permitted
             windowSize -= decrement;
             if (log.isTraceEnabled()) {
@@ -173,8 +181,11 @@ abstract class AbstractStream {
      * @param connectionAllocationRequested the value
      */
     final void setConnectionAllocationRequested(int connectionAllocationRequested) {
-        log.trace(sm.getString("abstractStream.setConnectionAllocationRequested", getConnectionId(), getIdAsString(),
-                Integer.toString(this.connectionAllocationRequested), Integer.toString(connectionAllocationRequested)));
+        if (log.isTraceEnabled()) {
+            log.trace(sm.getString("abstractStream.setConnectionAllocationRequested", getConnectionId(),
+                    getIdAsString(), Integer.toString(this.connectionAllocationRequested),
+                    Integer.toString(connectionAllocationRequested)));
+        }
         this.connectionAllocationRequested = connectionAllocationRequested;
     }
 
@@ -193,8 +204,10 @@ abstract class AbstractStream {
      * @param connectionAllocationMade the value
      */
     final void setConnectionAllocationMade(int connectionAllocationMade) {
-        log.trace(sm.getString("abstractStream.setConnectionAllocationMade", getConnectionId(), getIdAsString(),
-                Integer.toString(this.connectionAllocationMade), Integer.toString(connectionAllocationMade)));
+        if (log.isTraceEnabled()) {
+            log.trace(sm.getString("abstractStream.setConnectionAllocationMade", getConnectionId(), getIdAsString(),
+                    Integer.toString(this.connectionAllocationMade), Integer.toString(connectionAllocationMade)));
+        }
         this.connectionAllocationMade = connectionAllocationMade;
     }
 

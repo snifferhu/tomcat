@@ -137,14 +137,16 @@ public class WebdavIfHeader {
     }
 
     /**
-     * @return If String.
+     * Returns the name of the header.
+     *
+     * @return the header name
      */
     public String getHeaderName() {
         return "If";
     }
 
     /**
-     * Return the String representation of the If header present on the given request or <code>null</code>.
+     * Return the String representation of the If header value or <code>null</code> if no If header is present.
      *
      * @return If header value as String or <code>null</code>.
      */
@@ -153,9 +155,9 @@ public class WebdavIfHeader {
     }
 
     /**
-     * Returns true if an If header was present in the given request. False otherwise.
+     * Returns true if an If header is present. False otherwise.
      *
-     * @return true if an If header was present.
+     * @return true if an If header is present.
      */
     public boolean hasValue() {
         return ifHeader != null;
@@ -190,21 +192,27 @@ public class WebdavIfHeader {
     }
 
     /**
-     * @return an iterator over all resources present in the if header.
+     * Returns an iterator over all resources present in the if header.
+     *
+     * @return an iterator over all resources
      */
     public Iterator<String> getResources() {
         return resources.iterator();
     }
 
     /**
-     * @return an iterator over all tokens present in the if header, that were not denied by a leading NOT statement.
+     * Returns an iterator over all tokens present in the if header, that were not denied by a leading NOT statement.
+     *
+     * @return an iterator over all tokens
      */
     public Iterator<String> getAllTokens() {
         return allTokens.iterator();
     }
 
     /**
-     * @return an iterator over all NOT tokens present in the if header, that were explicitly denied.
+     * Returns an iterator over all NOT tokens present in the if header, that were explicitly denied.
+     *
+     * @return an iterator over all NOT tokens
      */
     public Iterator<String> getAllNotTokens() {
         return allNotTokens.iterator();
@@ -332,7 +340,7 @@ public class WebdavIfHeader {
     }
 
     /**
-     * Parses an <em>IfList</em> in the <em>If</em> header. This method implements the <em>Tagged</em> production given
+     * Parses an <em>IfList</em> in the <em>If</em> header. This method implements the <em>IfList</em> production given
      * in the class comment :
      *
      * <pre>
@@ -696,7 +704,6 @@ public class WebdavIfHeader {
      * <pre>
      *    IfList = { [ "Not" ] ( ("&lt;" Word "&gt;" ) | ( "[" Word "]" ) ) } .
      * </pre>
-     * <p>
      */
     private static class IfList extends ArrayList<IfListEntry> {
 
@@ -844,15 +851,15 @@ public class WebdavIfHeader {
         private static final long serialVersionUID = 1L;
 
         /**
-         * Matches the token and etag for the given resource. If the resource is not mentioned in the header, a match is
-         * assumed and <code>true</code> is returned in this case.
+         * Matches the token and etag for the given resource. If the resource is not mentioned in the header, a mismatch
+         * is assumed and <code>false</code> is returned in this case.
          *
          * @param resource The absolute URI of the resource for which to find a match.
          * @param tokens   The tokens to compare.
          * @param etag     The etag to compare.
          *
-         * @return <code>true</code> if either no entry exists for the resource or if the entry for the resource matches
-         *             the token and etag.
+         * @return <code>true</code> if the entry for the resource matches the token and etag, <code>false</code>
+         *             otherwise (including when no entry exists for the resource).
          */
         @Override
         public boolean matches(String resource, List<String> tokens, String etag) {
@@ -865,9 +872,11 @@ public class WebdavIfHeader {
             if (resource.startsWith("/")) {
                 path = resource;
                 uri = WebdavIfHeader.this.uriPrefix + resource;
-            } else {
+            } else if (resource.length() > WebdavIfHeader.this.uriPrefix.length()) {
                 path = resource.substring(WebdavIfHeader.this.uriPrefix.length());
                 uri = resource;
+            } else {
+                return false;
             }
             IfHeaderList list = get(path);
             if (list == null) {

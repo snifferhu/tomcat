@@ -61,14 +61,15 @@ import org.apache.tomcat.util.descriptor.web.SecurityCollection;
 import org.apache.tomcat.util.descriptor.web.SecurityConstraint;
 import org.apache.tomcat.util.res.StringManager;
 import org.apache.tomcat.util.security.ConcurrentMessageDigest;
+import org.apache.tomcat.util.security.ConstantTime;
 import org.ietf.jgss.GSSContext;
 import org.ietf.jgss.GSSCredential;
 import org.ietf.jgss.GSSException;
 import org.ietf.jgss.GSSName;
 
 /**
- * Simple implementation of <b>Realm</b> that reads an XML file to configure the valid users, passwords, and roles. The
- * file format (and default file location) are identical to those currently supported by Tomcat 3.X.
+ * Abstract base class for Realm implementations. Provides common functionality including credential handling, security
+ * constraint evaluation, and GSS-API authentication support.
  */
 public abstract class RealmBase extends LifecycleMBeanBase implements Realm {
 
@@ -175,11 +176,24 @@ public abstract class RealmBase extends LifecycleMBeanBase implements Realm {
     protected List<String> userAttributesList = null;
 
 
-    // ------------------------------------------------------------- Properties
+    // ---------------------------------------------------- Constructors
 
     /**
+     * Construct a new instance of this Realm with the default properties.
+     */
+    public RealmBase() {
+        super();
+    }
+
+
+    // ----------------------------------------------------- Properties
+
+    /**
+     * Returns the HTTP status code used when the container needs to issue an HTTP redirect to meet the requirements of
+     * a configured transport guarantee.
+     *
      * @return The HTTP status code used when the container needs to issue an HTTP redirect to meet the requirements of
-     *             a configured transport guarantee.
+     *             a configured transport guarantee
      */
     public int getTransportGuaranteeRedirectStatus() {
         return transportGuaranteeRedirectStatus;
@@ -286,18 +300,33 @@ public abstract class RealmBase extends LifecycleMBeanBase implements Realm {
         this.x509UsernameRetrieverClassName = className;
     }
 
+    /**
+     * When processing users authenticated via the GSS-API, should any &quot;@...&quot; be stripped from the end of the
+     * username?
+     *
+     * @return {@code true} when the &quot;@...&quot; suffix should be stripped
+     */
     public boolean isStripRealmForGss() {
         return stripRealmForGss;
     }
 
 
+    /**
+     * Set whether any &quot;@...&quot; should be stripped from the end of the username when processing users
+     * authenticated via the GSS-API.
+     *
+     * @param stripRealmForGss {@code true} to strip the &quot;@...&quot; suffix
+     */
     public void setStripRealmForGss(boolean stripRealmForGss) {
         this.stripRealmForGss = stripRealmForGss;
     }
 
 
     /**
-     * @return the comma separated names of user attributes to additionally query from realm
+     * Returns the comma separated names of user attributes to additionally query from the realm. These will be provided
+     * to the user through the created Principal's <i>attributes</i> map.
+     *
+     * @return The comma separated names of user attributes to additionally query from the realm
      */
     public String getUserAttributes() {
         return userAttributes;
@@ -309,9 +338,8 @@ public abstract class RealmBase extends LifecycleMBeanBase implements Realm {
      * field's name, that is, the name of the field serves as the key of the mapping.
      * <p>
      * If set to the wildcard character, or, if the wildcard character is part of the comma separated list, all
-     * available attributes - except the <i>password</i> attribute (as specified by <code>userCredCol</code>) - are
-     * queried. The wildcard character is defined by constant {@link RealmBase#USER_ATTRIBUTES_WILDCARD}. It defaults to
-     * the asterisk (*) character.
+     * available attributes - except the <i>password</i> attribute - are queried. The wildcard character is defined by
+     * constant {@link RealmBase#USER_ATTRIBUTES_WILDCARD}. It defaults to the asterisk (*) character.
      *
      * @param userAttributes the comma separated names of user attributes
      */
@@ -334,11 +362,13 @@ public abstract class RealmBase extends LifecycleMBeanBase implements Realm {
             return null;
         }
 
-        if (containerLog.isTraceEnabled()) {
+        Principal principal = getPrincipal(username);
+
+        if (principal != null && containerLog.isTraceEnabled()) {
             containerLog.trace(sm.getString("realmBase.authenticateSuccess", username));
         }
 
-        return getPrincipal(username);
+        return principal;
     }
 
 
@@ -393,12 +423,8 @@ public abstract class RealmBase extends LifecycleMBeanBase implements Realm {
             return null;
         }
         digestA1 = digestA1.toLowerCase(Locale.ENGLISH);
-        String serverDigestValue;
-        if (qop == null) {
-            serverDigestValue = digestA1 + ":" + nonce + ":" + digestA2;
-        } else {
-            serverDigestValue = digestA1 + ":" + nonce + ":" + nc + ":" + cnonce + ":" + qop + ":" + digestA2;
-        }
+        // No explicit test for qop == null since the digest will fail anyway in that case
+        String serverDigestValue = digestA1 + ":" + nonce + ":" + nc + ":" + cnonce + ":" + qop + ":" + digestA2;
 
         byte[] valueBytes;
         try {
@@ -416,7 +442,7 @@ public abstract class RealmBase extends LifecycleMBeanBase implements Realm {
                     "digestA2:" + digestA2 + " Server digest:" + serverDigest);
         }
 
-        if (serverDigest.equals(clientDigest)) {
+        if (ConstantTime.equals(serverDigest, clientDigest, true)) {
             return getPrincipal(username);
         }
 
@@ -608,7 +634,8 @@ public abstract class RealmBase extends LifecycleMBeanBase implements Realm {
                 boolean matched = false;
                 int length = -1;
                 for (String pattern : patterns) {
-                    if (pattern.startsWith("/") && pattern.endsWith("/*") && pattern.length() >= longest) {
+                    if (pattern.startsWith("/") && pattern.endsWith("/*") && pattern.length() >= longest &&
+                            pattern.length() >= length) {
 
                         if (pattern.length() == 2) {
                             matched = true;
@@ -658,8 +685,6 @@ public abstract class RealmBase extends LifecycleMBeanBase implements Realm {
                         constraints[i].included(uri, method));
             }
 
-            boolean matched = false;
-            int pos = -1;
             for (int j = 0; j < collection.length; j++) {
                 String[] patterns = collection[j].findPatterns();
 
@@ -669,6 +694,7 @@ public abstract class RealmBase extends LifecycleMBeanBase implements Realm {
                     continue;
                 }
 
+                boolean matched = false;
                 for (int k = 0; k < patterns.length && !matched; k++) {
                     String pattern = patterns[k];
                     if (pattern.startsWith("*.")) {
@@ -678,19 +704,18 @@ public abstract class RealmBase extends LifecycleMBeanBase implements Realm {
                                 uri.length() - dot == pattern.length() - 1) {
                             if (pattern.regionMatches(1, uri, dot, uri.length() - dot)) {
                                 matched = true;
-                                pos = j;
                             }
                         }
                     }
                 }
-            }
-            if (matched) {
-                found = true;
-                if (collection[pos].findMethod(method)) {
-                    if (results == null) {
-                        results = new ArrayList<>();
+                if (matched) {
+                    found = true;
+                    if (collection[j].findMethod(method)) {
+                        if (results == null) {
+                            results = new ArrayList<>();
+                        }
+                        results.add(constraints[i]);
                     }
-                    results.add(constraints[i]);
                 }
             }
         }
@@ -724,7 +749,7 @@ public abstract class RealmBase extends LifecycleMBeanBase implements Realm {
 
                 boolean matched = false;
                 for (String pattern : patterns) {
-                    if (pattern.equals("/")) {
+                    if (pattern.equals("/") && securityCollection.findMethod(method)) {
                         matched = true;
                         break;
                     }
@@ -830,7 +855,7 @@ public abstract class RealmBase extends LifecycleMBeanBase implements Realm {
             }
             // Check for an all roles(role-name="*")
             for (SecurityConstraint constraint : constraints) {
-                // If the all roles mode exists, sets
+                // Check whether the constraint grants access to all roles (role-name="*")
                 if (constraint.getAllRoles()) {
                     if (allRolesMode == AllRolesMode.AUTH_ONLY_MODE) {
                         if (log.isTraceEnabled()) {
@@ -876,9 +901,11 @@ public abstract class RealmBase extends LifecycleMBeanBase implements Realm {
     public boolean hasRole(Wrapper wrapper, Principal principal, String role) {
         // Check for a role alias
         if (wrapper != null) {
-            String realRole = wrapper.findSecurityReference(role);
-            if (realRole != null) {
-                role = realRole;
+            if (wrapper.getParent() instanceof Context context) {
+                String realRole = context.findRoleMapping(role);
+                if (realRole != null) {
+                    role = realRole;
+                }
             }
         }
 
@@ -1095,6 +1122,14 @@ public abstract class RealmBase extends LifecycleMBeanBase implements Realm {
 
     // ------------------------------------------------------ Protected Methods
 
+    /**
+     * Check whether the current credential handler uses the specified message digest algorithm.
+     *
+     * @param algorithm The name of the message digest algorithm to check
+     *
+     * @return {@code true} if the credential handler is a {@link MessageDigestCredentialHandler} using the specified
+     *             algorithm
+     */
     protected boolean hasMessageDigest(String algorithm) {
         CredentialHandler ch = credentialHandler;
         if (ch instanceof MessageDigestCredentialHandler) {
@@ -1103,7 +1138,7 @@ public abstract class RealmBase extends LifecycleMBeanBase implements Realm {
                 if (realmAlgorithm.equals(algorithm)) {
                     return true;
                 } else {
-                    log.debug(sm.getString("relamBase.digestMismatch", algorithm, realmAlgorithm));
+                    log.debug(sm.getString("realmBase.digestMismatch", algorithm, realmAlgorithm));
                 }
             }
         }
@@ -1118,15 +1153,22 @@ public abstract class RealmBase extends LifecycleMBeanBase implements Realm {
      * @param realmName The realm name
      * @param algorithm The name of the message digest algorithm to use
      *
-     * @return the digest for the specified user
+     * @return the digest for the specified user, or {@code null} if the user has no stored credential
      */
     protected String getDigest(String username, String realmName, String algorithm) {
-        if (hasMessageDigest(algorithm)) {
-            // Use pre-generated digest
-            return getPassword(username);
+        String password = getPassword(username);
+
+        // Short-cut null password case
+        if (password == null) {
+            return null;
         }
 
-        String digestValue = username + ":" + realmName + ":" + getPassword(username);
+        if (hasMessageDigest(algorithm)) {
+            // Use pre-generated digest
+            return password;
+        }
+
+        String digestValue = username + ":" + realmName + ":" + password;
 
         byte[] valueBytes;
         try {
@@ -1225,7 +1267,7 @@ public abstract class RealmBase extends LifecycleMBeanBase implements Realm {
         if (isStripRealmForGss()) {
             int i = name.indexOf('@');
             if (i > 0) {
-                // Zero so we don't leave a zero length name
+                // The 'i > 0' guard avoids stripping the name to an empty string when it starts with '@'
                 name = name.substring(0, i);
             }
         }
@@ -1282,8 +1324,9 @@ public abstract class RealmBase extends LifecycleMBeanBase implements Realm {
      * the default for the CredentialHandler will be used.</li>
      * <li><b>-k</b> - The length (in bits) of the key(s), if any, created while generating the credential. If not
      * specified, the default for the CredentialHandler will be used.</li>
-     * <li><b>-h</b> - The fully qualified class name of the CredentialHandler to use. If not specified, the built-in
-     * handlers will be tested in turn and the first one to accept the specified algorithm will be used.</li>
+     * <li><b>-h</b> - The fully qualified class name of the {@link DigestCredentialHandlerBase} to use. If not
+     * specified, the built-in handlers will be tested in turn and the first one to accept the specified algorithm will
+     * be used.</li>
      * <li><b>-f</b> - The name of the file that contains passwords to encode. Each line in the file should contain only
      * one password. Using this option ignores other password input.</li>
      * </ul>
@@ -1478,21 +1521,42 @@ public abstract class RealmBase extends LifecycleMBeanBase implements Realm {
         return container.getDomain();
     }
 
+    /**
+     * The path used in the JMX object name for this realm.
+     */
     protected String realmPath = "/realm0";
 
+    /**
+     * Return the path used in the JMX object name for this realm.
+     *
+     * @return The realm path
+     */
     public String getRealmPath() {
         return realmPath;
     }
 
+    /**
+     * Set the path used in the JMX object name for this realm.
+     *
+     * @param theRealmPath The realm path to use
+     */
     public void setRealmPath(String theRealmPath) {
         realmPath = theRealmPath;
     }
 
+    /**
+     * Return the suffix for the JMX object name, based on the realm path.
+     *
+     * @return The suffix string for the JMX object name
+     */
     protected String getRealmSuffix() {
         return ",realmPath=" + getRealmPath();
     }
 
 
+    /**
+     * Defines the mode for handling the {@code *.roles} special role.
+     */
     protected static class AllRolesMode {
 
         private final String name;

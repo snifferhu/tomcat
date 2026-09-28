@@ -129,10 +129,20 @@ public class NamingContext implements Context {
      */
     private boolean exceptionOnFailedWrite = true;
 
+    /**
+     * Returns whether an attempt to write to a read-only context results in an exception.
+     *
+     * @return {@code true} if writes to a read-only context throw an exception
+     */
     public boolean getExceptionOnFailedWrite() {
         return exceptionOnFailedWrite;
     }
 
+    /**
+     * Sets whether an attempt to write to a read-only context results in an exception or is silently ignored.
+     *
+     * @param exceptionOnFailedWrite {@code true} to throw an exception on write to a read-only context
+     */
     public void setExceptionOnFailedWrite(boolean exceptionOnFailedWrite) {
         this.exceptionOnFailedWrite = exceptionOnFailedWrite;
     }
@@ -374,13 +384,17 @@ public class NamingContext implements Context {
             return nameParser;
         }
 
+        NamingEntry entry = bindings.get(name.get(0));
+        if (entry == null) {
+            throw new NameNotFoundException(sm.getString("namingContext.nameNotBound", name, name.get(0)));
+        }
+
+        if (entry.type != NamingEntry.CONTEXT) {
+            throw new NotContextException(sm.getString("namingContext.contextExpected", name.get(0)));
+        }
+
         if (name.size() > 1) {
-            Object obj = bindings.get(name.get(0));
-            if (obj instanceof Context) {
-                return ((Context) obj).getNameParser(name.getSuffix(1));
-            } else {
-                throw new NotContextException(sm.getString("namingContext.contextExpected", name.get(0)));
-            }
+            return ((Context) entry.value).getNameParser(name.getSuffix(1));
         }
 
         return nameParser;
@@ -504,27 +518,27 @@ public class NamingContext implements Context {
             } else if (entry.type == NamingEntry.REFERENCE) {
                 try {
                     Object obj = null;
-                    if (!GRAAL) {
-                        obj = NamingManager.getObjectInstance(entry.value, name, this, env);
-                    } else {
-                        // NamingManager.getObjectInstance would simply return the reference here
-                        // Use the configured object factory to resolve it directly if possible
-                        // Note: This may need manual constructor reflection configuration
-                        Reference reference = (Reference) entry.value;
-                        String factoryClassName = reference.getFactoryClassName();
-                        if (factoryClassName != null) {
-                            Class<?> factoryClass = getClass().getClassLoader().loadClass(factoryClassName);
-                            ObjectFactory factory = (ObjectFactory) factoryClass.getDeclaredConstructor().newInstance();
-                            obj = factory.getObjectInstance(entry.value, name, this, env);
+                    boolean singleton = false;
+                    synchronized (entry) {
+                        if (entry.type == NamingEntry.ENTRY) {
+                            // Other thread has already created the singleton
+                            singleton = true;
+                            obj = entry.value;
+                        } else if (entry.value instanceof ResourceRef resourceRef) {
+                            singleton =
+                                    Boolean.parseBoolean((String) resourceRef.get(ResourceRef.SINGLETON).getContent());
+                            if (singleton) {
+                                obj = getObjectInstance(name, entry);
+                                // If reference resolution fails, don't cache failed result.
+                                if (obj != null) {
+                                    entry.value = obj;
+                                    entry.type = NamingEntry.ENTRY;
+                                }
+                            }
                         }
                     }
-                    if (entry.value instanceof ResourceRef) {
-                        boolean singleton = Boolean.parseBoolean(
-                                (String) ((ResourceRef) entry.value).get(ResourceRef.SINGLETON).getContent());
-                        if (singleton) {
-                            entry.type = NamingEntry.ENTRY;
-                            entry.value = obj;
-                        }
+                    if (!singleton) {
+                        obj = getObjectInstance(name, entry);
                     }
                     if (obj == null) {
                         throw new NamingException(sm.getString("namingContext.failResolvingReference", name));
@@ -543,9 +557,27 @@ public class NamingContext implements Context {
                 return entry.value;
             }
         }
-
     }
 
+
+    private Object getObjectInstance(Name name, NamingEntry entry) throws Exception {
+        Object obj = null;
+        if (!GRAAL) {
+            obj = NamingManager.getObjectInstance(entry.value, name, this, env);
+        } else {
+            // NamingManager.getObjectInstance would simply return the reference here
+            // Use the configured object factory to resolve it directly if possible
+            // Note: This may need manual constructor reflection configuration
+            Reference reference = (Reference) entry.value;
+            String factoryClassName = reference.getFactoryClassName();
+            if (factoryClassName != null) {
+                Class<?> factoryClass = getClass().getClassLoader().loadClass(factoryClassName);
+                ObjectFactory factory = (ObjectFactory) factoryClass.getDeclaredConstructor().newInstance();
+                obj = factory.getObjectInstance(entry.value, name, this, env);
+            }
+        }
+        return obj;
+    }
 
     /**
      * Binds a name to an object. All intermediate contexts and the target context (that named by all but terminal
@@ -615,7 +647,9 @@ public class NamingContext implements Context {
 
 
     /**
-     * @return <code>true</code> if writing is allowed on this context.
+     * Check if writing is allowed on this context.
+     *
+     * @return <code>true</code> if writing is allowed on this context
      */
     protected boolean isWritable() {
         return ContextAccessController.isWritable(name);
@@ -623,7 +657,7 @@ public class NamingContext implements Context {
 
 
     /**
-     * Throws a naming exception is Context is not writable.
+     * Throws a naming exception if Context is not writable.
      *
      * @return <code>true</code> if the Context is writable
      *

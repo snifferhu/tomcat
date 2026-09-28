@@ -44,10 +44,19 @@ public class javaURLContextFactory implements ObjectFactory, InitialContextFacto
 
     // ----------------------------------------------------------- Constructors
 
+    /**
+     * Constructs a new javaURLContextFactory.
+     */
+    public javaURLContextFactory() {
+    }
+
 
     // -------------------------------------------------------------- Constants
 
 
+    /**
+     * The name of the initial context.
+     */
     public static final String MAIN = "initialContext";
 
 
@@ -76,7 +85,7 @@ public class javaURLContextFactory implements ObjectFactory, InitialContextFacto
      *
      * @return a selector context if the thread or classloader are bound, and null otherwise
      *
-     * @throws NamingException not thrown by this implementationm
+     * @throws NamingException not thrown by this implementation
      */
     @SuppressWarnings("unchecked")
     @Override
@@ -96,7 +105,7 @@ public class javaURLContextFactory implements ObjectFactory, InitialContextFacto
      *
      * @return a selector context if the thread or classloader are bound, and a shared writable context otherwise
      *
-     * @throws NamingException not thrown by this implementationm
+     * @throws NamingException not thrown by this implementation
      */
     @SuppressWarnings("unchecked")
     @Override

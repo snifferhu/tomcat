@@ -31,6 +31,7 @@ import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
@@ -552,7 +553,7 @@ class Generator {
         if (!dependants.isEmpty()) {
             out.printil("static {");
             out.pushIndent();
-            out.printin("_jspx_dependants = new java.util.HashMap<java.lang.String,java.lang.Long>(");
+            out.printin("_jspx_dependants = new java.util.LinkedHashMap<java.lang.String,java.lang.Long>(");
             out.print("" + dependants.size());
             out.println(");");
             for (Entry<String,Long> entry : dependants.entrySet()) {
@@ -569,8 +570,8 @@ class Generator {
 
         // Static data for getImports()
         List<String> imports = pageInfo.getImports();
-        Set<String> packages = new HashSet<>();
-        Set<String> classes = new HashSet<>();
+        Set<String> packages = new LinkedHashSet<>();
+        Set<String> classes = new LinkedHashSet<>();
         for (String importName : imports) {
             String trimmed = importName.trim();
             if (trimmed.endsWith(".*")) {
@@ -2087,9 +2088,17 @@ class Generator {
                 out.print(".get(");
                 out.print(tagHandlerClassName);
                 out.println(".class);");
+                out.printin("boolean ");
+                // Used to track if the tag is re-used successfully
+                out.print(tagHandlerVar);
+                out.println("_reused = false;");
             } else {
                 writeNewInstance(tagHandlerVar, tagHandlerClass);
             }
+
+            // Wrap use of tag in try/finally to ensure clean-up takes place
+            out.printil("try {");
+            out.pushIndent();
 
             // includes setting the context
             generateSetters(n, tagHandlerVar, handlerInfo, false);
@@ -2270,25 +2279,39 @@ class Generator {
                 out.pushIndent();
                 out.printin(tagHandlerVar);
                 out.println(".doFinally();");
-            }
-
-            if (n.implementsTryCatchFinally()) {
                 out.popIndent();
                 out.printil("}");
             }
 
+            // Print tag reuse
             if (usePooling(n)) {
-                // Print tag reuse
                 out.printin(n.getTagHandlerPoolName());
                 out.print(".reuse(");
                 out.print(tagHandlerVar);
                 out.println(");");
-            } else {
-                // Clean-up
-                out.printin("org.apache.jasper.runtime.JspRuntimeLibrary.releaseTag(");
-                out.print(tagHandlerVar);
-                out.println(", _jsp_getInstanceManager());");
+                // This code will be skipped if an exception occurs which will prevent this instance from being re-used.
+                out.printin(tagHandlerVar);
+                out.println("_reused = true;");
             }
+
+            // Ensure clean-up takes place
+            // Use JspRuntimeLibrary to minimise code in _jspService()
+            out.popIndent();
+            out.printil("} finally {");
+            out.pushIndent();
+            out.printin("org.apache.jasper.runtime.JspRuntimeLibrary.releaseTag(");
+            out.print(tagHandlerVar);
+            out.print(", _jsp_getInstanceManager()");
+            if (usePooling(n)) {
+                // The tag will only be released for reuse if no exceptions occurred during use.
+                out.print(", ");
+                out.print(tagHandlerVar);
+                out.println("_reused);");
+            } else {
+                out.print(");");
+            }
+            out.popIndent();
+            out.printil("}");
 
             // Declare and synchronize AT_END scripting variables (must do this
             // outside the try/catch/finally block)

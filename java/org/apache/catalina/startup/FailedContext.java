@@ -19,6 +19,7 @@ package org.apache.catalina.startup;
 import java.beans.PropertyChangeListener;
 import java.io.File;
 import java.net.URL;
+import java.util.Collections;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
@@ -72,6 +73,15 @@ import org.apache.tomcat.util.res.StringManager;
  */
 public class FailedContext extends LifecycleMBeanBase implements Context {
 
+    /**
+     * Creates a new FailedContext instance.
+     */
+    public FailedContext() {
+    }
+
+    /**
+     * StringManager for this package.
+     */
     protected static final StringManager sm = StringManager.getManager(Constants.Package);
 
 
@@ -374,7 +384,7 @@ public class FailedContext extends LifecycleMBeanBase implements Context {
 
     @Override
     public ContainerListener[] findContainerListeners() {
-        return null;
+        return new ContainerListener[0];
     }
 
     @Override
@@ -429,7 +439,7 @@ public class FailedContext extends LifecycleMBeanBase implements Context {
 
     @Override
     public Object[] getApplicationEventListeners() {
-        return null;
+        return new Object[0];
     }
 
     @Override
@@ -439,7 +449,7 @@ public class FailedContext extends LifecycleMBeanBase implements Context {
 
     @Override
     public Object[] getApplicationLifecycleListeners() {
-        return null;
+        return new Object[0];
     }
 
     @Override
@@ -784,7 +794,7 @@ public class FailedContext extends LifecycleMBeanBase implements Context {
 
     @Override
     public String[] findApplicationListeners() {
-        return null;
+        return new String[0];
     }
 
     @Override
@@ -799,7 +809,7 @@ public class FailedContext extends LifecycleMBeanBase implements Context {
 
     @Override
     public ApplicationParameter[] findApplicationParameters() {
-        return null;
+        return new ApplicationParameter[0];
     }
 
     @Override
@@ -814,7 +824,7 @@ public class FailedContext extends LifecycleMBeanBase implements Context {
 
     @Override
     public SecurityConstraint[] findConstraints() {
-        return null;
+        return new SecurityConstraint[0];
     }
 
     @Override
@@ -839,7 +849,7 @@ public class FailedContext extends LifecycleMBeanBase implements Context {
 
     @Override
     public ErrorPage[] findErrorPages() {
-        return null;
+        return new ErrorPage[0];
     }
 
     @Override
@@ -859,7 +869,7 @@ public class FailedContext extends LifecycleMBeanBase implements Context {
 
     @Override
     public FilterDef[] findFilterDefs() {
-        return null;
+        return new FilterDef[0];
     }
 
     @Override
@@ -879,7 +889,7 @@ public class FailedContext extends LifecycleMBeanBase implements Context {
 
     @Override
     public FilterMap[] findFilterMaps() {
-        return null;
+        return new FilterMap[0];
     }
 
     @Override
@@ -904,7 +914,7 @@ public class FailedContext extends LifecycleMBeanBase implements Context {
 
     @Override
     public String[] findMimeMappings() {
-        return null;
+        return new String[0];
     }
 
     @Override
@@ -924,7 +934,7 @@ public class FailedContext extends LifecycleMBeanBase implements Context {
 
     @Override
     public String[] findParameters() {
-        return null;
+        return new String[0];
     }
 
     @Override
@@ -959,7 +969,7 @@ public class FailedContext extends LifecycleMBeanBase implements Context {
 
     @Override
     public String[] findSecurityRoles() {
-        return null;
+        return new String[0];
     }
 
     @Override
@@ -968,7 +978,7 @@ public class FailedContext extends LifecycleMBeanBase implements Context {
     }
 
     @Override
-    public void addServletMappingDecoded(String pattern, String name, boolean jspWildcard) {
+    public void addServletMapping(String pattern, String name, boolean jspWildcard) {
         // NO-OP
     }
 
@@ -979,7 +989,7 @@ public class FailedContext extends LifecycleMBeanBase implements Context {
 
     @Override
     public String[] findServletMappings() {
-        return null;
+        return new String[0];
     }
 
     @Override
@@ -999,7 +1009,7 @@ public class FailedContext extends LifecycleMBeanBase implements Context {
 
     @Override
     public String[] findWelcomeFiles() {
-        return null;
+        return new String[0];
     }
 
     @Override
@@ -1014,7 +1024,7 @@ public class FailedContext extends LifecycleMBeanBase implements Context {
 
     @Override
     public String[] findWrapperLifecycles() {
-        return null;
+        return new String[0];
     }
 
     @Override
@@ -1029,7 +1039,7 @@ public class FailedContext extends LifecycleMBeanBase implements Context {
 
     @Override
     public String[] findWrapperListeners() {
-        return null;
+        return new String[0];
     }
 
     @Override
@@ -1115,7 +1125,7 @@ public class FailedContext extends LifecycleMBeanBase implements Context {
     @Override
     public Set<String> addServletSecurity(ServletRegistration.Dynamic registration,
             ServletSecurityElement servletSecurityElement) {
-        return null;
+        return Collections.emptySet();
     }
 
     @Override
@@ -1168,7 +1178,11 @@ public class FailedContext extends LifecycleMBeanBase implements Context {
         return false;
     }
 
-    @SuppressWarnings("unused")
+    /**
+     * Adds a valve to this context. This is a no-op for a failed context.
+     *
+     * @param valve the valve to add - ignored
+     */
     public synchronized void addValve(Valve valve) {
         // NO-OP
     }
@@ -1225,12 +1239,12 @@ public class FailedContext extends LifecycleMBeanBase implements Context {
 
     @Override
     public Map<String,String> findPostConstructMethods() {
-        return null;
+        return Collections.emptyMap();
     }
 
     @Override
     public Map<String,String> findPreDestroyMethods() {
-        return null;
+        return Collections.emptyMap();
     }
 
     @Override
@@ -1432,14 +1446,29 @@ public class FailedContext extends LifecycleMBeanBase implements Context {
     public void setSuspendWrappedResponseAfterForward(boolean suspendWrappedResponseAfterForward) {
     }
 
+    /**
+     * Returns the start time. For a failed context, always returns -1.
+     *
+     * @return -1
+     */
     public long getStartTime() {
         return -1;
     }
 
+    /**
+     * Returns the startup time. For a failed context, always returns -1.
+     *
+     * @return -1
+     */
     public long getStartupTime() {
         return -1;
     }
 
+    /**
+     * Returns the TLD scan time. For a failed context, always returns -1.
+     *
+     * @return -1
+     */
     public long getTldScanTime() {
         return -1;
     }

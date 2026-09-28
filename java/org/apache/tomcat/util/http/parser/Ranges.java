@@ -22,13 +22,23 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
+import java.util.Objects;
 
+/**
+ * Represents the value of an HTTP Range header.
+ */
 public class Ranges {
 
     private final String units;
     private final List<Entry> entries;
 
 
+    /**
+     * Creates a new Ranges instance.
+     *
+     * @param units the range units (e.g., "bytes"), or null
+     * @param entries the list of range entries
+     */
     public Ranges(String units, List<Entry> entries) {
         // Units are lower case (RFC 9110, section 14.1)
         if (units == null) {
@@ -40,34 +50,95 @@ public class Ranges {
     }
 
 
+    /**
+     * Returns the list of range entries.
+     *
+     * @return an unmodifiable list of range entries
+     */
     public List<Entry> getEntries() {
         return entries;
     }
 
+    /**
+     * Returns the range units (e.g., "bytes").
+     *
+     * @return the range units, or null if not specified
+     */
     public String getUnits() {
         return units;
     }
 
 
-    public static class Entry {
+    /**
+     * Represents a single range entry with a start and end position.
+     */
+    public static class Entry implements Comparable<Entry> {
 
         private final long start;
         private final long end;
 
 
+        /**
+         * Creates a new range entry.
+         *
+         * @param start the start position of the range, or -1 if absent (suffix range)
+         * @param end the end position of the range, or -1 if absent
+         */
         public Entry(long start, long end) {
             this.start = start;
             this.end = end;
         }
 
 
+        /**
+         * Returns the start position of the range.
+         *
+         * @return the start position
+         */
         public long getStart() {
             return start;
         }
 
 
+        /**
+         * Returns the end position of the range.
+         *
+         * @return the end position, or -1 if absent
+         */
         public long getEnd() {
             return end;
+        }
+
+
+        @Override
+        public int compareTo(Entry o) {
+            if (start == o.start) {
+                return Long.compare(end, o.end);
+            } else {
+                return Long.compare(start, o.start);
+            }
+        }
+
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(Long.valueOf(end), Long.valueOf(start));
+        }
+
+
+        @Override
+        public boolean equals(Object obj) {
+            if (this == obj) {
+                return true;
+            }
+            if (obj == null) {
+                return false;
+            }
+            if (getClass() != obj.getClass()) {
+                return false;
+            }
+            Entry other = (Entry) obj;
+            return end == other.end && start == other.start;
         }
     }
 
@@ -99,15 +170,26 @@ public class Ranges {
 
         SkipResult skipResult;
         do {
-            long start = HttpParser.readLong(input);
-            // Must be followed by '-'
-            if (HttpParser.skipConstant(input, "-") != SkipResult.FOUND) {
+            long start;
+            long end;
+            try {
+                start = HttpParser.readLong(input);
+                // Must be followed by '-'
+                if (HttpParser.skipConstant(input, "-") != SkipResult.FOUND) {
+                    return null;
+                }
+                end = HttpParser.readLong(input);
+            } catch (NumberFormatException nfe) {
+                // A value that doesn't fit in a long can't be a valid range
                 return null;
             }
-            long end = HttpParser.readLong(input);
 
             if (start == -1 && end == -1) {
                 // Invalid range
+                return null;
+            }
+            if (end != -1 && start > end) {
+                // Invalid range: start must not be greater than end
                 return null;
             }
 

@@ -35,7 +35,7 @@ public class OpenSSLSessionContext implements SSLSessionContext {
     private static final StringManager sm = StringManager.getManager(OpenSSLSessionContext.class);
     private static final Enumeration<byte[]> EMPTY = new EmptyEnumeration();
 
-    private static final int TICKET_KEYS_SIZE = 48;
+    private static final int TICKET_KEYS_SIZE = 80;
 
     private final OpenSSLSessionStats stats;
     private final OpenSSLContext context;
@@ -65,8 +65,8 @@ public class OpenSSLSessionContext implements SSLSessionContext {
             throw new IllegalArgumentException(sm.getString("sessionContext.nullTicketKeys"));
         }
         if (keys.length != TICKET_KEYS_SIZE) {
-            throw new IllegalArgumentException(
-                    sm.getString("sessionContext.invalidTicketKeysLength", Integer.valueOf(keys.length)));
+            throw new IllegalArgumentException(sm.getString("sessionContext.invalidTicketKeysLength",
+                    Integer.valueOf(keys.length), Integer.valueOf(TICKET_KEYS_SIZE)));
         }
         try (var memorySession = Arena.ofConfined()) {
             var array = memorySession.allocateFrom(ValueLayout.JAVA_BYTE, keys);

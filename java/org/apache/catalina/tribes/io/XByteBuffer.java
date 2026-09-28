@@ -51,6 +51,9 @@ public class XByteBuffer implements Serializable {
     private static final long serialVersionUID = 1L;
 
     private static final Log log = LogFactory.getLog(XByteBuffer.class);
+    /**
+     * String manager for this class.
+     */
     protected static final StringManager sm = StringManager.getManager(XByteBuffer.class);
 
     /**
@@ -74,8 +77,9 @@ public class XByteBuffer implements Serializable {
     protected int bufSize = 0;
 
     /**
-     * Flag for discarding invalid packages If this flag is set to true, and append(byte[],...) is called, the data
-     * added will be inspected, and if it doesn't start with <code>START_DATA</code> it will be thrown away.
+     * Flag for discarding invalid packages. If this flag is set to true, and append(byte[],...) is called, the
+     * buffer will be inspected, and if it is longer than <code>START_DATA</code> and does not contain
+     * <code>START_DATA</code> it will be reset to length 0.
      */
     protected boolean discard;
 
@@ -91,10 +95,23 @@ public class XByteBuffer implements Serializable {
         this.discard = discard;
     }
 
+    /**
+     * Constructs a new XByteBuffer from the given data.
+     *
+     * @param data    the initial data
+     * @param discard Flag for discarding invalid packages
+     */
     public XByteBuffer(byte[] data, boolean discard) {
         this(data, data.length + 128, discard);
     }
 
+    /**
+     * Constructs a new XByteBuffer from the given data with a specific buffer size.
+     *
+     * @param data    the initial data
+     * @param size    the initial size of the byte buffer
+     * @param discard Flag for discarding invalid packages
+     */
     public XByteBuffer(byte[] data, int size, boolean discard) {
         int length = Math.max(data.length, size);
         buf = new byte[length];
@@ -103,10 +120,20 @@ public class XByteBuffer implements Serializable {
         this.discard = discard;
     }
 
+    /**
+     * Returns the current length of the data in the buffer.
+     *
+     * @return the current length
+     */
     public int getLength() {
         return bufSize;
     }
 
+    /**
+     * Sets the current length of the data in the buffer.
+     *
+     * @param size the new length
+     */
     public void setLength(int size) {
         if (size > buf.length) {
             throw new ArrayIndexOutOfBoundsException(sm.getString("xByteBuffer.size.larger.buffer"));
@@ -114,6 +141,11 @@ public class XByteBuffer implements Serializable {
         bufSize = size;
     }
 
+    /**
+     * Trims the specified number of bytes from the end of the buffer.
+     *
+     * @param length the number of bytes to trim
+     */
     public void trim(int length) {
         if ((bufSize - length) < 0) {
             throw new ArrayIndexOutOfBoundsException(
@@ -122,16 +154,27 @@ public class XByteBuffer implements Serializable {
         bufSize -= length;
     }
 
+    /**
+     * Resets the buffer length to zero.
+     */
+    @Deprecated
     public void reset() {
         bufSize = 0;
     }
 
+    /**
+     * Returns the internal byte array directly, without copying.
+     *
+     * @return the internal byte array
+     */
     public byte[] getBytesDirect() {
         return this.buf;
     }
 
     /**
-     * @return the bytes in the buffer, in its exact length
+     * Returns the bytes in the buffer, in its exact length.
+     *
+     * @return The bytes in the buffer
      */
     public byte[] getBytes() {
         byte[] b = new byte[bufSize];
@@ -140,7 +183,7 @@ public class XByteBuffer implements Serializable {
     }
 
     /**
-     * Resets the buffer
+     * Resets the buffer length to zero.
      */
     public void clear() {
         bufSize = 0;
@@ -157,6 +200,9 @@ public class XByteBuffer implements Serializable {
      *             something, or the length of data is 0
      */
     public boolean append(ByteBuffer b, int len) {
+        if (len == 0) {
+            return false;
+        }
         int newcount = bufSize + len;
         if (newcount > buf.length) {
             expand(newcount);
@@ -176,6 +222,12 @@ public class XByteBuffer implements Serializable {
 
     }
 
+    /**
+     * Appends a single byte to the buffer.
+     *
+     * @param i the byte to append
+     * @return always returns true
+     */
     public boolean append(byte i) {
         int newcount = bufSize + 1;
         if (newcount > buf.length) {
@@ -187,6 +239,12 @@ public class XByteBuffer implements Serializable {
     }
 
 
+    /**
+     * Appends a boolean value to the buffer.
+     *
+     * @param i the boolean to append
+     * @return always returns true
+     */
     public boolean append(boolean i) {
         int newcount = bufSize + 1;
         if (newcount > buf.length) {
@@ -197,6 +255,12 @@ public class XByteBuffer implements Serializable {
         return true;
     }
 
+    /**
+     * Appends a long value to the buffer.
+     *
+     * @param i the long to append
+     * @return always returns true
+     */
     public boolean append(long i) {
         int newcount = bufSize + 8;
         if (newcount > buf.length) {
@@ -207,6 +271,12 @@ public class XByteBuffer implements Serializable {
         return true;
     }
 
+    /**
+     * Appends an integer value to the buffer.
+     *
+     * @param i the integer to append
+     * @return always returns true
+     */
     public boolean append(int i) {
         int newcount = bufSize + 4;
         if (newcount > buf.length) {
@@ -217,6 +287,14 @@ public class XByteBuffer implements Serializable {
         return true;
     }
 
+    /**
+     * Appends a portion of a byte array to the buffer.
+     *
+     * @param b   the byte array
+     * @param off the offset in the byte array
+     * @param len the number of bytes to append
+     * @return true if data was appended, false if length is zero
+     */
     public boolean append(byte[] b, int off, int len) {
         if ((off < 0) || (off > b.length) || (len < 0) || ((off + len) > b.length) || ((off + len) < 0)) {
             throw new IndexOutOfBoundsException();
@@ -241,6 +319,11 @@ public class XByteBuffer implements Serializable {
         return true;
     }
 
+    /**
+     * Expands the internal buffer to accommodate the specified number of bytes.
+     *
+     * @param newcount the new minimum capacity required
+     */
     public void expand(int newcount) {
         // don't change the allocation strategy
         byte[] newbuf = new byte[Math.max(buf.length << 1, newcount)];
@@ -248,6 +331,11 @@ public class XByteBuffer implements Serializable {
         buf = newbuf;
     }
 
+    /**
+     * Returns the current capacity of the internal buffer.
+     *
+     * @return the buffer capacity
+     */
     public int getCapacity() {
         return buf.length;
     }
@@ -262,6 +350,12 @@ public class XByteBuffer implements Serializable {
         return countPackages(false);
     }
 
+    /**
+     * Counts the number of complete packages in the buffer.
+     *
+     * @param first if true, only check for the first package
+     * @return the number of complete packages found
+     */
     public int countPackages(boolean first) {
         int cnt = 0;
         int pos = START_DATA.length;
@@ -275,8 +369,7 @@ public class XByteBuffer implements Serializable {
             if (index != start || ((bufSize - start) < 14)) {
                 break;
             }
-            // next 4 bytes are compress flag not needed for count packages
-            // then get the size 4 bytes
+            // next 4 bytes are the size of the package
             int size = toInt(buf, pos);
             // now the total buffer has to be long enough to hold
             // START_DATA.length+4+size+END_DATA.length
@@ -337,6 +430,12 @@ public class XByteBuffer implements Serializable {
 
     }
 
+    /**
+     * Extracts a complete package from the buffer and deserializes it into a ChannelData object.
+     *
+     * @param clearFromBuffer if true, the extracted package will be removed from the buffer
+     * @return the deserialized ChannelData object
+     */
     public ChannelData extractPackage(boolean clearFromBuffer) {
         XByteBuffer xbuf = extractDataPackage(clearFromBuffer);
         return ChannelData.getDataFromPackage(xbuf);
@@ -367,18 +466,34 @@ public class XByteBuffer implements Serializable {
         return data;
     }
 
+    /**
+     * Creates a complete data package with header, size, data, and footer, writing to a provided buffer.
+     *
+     * @param data   the data to package
+     * @param doff   the offset in the data array
+     * @param dlength the length of the data
+     * @param buffer the output buffer
+     * @param bufoff the offset in the output buffer
+     * @return the output buffer
+     */
     public static byte[] createDataPackage(byte[] data, int doff, int dlength, byte[] buffer, int bufoff) {
-        if ((buffer.length - bufoff) > getDataPackageLength(dlength)) {
+        if ((buffer.length - bufoff) < getDataPackageLength(dlength)) {
             throw new ArrayIndexOutOfBoundsException(sm.getString("xByteBuffer.unableCreate"));
         }
         System.arraycopy(START_DATA, 0, buffer, bufoff, START_DATA.length);
-        toBytes(data.length, buffer, bufoff + START_DATA.length);
+        toBytes(dlength, buffer, bufoff + START_DATA.length);
         System.arraycopy(data, doff, buffer, bufoff + START_DATA.length + 4, dlength);
-        System.arraycopy(END_DATA, 0, buffer, bufoff + START_DATA.length + 4 + data.length, END_DATA.length);
+        System.arraycopy(END_DATA, 0, buffer, bufoff + START_DATA.length + 4 + dlength, END_DATA.length);
         return buffer;
     }
 
 
+    /**
+     * Calculates the total length of a data package including header, size indicator, data, and footer.
+     *
+     * @param datalength the length of the data portion
+     * @return the total package length
+     */
     public static int getDataPackageLength(int datalength) {
         return START_DATA.length + // header length
                 4 + // data length indicator
@@ -386,6 +501,12 @@ public class XByteBuffer implements Serializable {
                 END_DATA.length; // footer length
     }
 
+    /**
+     * Creates a complete data package from the given data.
+     *
+     * @param data the data to package
+     * @return a full package (header, size, data, footer)
+     */
     public static byte[] createDataPackage(byte[] data) {
         int length = getDataPackageLength(data.length);
         byte[] result = new byte[length];
@@ -409,7 +530,7 @@ public class XByteBuffer implements Serializable {
     /**
      * Convert eight bytes to a long
      *
-     * @param b   - the byte array containing the four bytes
+     * @param b   - the byte array containing the eight bytes
      * @param off - the offset
      *
      * @return the long value constructed from the eight bytes
@@ -556,10 +677,30 @@ public class XByteBuffer implements Serializable {
     }
 
 
+    /**
+     * Deserializes a Serializable object from the given byte array.
+     *
+     * @param data the byte array containing the serialized object
+     * @return the deserialized object
+     * @throws IOException if an I/O error occurs
+     * @throws ClassNotFoundException if the class of the serialized object cannot be found
+     * @throws ClassCastException if the deserialized object is not Serializable
+     */
     public static Serializable deserialize(byte[] data) throws IOException, ClassNotFoundException, ClassCastException {
         return deserialize(data, 0, data.length);
     }
 
+    /**
+     * Deserializes a Serializable object from a portion of the given byte array.
+     *
+     * @param data   the byte array containing the serialized object
+     * @param offset the offset in the byte array
+     * @param length the length of the data to deserialize
+     * @return the deserialized object
+     * @throws IOException if an I/O error occurs
+     * @throws ClassNotFoundException if the class of the serialized object cannot be found
+     * @throws ClassCastException if the deserialized object is not Serializable
+     */
     public static Serializable deserialize(byte[] data, int offset, int length)
             throws IOException, ClassNotFoundException, ClassCastException {
         return deserialize(data, offset, length, null);
@@ -567,6 +708,18 @@ public class XByteBuffer implements Serializable {
 
     private static final AtomicInteger invokecount = new AtomicInteger(0);
 
+    /**
+     * Deserializes a Serializable object from a portion of the given byte array using the specified class loaders.
+     *
+     * @param data   the byte array containing the serialized object
+     * @param offset the offset in the byte array
+     * @param length the length of the data to deserialize
+     * @param cls    the class loaders to use for deserialization
+     * @return the deserialized object
+     * @throws IOException if an I/O error occurs
+     * @throws ClassNotFoundException if the class of the serialized object cannot be found
+     * @throws ClassCastException if the deserialized object is not Serializable
+     */
     public static Serializable deserialize(byte[] data, int offset, int length, ClassLoader[] cls)
             throws IOException, ClassNotFoundException, ClassCastException {
         invokecount.addAndGet(1);
@@ -608,10 +761,20 @@ public class XByteBuffer implements Serializable {
         return outs.toByteArray();
     }
 
+    /**
+     * Sets the discard flag for invalid packages.
+     *
+     * @param discard the new discard flag value
+     */
     public void setDiscard(boolean discard) {
         this.discard = discard;
     }
 
+    /**
+     * Returns the discard flag for invalid packages.
+     *
+     * @return the discard flag value
+     */
     public boolean getDiscard() {
         return discard;
     }

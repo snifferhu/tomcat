@@ -116,7 +116,7 @@ public class RateLimitFilter extends FilterBase {
     /**
      * Default status code to return if requests per duration is exceeded.
      */
-    public static final int DEFAULT_STATUS_CODE = 429;
+    public static final int DEFAULT_STATUS_CODE = HttpServletResponse.SC_TOO_MANY_REQUESTS;
 
     /**
      * Default status message to return if requests per duration is exceeded.
@@ -153,49 +153,102 @@ public class RateLimitFilter extends FilterBase {
     private static final StringManager sm = StringManager.getManager(RateLimitFilter.class);
 
 
+    /**
+     * Default constructor.
+     */
+    public RateLimitFilter() {
+        super();
+    }
+
+    /**
+     * Set the duration of the time bucket in seconds.
+     *
+     * @param bucketDuration the duration in seconds
+     */
     public void setBucketDuration(int bucketDuration) {
+        if (bucketDuration <= 0) {
+            throw new IllegalArgumentException(sm.getString("rateLimitFilter.invalidBucketDuration", Integer.valueOf(bucketDuration)));
+        }
         this.bucketDuration = bucketDuration;
     }
 
-
+    /**
+     * Set the maximum number of requests allowed per time bucket.
+     *
+     * @param bucketRequests the maximum number of requests
+     */
     public void setBucketRequests(int bucketRequests) {
+        if (bucketRequests <= 0) {
+            throw new IllegalArgumentException(sm.getString("rateLimitFilter.invalidBucketRequests", Integer.valueOf(bucketRequests)));
+        }
         this.bucketRequests = bucketRequests;
     }
 
-
+    /**
+     * Set whether to enforce the rate limit by rejecting requests that exceed the limit.
+     *
+     * @param enforce {@code true} to enforce the rate limit, {@code false} to only track
+     */
     public void setEnforce(boolean enforce) {
         this.enforce = enforce;
     }
 
-
+    /**
+     * Set the HTTP status code to return when the rate limit is exceeded.
+     *
+     * @param statusCode the HTTP status code
+     */
     public void setStatusCode(int statusCode) {
         this.statusCode = statusCode;
     }
 
-
+    /**
+     * Set the status message to return when the rate limit is exceeded.
+     *
+     * @param statusMessage the status message
+     */
     public void setStatusMessage(String statusMessage) {
         this.statusMessage = statusMessage;
     }
 
-
+    /**
+     * Set the fully qualified class name of the {@link RateLimiter} implementation to use.
+     *
+     * @param rateLimitClassName the rate limiter class name
+     */
     public void setRateLimitClassName(String rateLimitClassName) {
         this.rateLimitClassName = rateLimitClassName;
     }
 
+    /**
+     * Set whether to expose rate limit headers in the HTTP response.
+     *
+     * @param exposeHeaders {@code true} to expose rate limit headers
+     */
     public void setExposeHeaders(boolean exposeHeaders) {
         this.exposeHeaders = exposeHeaders;
     }
 
+    /**
+     * Set the name of the rate limit policy for use in response headers.
+     *
+     * @param policyName the policy name
+     */
     public void setPolicyName(String policyName) {
         this.policyName = policyName;
     }
 
+    /**
+     * {@inheritDoc}
+     */
     @Override
     protected boolean isConfigProblemFatal() {
         return true;
     }
 
-
+    /**
+     * {@inheritDoc}
+     */
     @Override
     public void init(FilterConfig filterConfig) throws ServletException {
         super.init(filterConfig);
@@ -203,7 +256,7 @@ public class RateLimitFilter extends FilterBase {
         try {
             rateLimiter = (RateLimiter) Class.forName(rateLimitClassName).getConstructor().newInstance();
         } catch (ReflectiveOperationException e) {
-            throw new ServletException(e);
+            throw new ServletException(sm.getString("rateLimitFilter.classNotFound", rateLimitClassName), e);
         }
 
         rateLimiter.setDuration(bucketDuration);
@@ -224,6 +277,9 @@ public class RateLimitFilter extends FilterBase {
                 Integer.valueOf(rateLimiter.getDuration()), (!enforce ? "Not " : "") + "enforcing"));
     }
 
+    /**
+     * {@inheritDoc}
+     */
     @Override
     public void doFilter(ServletRequest request, ServletResponse response, FilterChain chain)
             throws IOException, ServletException {
@@ -234,9 +290,11 @@ public class RateLimitFilter extends FilterBase {
         request.setAttribute(RATE_LIMIT_ATTRIBUTE_COUNT, Integer.valueOf(reqCount));
 
         if (exposeHeaders) {
-            ((HttpServletResponse) response).addHeader(HEADER_RATE_LIMIT_POLICY, rateLimiter.getPolicy());
-            if (enforce) {
-                ((HttpServletResponse) response).addHeader(HEADER_RATE_LIMIT, rateLimiter.getQuota(reqCount));
+            if (response instanceof HttpServletResponse) {
+                ((HttpServletResponse) response).addHeader(HEADER_RATE_LIMIT_POLICY, rateLimiter.getPolicy());
+                if (enforce) {
+                    ((HttpServletResponse) response).addHeader(HEADER_RATE_LIMIT, rateLimiter.getQuota(reqCount));
+                }
             }
         }
         if (reqCount > rateLimiter.getRequests()) {
@@ -245,7 +303,9 @@ public class RateLimitFilter extends FilterBase {
                     Integer.valueOf(rateLimiter.getRequests()), Integer.valueOf(rateLimiter.getDuration())));
 
             if (enforce) {
-                ((HttpServletResponse) response).sendError(statusCode, statusMessage);
+                if (response instanceof HttpServletResponse) {
+                    ((HttpServletResponse) response).sendError(statusCode, statusMessage);
+                }
                 return;
             }
         }
@@ -253,13 +313,20 @@ public class RateLimitFilter extends FilterBase {
         chain.doFilter(request, response);
     }
 
+    /**
+     * {@inheritDoc}
+     */
     @Override
     public void destroy() {
-        rateLimiter.destroy();
+        if (rateLimiter != null) {
+            rateLimiter.destroy();
+        }
         super.destroy();
     }
 
-
+    /**
+     * {@inheritDoc}
+     */
     @Override
     protected Log getLogger() {
         return log;

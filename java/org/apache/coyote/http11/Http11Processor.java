@@ -69,6 +69,9 @@ import org.apache.tomcat.util.net.SendfileState;
 import org.apache.tomcat.util.net.SocketWrapperBase;
 import org.apache.tomcat.util.res.StringManager;
 
+/**
+ * Processor for HTTP/1.1 requests and responses.
+ */
 public class Http11Processor extends AbstractProcessor {
 
     private static final Log log = LogFactory.getLog(Http11Processor.class);
@@ -148,6 +151,12 @@ public class Http11Processor extends AbstractProcessor {
     private final HttpParser httpParser;
 
 
+    /**
+     * Creates a new HTTP/1.1 processor.
+     *
+     * @param protocol the protocol handler
+     * @param adapter the adapter to pass requests to
+     */
     public Http11Processor(AbstractHttp11Protocol<?> protocol, Adapter adapter) {
         super(adapter);
         this.protocol = protocol;
@@ -333,6 +342,8 @@ public class Http11Processor extends AbstractProcessor {
                         Request upgradeRequest = null;
                         try {
                             upgradeRequest = cloneRequest(request);
+                            // Make sure any remaining body is swallowed before we start processing the upgraded protocol
+                            inputBuffer.endRequest();
                         } catch (ByteChunk.BufferOverflowException ioe) {
                             response.setStatus(HttpServletResponse.SC_REQUEST_ENTITY_TOO_LARGE);
                             setErrorState(ErrorState.CLOSE_CLEAN, null);
@@ -341,7 +352,7 @@ public class Http11Processor extends AbstractProcessor {
                             setErrorState(ErrorState.CLOSE_CLEAN, ioe);
                         }
 
-                        if (upgradeRequest != null) {
+                        if (upgradeRequest != null && !getErrorState().isError()) {
                             // Complete the HTTP/1.1 upgrade process
                             response.setStatus(HttpServletResponse.SC_SWITCHING_PROTOCOLS);
                             response.setHeader("Connection", "Upgrade");
@@ -409,7 +420,7 @@ public class Http11Processor extends AbstractProcessor {
                         response.reset();
                         response.setStatus(500);
                         setErrorState(ErrorState.CLOSE_CLEAN, e);
-                        response.setHeader("Connection", "close"); // TODO: Remove
+                        response.setHeader("Connection", "close");
                     }
                 } catch (Throwable t) {
                     ExceptionUtils.handleThrowable(t);
@@ -794,14 +805,18 @@ public class Http11Processor extends AbstractProcessor {
         // HTTP 1.x header from a 1.x client unless the specs says otherwise.
         MessageBytes transferEncodingValueMB = headers.getValue("transfer-encoding");
         if (transferEncodingValueMB != null) {
-            List<String> encodingNames = new ArrayList<>();
-            if (TokenList.parseTokenList(headers.values("transfer-encoding"), encodingNames)) {
-                for (String encodingName : encodingNames) {
-                    addInputFilter(inputFilters, encodingName);
+            if (http11) {
+                List<String> encodingNames = new ArrayList<>();
+                if (TokenList.parseTokenList(headers.values("transfer-encoding"), encodingNames)) {
+                    for (String encodingName : encodingNames) {
+                        addInputFilter(inputFilters, encodingName);
+                    }
+                } else {
+                    // Invalid transfer encoding
+                    badRequest("http11processor.request.invalidTransferEncoding");
                 }
             } else {
-                // Invalid transfer encoding
-                badRequest("http11processor.request.invalidTransferEncoding");
+                badRequest("http11processor.request.transferEncodingWithHttp10");
             }
         }
 
@@ -1018,6 +1033,16 @@ public class Http11Processor extends AbstractProcessor {
         } else {
             // server always overrides anything the app might set
             headers.setValue("Server").setString(server);
+        }
+
+        // Announce the configured alternative service so clients can
+        // discover it without any pre-configuration. The alternative
+        // service is assumed to listen on the same port as this request. An
+        // Alt-Svc header set by the application takes precedence.
+        String altService = protocol.getAltService();
+        if (altService != null && headers.getValue(Constants.ALT_SVC_HEADER_NAME) == null) {
+            headers.addValue(Constants.ALT_SVC_HEADER_NAME)
+                    .setString(altService + "=\":" + request.getServerPort() + "\"");
         }
 
         writeHeaders(response.getStatus(), headers);

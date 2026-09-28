@@ -25,7 +25,7 @@ import org.apache.catalina.UserDatabase;
  * Concrete implementation of {@link org.apache.catalina.Role} for a {@link UserDatabase}.
  * </p>
  *
- * @param <UD> The specific type of UserDase with which this role is associated
+ * @param <UD> The specific type of UserDatabase with which this role is associated
  */
 public class GenericRole<UD extends UserDatabase> extends AbstractRole {
 
@@ -77,15 +77,16 @@ public class GenericRole<UD extends UserDatabase> extends AbstractRole {
 
     @Override
     public void setRolename(String rolename) {
-        database.modifiedRole(this);
-        super.setRolename(rolename);
+        // Note: changing the rolename (which is the key) in a database will not work
+        // and the role should be removed and added instead
     }
 
 
     @Override
     public boolean equals(Object obj) {
         if (obj instanceof GenericRole<?> role) {
-            return role.database == database && rolename.equals(role.getRolename());
+            return role.database == database &&
+                    ((rolename == null && role.getRolename() == null) || (rolename != null && rolename.equals(role.getRolename())));
         }
         return super.equals(obj);
     }

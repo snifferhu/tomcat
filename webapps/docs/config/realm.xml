@@ -841,11 +841,11 @@
 
       <attribute name="appName" required="false">
        <p>The name of the application as configured in your login configuration
-       file
-       (<a href="http://docs.oracle.com/javase/1.4.2/docs/guide/security/jaas/tutorials/LoginConfigFile.html">JAAS LoginConfig</a>).</p>
+       file (<a
+       href="https://docs.oracle.com/javase/8/docs/technotes/guides/security/jaas/tutorials/LoginConfigFile.html">JAAS
+       LoginConfig</a>).</p>
        <p>If not specified <code>appName</code> is derived from the Container's
        name it is placed in, for example <code>Catalina</code> or <code>ROOT</code>.
-       If the realm is not placed in any Container, the default is <code>Tomcat</code>.
        </p>
       </attribute>
 
@@ -1007,6 +1007,12 @@
        <p>Number of users that have failed authentication to keep in cache. Over
        time the cache will grow to this size and may not shrink. Defaults to
        1000.</p>
+      </attribute>
+
+      <attribute name="caseSensitive" required="false">
+       <p>The manner in which user names will be treated when making locking
+       decisions. Defaults to <code>false</code>, meaning user names will be
+       treated in a case insensitive manner.</p>
       </attribute>
 
       <attribute name="failureCount" required="false">

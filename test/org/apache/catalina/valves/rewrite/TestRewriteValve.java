@@ -20,12 +20,14 @@ import java.io.File;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.net.HttpURLConnection;
-import java.net.URLDecoder;
+import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.Cookie;
@@ -45,6 +47,7 @@ import org.apache.catalina.startup.Tomcat;
 import org.apache.catalina.startup.TomcatBaseTest;
 import org.apache.catalina.valves.ValveBase;
 import org.apache.tomcat.util.buf.ByteChunk;
+import org.apache.tomcat.util.buf.UDecoder;
 import org.apache.tomcat.util.http.Method;
 
 /*
@@ -86,6 +89,34 @@ public class TestRewriteValve extends TomcatBaseTest {
     @Test
     public void testNonNormalizedPathRewrite() throws Exception {
         doTestRewrite("RewriteRule ^/b/(.*) /b/../a/$1", "/b/%255A", "/b/../a/%255A");
+    }
+
+    @Test
+    public void testChainMatch() throws Exception {
+        // The first rule matches so the chained (second) rule is applied to the result
+        doTestRewrite("RewriteRule ^/a(.*) /b$1 [C]\n" +
+                "RewriteRule ^/b(.*) /c$1", "/a/x", "/c/x");
+    }
+
+    @Test
+    public void testChainHeadNoMatch() throws Exception {
+        // The first rule does not match so the whole chain, including the
+        // terminal rule that would otherwise match, must be skipped. If the
+        // terminal rule were incorrectly applied the request would be rewritten
+        // to /W/x.
+        doTestRewrite("RewriteRule ^/never(.*) /c$1 [C]\n" +
+                "RewriteRule ^/c(.*) /W$1", "/c/x", "/c/x");
+    }
+
+    @Test
+    public void testChainMiddleNoMatch() throws Exception {
+        // The first rule matches but the second (chained) rule does not, so the
+        // rest of the chain, including the terminal rule, must be skipped and
+        // the result of the first rule is retained. If the terminal rule were
+        // incorrectly applied the request would be rewritten to /W/y.
+        doTestRewrite("RewriteRule ^/a(.*) /c$1 [C]\n" +
+                "RewriteRule ^/nomatch(.*) /x$1 [C]\n" +
+                "RewriteRule ^/c(.*) /W$1", "/a/y", "/c/y");
     }
 
     // BZ 57863
@@ -805,6 +836,107 @@ public class TestRewriteValve extends TomcatBaseTest {
 
 
     @Test
+    public void testSubstitutionUnknownServerVariable() throws Exception {
+        // Unknown server variables must expand to an empty string
+        doTestRewrite("RewriteRule ^/b$ /c/undef_%{UNKNOWN_VARIABLE}", "/b", "/c/undef_");
+    }
+
+
+    @Test
+    public void testSubstitutionFailedMapLookup() throws Exception {
+        // A failed map lookup without a default value must expand to an empty string
+        doTestRewrite("RewriteMap mapa org.apache.catalina.valves.rewrite.TesterRewriteMapA\n" +
+                "RewriteRule ^/b$ /c/map_${mapa:missing}", "/b", "/c/map_");
+    }
+
+
+    @Test
+    public void testRuleBackReferenceMissingGroup() throws Exception {
+        // $1 does not exist in the pattern so it must expand to an empty string
+        doTestRewrite("RewriteRule ^/b$ /c/backref_$1", "/b", "/c/backref_");
+    }
+
+
+    @Test
+    public void testCondBackReferenceNoMatchedCond() throws Exception {
+        // There are no RewriteCond directives so %1 must expand to an empty string
+        doTestRewrite("RewriteRule ^/b$ /c/backref_%1", "/b", "/c/backref_");
+    }
+
+
+    @Test
+    public void testCondBackReferenceLexicalCondOnly() throws Exception {
+        // The condition is a lexical comparison and has no capture groups so %1 must
+        // expand to an empty string
+        doTestRewrite("RewriteCond %{REQUEST_URI} =/b\n" +
+                "RewriteRule ^/b$ /c/backref_%1", "/b", "/c/backref_");
+    }
+
+
+    @Test
+    public void testCondMatcherReflectsCurrentRequest() throws Exception {
+        // The matcher returned for a condition must reflect the result of the most
+        // recent evaluation, including that it is cleared when the pattern does not
+        // match.
+        RewriteCond condition = new RewriteCond();
+        condition.setTestString("%{QUERY_STRING}");
+        condition.setCondPattern("!^a=([0-9]+)$");
+        condition.parse(new HashMap<>());
+
+        Matcher rule = Pattern.compile(".*").matcher("/b");
+
+        // The pattern matches so the negated condition is not satisfied
+        Assert.assertFalse(condition.evaluate(rule, null, new TestResolver("a=1")));
+        Matcher m = condition.getMatcher();
+        Assert.assertNotNull(m);
+        Assert.assertEquals("1", m.group(1));
+
+        // The pattern does not match so the negated condition is satisfied and the
+        // matcher must be cleared
+        Assert.assertTrue(condition.evaluate(rule, null, new TestResolver("b=2")));
+        Assert.assertNull(condition.getMatcher());
+    }
+
+
+    private static class TestResolver extends Resolver {
+
+        private final String queryString;
+
+        private TestResolver(String queryString) {
+            this.queryString = queryString;
+        }
+
+        @Override
+        public String resolve(String key) {
+            if (key.equals("QUERY_STRING")) {
+                return queryString;
+            }
+            return "";
+        }
+
+        @Override
+        public String resolveSsl(String key) {
+            return null;
+        }
+
+        @Override
+        public String resolveHttp(String key) {
+            return "";
+        }
+
+        @Override
+        public boolean resolveResource(int type, String name) {
+            return false;
+        }
+
+        @Override
+        public Charset getUriCharset() {
+            return StandardCharsets.UTF_8;
+        }
+    }
+
+
+    @Test
     public void testNegativePattern01() throws Exception {
         doTestRewrite("RewriteRule !^/b/.* /c/", "/b", "/c/");
     }
@@ -881,12 +1013,12 @@ public class TestRewriteValve extends TomcatBaseTest {
         rewriteValve.setConfiguration(config);
 
         Tomcat.addServlet(ctx, "snoop", new SnoopServlet());
-        ctx.addServletMappingDecoded("/a/Z", "snoop");
-        ctx.addServletMappingDecoded("/a/%5A", "snoop");
-        ctx.addServletMappingDecoded("/c/*", "snoop");
-        ctx.addServletMappingDecoded("/W/*", "snoop");
+        ctx.addServletMapping("/a/Z", "snoop");
+        ctx.addServletMapping("/a/%5A", "snoop");
+        ctx.addServletMapping("/c/*", "snoop");
+        ctx.addServletMapping("/W/*", "snoop");
         Tomcat.addServlet(ctx, "default", new DefaultServlet());
-        ctx.addServletMappingDecoded("/", "default");
+        ctx.addServletMapping("/", "default");
 
         tomcat.start();
 
@@ -937,8 +1069,8 @@ public class TestRewriteValve extends TomcatBaseTest {
         rewriteValve.setConfiguration(config);
 
         Tomcat.addServlet(ctx, "tester", new TesterServlet());
-        ctx.addServletMappingDecoded("/from/a", "tester");
-        ctx.addServletMappingDecoded("/to/b", "tester");
+        ctx.addServletMapping("/from/a", "tester");
+        ctx.addServletMapping("/to/b", "tester");
 
         tomcat.start();
 
@@ -979,7 +1111,7 @@ public class TestRewriteValve extends TomcatBaseTest {
 
         Tomcat.addServlet(ctx, "cookieTest", new CookieTestServlet());
 
-        ctx.addServletMappingDecoded("/", "cookieTest");
+        ctx.addServletMapping("/", "cookieTest");
 
         tomcat.start();
 
@@ -1081,6 +1213,12 @@ public class TestRewriteValve extends TomcatBaseTest {
     }
 
 
+    @Test
+    public void testEncodedUriPlus() throws Exception {
+        doTestRewriteWithEncoding("a+b");
+    }
+
+
     private void doTestRewriteWithEncoding(String segment) throws Exception {
         doTestRewriteWithEncoding(segment, segment, null);
     }
@@ -1098,7 +1236,7 @@ public class TestRewriteValve extends TomcatBaseTest {
         rewriteValve.setConfiguration("RewriteRule ^/source/(.*)$ /target/$1");
 
         Tomcat.addServlet(ctx, "snoop", new SnoopServlet());
-        ctx.addServletMappingDecoded("/target/*", "snoop");
+        ctx.addServletMapping("/target/*", "snoop");
 
         tomcat.start();
 
@@ -1111,7 +1249,37 @@ public class TestRewriteValve extends TomcatBaseTest {
         String body = res.toString();
         Assert.assertTrue(body, body.contains("REQUEST-URI: /target/" + expectedSegment));
         Assert.assertTrue(body, body.contains("PATH-INFO: /" +
-                URLDecoder.decode(expectedSegment, StandardCharsets.UTF_8)));
+                UDecoder.URLDecode(expectedSegment, StandardCharsets.UTF_8)));
         Assert.assertTrue(body, body.contains("REQUEST-QUERY-STRING: " + expectedQueryString));
+    }
+
+    @Test
+    public void testOrCondDoesNotSkipNonOrCond() throws Exception {
+        Tomcat tomcat = getTomcatInstance();
+
+        Context ctx = getProgrammaticRootContext();
+
+        RewriteValve rewriteValve = new RewriteValve();
+        ctx.getPipeline().addValve(rewriteValve);
+
+        rewriteValve.setConfiguration(
+                "RewriteCond %{HTTP_HOST} localhost [OR]\n" +
+                        "RewriteCond %{HTTP_HOST} 127.0.0.1\n" +
+                        "RewriteCond %{REQUEST_URI} ^/admin\n" +
+                "RewriteRule ^(.*) /blocked$1 [R]");
+
+        Tomcat.addServlet(ctx, "snoop", new SnoopServlet());
+        ctx.addServletMapping("/other", "snoop");
+
+        tomcat.start();
+
+        ByteChunk res = new ByteChunk();
+        int rc = getUrl("http://localhost:" + getPort() + "/other", res, false);
+
+        Assert.assertEquals(HttpServletResponse.SC_OK, rc);
+
+        res.setCharset(StandardCharsets.UTF_8);
+        String body = res.toString();
+        Assert.assertTrue(body, body.contains("REQUEST-URI: /other"));
     }
 }

@@ -134,6 +134,13 @@ public class Http11InputBuffer implements InputBuffer, ApplicationBufferHandler,
 
     // ----------------------------------------------------------- Constructors
 
+    /**
+     * Constructs a new Http11InputBuffer.
+     *
+     * @param request the Coyote request
+     * @param headerBufferSize the maximum size of the header buffer
+     * @param httpParser the HTTP parser to use
+     */
     public Http11InputBuffer(Request request, int headerBufferSize, HttpParser httpParser) {
 
         this.request = request;
@@ -681,7 +688,7 @@ public class Http11InputBuffer implements InputBuffer, ApplicationBufferHandler,
 
 
     boolean isChunking() {
-        for (int i = 0; i < lastActiveFilter; i++) {
+        for (int i = 0; i <= lastActiveFilter; i++) {
             if (activeFilters[i] == filterLibrary[Constants.CHUNKED_FILTER]) {
                 return true;
             }
@@ -847,6 +854,7 @@ public class Http11InputBuffer implements InputBuffer, ApplicationBufferHandler,
     public void expand(int size) {
         if (byteBuffer.capacity() >= size) {
             byteBuffer.limit(size);
+            return;
         }
         ByteBuffer temp = ByteBuffer.allocate(size);
         temp.put(byteBuffer);

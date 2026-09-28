@@ -85,7 +85,8 @@ public class JSONFilter {
          */
         StringBuilder escaped = null;
         int lastUnescapedStart = off;
-        for (int i = off; i < length; i++) {
+        final int end = off + length;
+        for (int i = off; i < end; i++) {
             char c = input.charAt(i);
             if (c < 0x20 || c == 0x22 || c == 0x5c || Character.isHighSurrogate(c) || Character.isLowSurrogate(c)) {
                 if (escaped == null) {
@@ -99,8 +100,10 @@ public class JSONFilter {
                 if (popular > 0) {
                     escaped.append('\\').append(popular);
                 } else {
-                    escaped.append("\\u");
-                    escaped.append(String.format("%04X", Integer.valueOf(c)));
+                    int v = c;
+                    escaped.append("\\u").append(Character.forDigit((v >>> 12) & 0xF, 16))
+                            .append(Character.forDigit((v >>> 8) & 0xF, 16))
+                            .append(Character.forDigit((v >>> 4) & 0xF, 16)).append(Character.forDigit(v & 0xF, 16));
                 }
             }
         }
@@ -108,11 +111,11 @@ public class JSONFilter {
             if (off == 0 && length == input.length()) {
                 return input;
             } else {
-                return input.subSequence(off, length - off);
+                return input.subSequence(off, end);
             }
         } else {
-            if (lastUnescapedStart < length) {
-                escaped.append(input.subSequence(lastUnescapedStart, length));
+            if (lastUnescapedStart < end) {
+                escaped.append(input.subSequence(lastUnescapedStart, end));
             }
             return escaped.toString();
         }
@@ -124,7 +127,7 @@ public class JSONFilter {
 
     private static char getPopularChar(char c) {
         return switch (c) {
-            case '"', '\\', '/' -> c;
+            case '"', '\\' -> c;
             case 0x8 -> 'b';
             case 0xc -> 'f';
             case 0xa -> 'n';
@@ -133,5 +136,4 @@ public class JSONFilter {
             default -> 0;
         };
     }
-
 }

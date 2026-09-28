@@ -108,6 +108,7 @@ import org.apache.tomcat.util.http.ServerCookie;
 import org.apache.tomcat.util.http.ServerCookies;
 import org.apache.tomcat.util.http.fileupload.FileItem;
 import org.apache.tomcat.util.http.fileupload.FileUpload;
+import org.apache.tomcat.util.http.fileupload.InvalidFileNameException;
 import org.apache.tomcat.util.http.fileupload.disk.DiskFileItemFactory;
 import org.apache.tomcat.util.http.fileupload.impl.FileCountLimitExceededException;
 import org.apache.tomcat.util.http.fileupload.impl.InvalidContentTypeException;
@@ -134,8 +135,8 @@ public class Request implements HttpServletRequest {
      * Create a new Request object associated with the given Connector.
      *
      * @param connector     The Connector with which this Request object will always be associated. In normal usage this
-     *                          must be non-null. In some test scenarios, it may be possible to use a null Connector
-     *                          without triggering an NPE.
+     *                          must be non-null. Some methods require the Connector and will throw a
+     *                          <code>NullPointerException</code> if it is null.
      * @param coyoteRequest The Coyote request with which this Request object will always be associated. In normal usage
      *                          this must be non-null. In some test scenarios, it may be possible to use a null request
      *                          without triggering an NPE.
@@ -296,6 +297,9 @@ public class Request implements HttpServletRequest {
      * Post data buffer.
      */
     protected static final int CACHED_POST_LEN = 8192;
+    /**
+     * Buffer for POST data.
+     */
     protected byte[] postData = null;
 
 
@@ -400,7 +404,7 @@ public class Request implements HttpServletRequest {
 
 
     /**
-     * Local address
+     * Local name
      */
     protected String localName = null;
 
@@ -409,6 +413,9 @@ public class Request implements HttpServletRequest {
      */
     private volatile AsyncContextImpl asyncContext = null;
 
+    /**
+     * Whether async is supported for this request.
+     */
     protected Boolean asyncSupported = null;
 
     private HttpServletRequest applicationRequest = null;
@@ -424,14 +431,31 @@ public class Request implements HttpServletRequest {
 
     // --------------------------------------------------------- Public Methods
 
+    /**
+     * Add a path parameter.
+     *
+     * @param name the parameter name
+     * @param value the parameter value
+     */
     public void addPathParameter(String name, String value) {
         coyoteRequest.addPathParameter(name, value);
     }
 
+    /**
+     * Return the value of the specified path parameter.
+     *
+     * @param name the parameter name
+     * @return the parameter value
+     */
     public String getPathParameter(String name) {
         return coyoteRequest.getPathParameter(name);
     }
 
+    /**
+     * Set whether async is supported for this request.
+     *
+     * @param asyncSupported {@code true} if async is supported
+     */
     public void setAsyncSupported(boolean asyncSupported) {
         this.asyncSupported = Boolean.valueOf(asyncSupported);
     }
@@ -525,6 +549,9 @@ public class Request implements HttpServletRequest {
     }
 
 
+    /**
+     * Recycle session-related information.
+     */
     public void recycleSessionInfo() {
         if (session != null) {
             try {
@@ -542,6 +569,11 @@ public class Request implements HttpServletRequest {
     }
 
 
+    /**
+     * Recycle cookie-related information.
+     *
+     * @param recycleCoyote {@code true} to also recycle coyote cookies
+     */
     protected void recycleCookieInfo(boolean recycleCoyote) {
         cookiesParsed = false;
         cookiesConverted = false;
@@ -560,7 +592,9 @@ public class Request implements HttpServletRequest {
     protected final Connector connector;
 
     /**
-     * @return the Connector through which this Request was received.
+     * Return the connector through which this request was received.
+     *
+     * @return the connector
      */
     public Connector getConnector() {
         return this.connector;
@@ -616,7 +650,9 @@ public class Request implements HttpServletRequest {
 
 
     /**
-     * @return the Host within which this Request is being processed.
+     * Return the host within which this request is being processed.
+     *
+     * @return the host
      */
     public Host getHost() {
         return mappingData.host;
@@ -630,7 +666,9 @@ public class Request implements HttpServletRequest {
     private final ApplicationMapping applicationMapping = new ApplicationMapping(mappingData);
 
     /**
-     * @return mapping data.
+     * Return the mapping data for this request.
+     *
+     * @return the mapping data
      */
     public MappingData getMappingData() {
         return mappingData;
@@ -644,8 +682,9 @@ public class Request implements HttpServletRequest {
 
 
     /**
-     * @return the <code>ServletRequest</code> for which this object is the facade. This method must be implemented by a
-     *             subclass.
+     * Return the wrapped {@link HttpServletRequest} for this request, creating the facade if necessary.
+     *
+     * @return the wrapped request
      */
     public HttpServletRequest getRequest() {
         if (facade == null) {
@@ -683,7 +722,9 @@ public class Request implements HttpServletRequest {
     protected Response response = null;
 
     /**
-     * @return the Response with which this Request is associated.
+     * Return the response with which this request is associated.
+     *
+     * @return the associated response
      */
     public Response getResponse() {
         return this.response;
@@ -699,7 +740,9 @@ public class Request implements HttpServletRequest {
     }
 
     /**
-     * @return the input stream associated with this Request.
+     * Return the input stream associated with this request, creating it if necessary.
+     *
+     * @return the input stream
      */
     public InputStream getStream() {
         if (inputStream == null) {
@@ -714,7 +757,9 @@ public class Request implements HttpServletRequest {
     protected B2CConverter URIConverter = null;
 
     /**
-     * @return the URI converter.
+     * Return the URI byte-to-char converter.
+     *
+     * @return the URI converter
      */
     protected B2CConverter getURIConverter() {
         return URIConverter;
@@ -731,7 +776,9 @@ public class Request implements HttpServletRequest {
 
 
     /**
-     * @return the Wrapper within which this Request is being processed.
+     * Return the wrapper within which this request is being processed.
+     *
+     * @return the wrapper
      */
     public Wrapper getWrapper() {
         return mappingData.wrapper;
@@ -768,10 +815,11 @@ public class Request implements HttpServletRequest {
 
 
     /**
-     * @return the object bound with the specified name to the internal notes for this request, or <code>null</code> if
-     *             no such binding exists.
+     * Return the object bound with the specified name to the internal notes for this request, or {@code null} if
+     * no such binding exists.
      *
      * @param name Name of the note to be returned
+     * @return the note object, or {@code null}
      */
     public Object getNote(String name) {
         return notes.get(name);
@@ -883,6 +931,10 @@ public class Request implements HttpServletRequest {
 
     @Override
     public Object getAttribute(String name) {
+        if (name == null) {
+            throw new IllegalArgumentException(sm.getString("request.nullAttributeName"));
+        }
+
         // Special attributes
         SpecialAttributeAdapter adapter = specialAttributes.get(name);
         if (adapter != null) {
@@ -1179,7 +1231,9 @@ public class Request implements HttpServletRequest {
 
 
     /**
-     * @return the connection peer IP address making this Request.
+     * Return the peer IP address of the connection making this request.
+     *
+     * @return the peer IP address
      */
     public String getPeerAddr() {
         if (peerAddr == null) {
@@ -1339,6 +1393,9 @@ public class Request implements HttpServletRequest {
 
     @Override
     public void removeAttribute(String name) {
+        if (name == null) {
+            throw new IllegalArgumentException(sm.getString("request.nullAttributeName"));
+        }
         // Remove the specified attribute
         // Pass special attributes to the native layer
         if (name.startsWith("org.apache.tomcat.")) {
@@ -1358,16 +1415,14 @@ public class Request implements HttpServletRequest {
 
     @Override
     public void setAttribute(String name, Object value) {
-
-        // Name cannot be null
-        if (name == null) {
-            throw new IllegalArgumentException(sm.getString("coyoteRequest.setAttribute.namenull"));
-        }
-
         // Null value is the same as removeAttribute()
         if (value == null) {
             removeAttribute(name);
             return;
+        }
+
+        if (name == null) {
+            throw new IllegalArgumentException(sm.getString("request.nullAttributeName"));
         }
 
         // Special attributes
@@ -1442,6 +1497,9 @@ public class Request implements HttpServletRequest {
      */
     private void notifyAttributeRemoved(String name, Object value) {
         Context context = getContext();
+        if (context == null) {
+            return;
+        }
         Object[] listeners = context.getApplicationEventListeners();
         if (listeners == null || listeners.length == 0) {
             return;
@@ -1554,6 +1612,11 @@ public class Request implements HttpServletRequest {
         return asyncContext.isStarted();
     }
 
+    /**
+     * Check if async dispatch is in progress.
+     *
+     * @return {@code true} if async dispatch is in progress
+     */
     public boolean isAsyncDispatching() {
         if (asyncContext == null) {
             return false;
@@ -1564,6 +1627,11 @@ public class Request implements HttpServletRequest {
         return result.get();
     }
 
+    /**
+     * Check if async is currently completing.
+     *
+     * @return {@code true} if async is completing
+     */
     public boolean isAsyncCompleting() {
         if (asyncContext == null) {
             return false;
@@ -1574,6 +1642,11 @@ public class Request implements HttpServletRequest {
         return result.get();
     }
 
+    /**
+     * Check if this request is in async mode.
+     *
+     * @return {@code true} if in async mode
+     */
     public boolean isAsync() {
         if (asyncContext == null) {
             return false;
@@ -1601,6 +1674,11 @@ public class Request implements HttpServletRequest {
         return asyncContext;
     }
 
+    /**
+     * Return the internal async context.
+     *
+     * @return the async context, or {@code null} if not in async mode
+     */
     public AsyncContextImpl getAsyncContextInternal() {
         return asyncContext;
     }
@@ -1774,7 +1852,7 @@ public class Request implements HttpServletRequest {
     /**
      * Get the decoded request URI.
      *
-     * @return the URL decoded request URI
+     * @return the URL decoded request URI as MessageBytes
      */
     public MessageBytes getDecodedRequestURIMB() {
         return coyoteRequest.decodedURI();
@@ -2150,7 +2228,7 @@ public class Request implements HttpServletRequest {
         // If the role is "**" then, unless the application defines a role with
         // that name, only check if the user is authenticated
         if ("**".equals(role) && !context.findSecurityRole("**")) {
-            return userPrincipal != null;
+            return true;
         }
 
         Realm realm = context.getRealm();
@@ -2158,13 +2236,24 @@ public class Request implements HttpServletRequest {
             return false;
         }
 
+        // Check for a role alias defined in a <security-role-ref> element
+        Wrapper wrapper = getWrapper();
+        if (wrapper != null) {
+            String realRole = wrapper.findSecurityReference(role);
+            if (realRole != null) {
+                return realm.hasRole(wrapper, userPrincipal, realRole);
+            }
+        }
+
         // Check for a role defined directly as a <security-role>
-        return realm.hasRole(getWrapper(), userPrincipal, role);
+        return realm.hasRole(wrapper, userPrincipal, role);
     }
 
 
     /**
-     * @return the principal that has been authenticated for this Request.
+     * Return the principal that has been authenticated for this request.
+     *
+     * @return the authenticated principal, or {@code null} if not authenticated
      */
     public Principal getPrincipal() {
         return userPrincipal;
@@ -2213,7 +2302,9 @@ public class Request implements HttpServletRequest {
 
 
     /**
-     * @return the session associated with this Request, creating one if necessary.
+     * Return the session associated with this request, creating one if necessary.
+     *
+     * @return the session
      */
     public Session getSessionInternal() {
         return doGetSession(true);
@@ -2264,9 +2355,10 @@ public class Request implements HttpServletRequest {
     }
 
     /**
-     * @return the session associated with this Request, creating one if necessary and requested.
+     * Return the session associated with this request, optionally creating one if necessary.
      *
-     * @param create Create a new session if one does not exist
+     * @param create {@code true} to create a new session if one does not exist
+     * @return the session
      */
     public Session getSessionInternal(boolean create) {
         return doGetSession(create);
@@ -2274,7 +2366,9 @@ public class Request implements HttpServletRequest {
 
 
     /**
-     * @return <code>true</code> if we have parsed parameters
+     * Check if the request parameters have been parsed.
+     *
+     * @return {@code true} if parameters have been parsed
      */
     public boolean isParametersParsed() {
         return parametersParsed;
@@ -2282,8 +2376,9 @@ public class Request implements HttpServletRequest {
 
 
     /**
-     * @return <code>true</code> if an attempt has been made to read the request body and all of the request body has
-     *             been read.
+     * Check if the request body has been fully read.
+     *
+     * @return {@code true} if the entire request body has been read
      */
     public boolean isFinished() {
         return coyoteRequest.isFinished();
@@ -2502,7 +2597,7 @@ public class Request implements HttpServletRequest {
                 parts.add(part);
             }
             success = true;
-        } catch (InvalidContentTypeException e) {
+        } catch (InvalidContentTypeException | InvalidFileNameException e) {
             partsParseException = new ServletException(e);
         } catch (SizeException | FileCountLimitExceededException e) {
             checkSwallowInput();
@@ -2547,6 +2642,12 @@ public class Request implements HttpServletRequest {
 
     // ------------------------------------------------------ Protected Methods
 
+    /**
+     * Get the session for this request, optionally creating one.
+     *
+     * @param create {@code true} to create a session if one doesn't exist
+     * @return the session, or {@code null} if not available
+     */
     protected Session doGetSession(boolean create) {
 
         // There cannot be a session if no context has been assigned yet
@@ -2656,6 +2757,12 @@ public class Request implements HttpServletRequest {
         return session;
     }
 
+    /**
+     * Unescape a string.
+     *
+     * @param s the string to unescape
+     * @return the unescaped string
+     */
     protected String unescape(String s) {
         if (s == null) {
             return null;
@@ -2766,6 +2873,9 @@ public class Request implements HttpServletRequest {
     }
 
 
+    /**
+     * Parse request parameters.
+     */
     protected void doParseParameters() {
         if (parametersParsed) {
             return;
@@ -2876,7 +2986,8 @@ public class Request implements HttpServletRequest {
                 return;
             }
             parameters.processParameters(formData, 0, len);
-        } else if ("chunked".equalsIgnoreCase(coyoteRequest.getHeader("transfer-encoding"))) {
+        } else if (coyoteRequest.protocol().equals("HTTP/2.0")
+                || "chunked".equalsIgnoreCase(coyoteRequest.getHeader("transfer-encoding"))) {
             byte[] formData = null;
             try {
                 formData = readChunkedPostBody();
@@ -2939,7 +3050,7 @@ public class Request implements HttpServletRequest {
         int len = 0;
         while (len > -1) {
             len = getStream().read(buffer, 0, CACHED_POST_LEN);
-            if (connector.getMaxPostSize() >= 0 && (body.getLength() + len) > connector.getMaxPostSize()) {
+            if (connector.getMaxPostSize() >= 0 && ((long) body.getLength() + len) > connector.getMaxPostSize()) {
                 // Too much data
                 checkSwallowInput();
                 throw new InvalidParameterException(sm.getString("coyoteRequest.chunkedPostTooLarge"),

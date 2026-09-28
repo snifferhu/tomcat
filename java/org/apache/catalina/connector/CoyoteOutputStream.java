@@ -30,17 +30,28 @@ import org.apache.tomcat.util.res.StringManager;
  */
 public class CoyoteOutputStream extends ServletOutputStream {
 
+    /**
+     * The string manager for this class.
+     */
     protected static final StringManager sm = StringManager.getManager(CoyoteOutputStream.class);
 
 
     // ----------------------------------------------------- Instance Variables
 
+    /**
+     * The underlying output buffer.
+     */
     protected OutputBuffer ob;
 
 
     // ----------------------------------------------------------- Constructors
 
 
+    /**
+     * Construct a new CoyoteOutputStream.
+     *
+     * @param ob The underlying output buffer
+     */
     protected CoyoteOutputStream(OutputBuffer ob) {
         this.ob = ob;
     }
@@ -53,7 +64,7 @@ public class CoyoteOutputStream extends ServletOutputStream {
      * Prevent cloning the facade.
      */
     @Override
-    protected Object clone() throws CloneNotSupportedException {
+    public Object clone() throws CloneNotSupportedException {
         throw new CloneNotSupportedException();
     }
 
@@ -142,8 +153,7 @@ public class CoyoteOutputStream extends ServletOutputStream {
 
 
     /**
-     * Checks for concurrent writes which are not permitted. This object has no state information so the call chain is
-     * CoyoteOutputStream->OutputBuffer->CoyoteResponse.
+     * Checks that the underlying output buffer is ready for writing when this OutputStream is in non-blocking mode.
      *
      * @return <code>true</code> if this OutputStream is currently in non-blocking mode.
      */

@@ -45,7 +45,6 @@ import org.apache.catalina.Wrapper;
 import org.apache.catalina.core.ContainerBase;
 import org.apache.catalina.core.StandardHost;
 import org.apache.catalina.startup.HostConfig;
-import org.apache.tomcat.util.ExceptionUtils;
 import org.apache.tomcat.util.buf.StringUtils;
 import org.apache.tomcat.util.res.StringManager;
 
@@ -67,6 +66,9 @@ import org.apache.tomcat.util.res.StringManager;
  * <code>host-name#host-aliases</code>.</li>
  * <li><b>/start?name={host-name}</b> - Start the virtual host.</li>
  * <li><b>/stop?name={host-name}</b> - Stop the virtual host.</li>
+ * <li><b>/persist</b> - Persist the current server configuration to {@code server.xml}. Requires the
+ * {@link org.apache.catalina.storeconfig.StoreConfigLifecycleListener StoreConfigLifecycleListener} to
+ * be configured.</li>
  * </ul>
  * <p>
  * <b>NOTE</b> - Attempting to stop or remove the host containing this servlet itself will not succeed. Therefore, this
@@ -75,10 +77,16 @@ import org.apache.tomcat.util.res.StringManager;
  * The following servlet initialization parameters are recognized:
  * <ul>
  * <li><b>debug</b> - The debugging detail level that controls the amount of information that is logged by this servlet.
- * Default is zero.
+ * Default is one.
  * </ul>
  */
 public class HostManagerServlet extends HttpServlet implements ContainerServlet {
+
+    /**
+     * Constructs a new HostManagerServlet.
+     */
+    public HostManagerServlet() {
+    }
 
     @Serial
     private static final long serialVersionUID = 1L;
@@ -269,14 +277,34 @@ public class HostManagerServlet extends HttpServlet implements ContainerServlet 
         }
 
         // Set our properties from the initialization parameters
-        String value;
-        try {
-            value = getServletConfig().getInitParameter("debug");
-            debug = Integer.parseInt(value);
-        } catch (Throwable t) {
-            ExceptionUtils.handleThrowable(t);
+        String value = getServletConfig().getInitParameter("debug");
+        if (value != null) {
+            try {
+                debug = Integer.parseInt(value);
+            } catch (NumberFormatException e) {
+                // Ignore
+                debug = 0;
+            }
         }
 
+    }
+
+
+    private static boolean pathCheck(File input, File expected, PrintWriter writer, StringManager smClient) {
+        try {
+            if (!input.getCanonicalFile().toPath().startsWith(expected.getCanonicalFile().toPath())) {
+                if (writer != null) {
+                    writer.println(smClient.getString("hostManagerServlet.pathCheckFail", input, expected));
+                }
+                return false;
+            }
+        } catch (IOException ioe) {
+            if (writer != null) {
+                writer.println(smClient.getString("hostManagerServlet.pathCheckError", input, expected, ioe.getMessage()));
+            }
+            return false;
+        }
+        return true;
     }
 
 
@@ -325,7 +353,10 @@ public class HostManagerServlet extends HttpServlet implements ContainerServlet 
             applicationBase = name;
         }
         file = new File(applicationBase);
-        if (!file.isAbsolute()) {
+        boolean appBaseIsAbsolute = false;
+        if (file.isAbsolute()) {
+            appBaseIsAbsolute = true;
+        } else {
             file = new File(engine.getCatalinaBase(), file.getPath());
         }
         try {
@@ -333,20 +364,24 @@ public class HostManagerServlet extends HttpServlet implements ContainerServlet 
         } catch (IOException ioe) {
             appBaseFile = file;
         }
+        if (!appBaseIsAbsolute && !pathCheck(appBaseFile, engine.getCatalinaBase(), writer, smClient)) {
+            // Any error reported in pathCheck()
+            return;
+        }
         if (!appBaseFile.mkdirs() && !appBaseFile.isDirectory()) {
             writer.println(smClient.getString("hostManagerServlet.appBaseCreateFail", appBaseFile.toString(), name));
             return;
         }
 
         // Create base for config files
-        File configBaseFile = getConfigBase(name);
+        File configBaseFile = getConfigBase(name, writer, smClient);
+        if (configBaseFile == null) {
+            writer.println(smClient.getString("hostManagerServlet.configBaseCreateFail", name));
+            return;
+        }
 
         // Copy manager.xml if requested
         if (manager) {
-            if (configBaseFile == null) {
-                writer.println(smClient.getString("hostManagerServlet.configBaseCreateFail", name));
-                return;
-            }
             try (InputStream is = getServletContext().getResourceAsStream("/WEB-INF/manager.xml")) {
                 if (is == null) {
                     writer.println(smClient.getString("hostManagerServlet.managerXml"));
@@ -454,7 +489,7 @@ public class HostManagerServlet extends HttpServlet implements ContainerServlet 
 
 
     /**
-     * Render a list of the currently active Contexts in our virtual host.
+     * Render a list of the currently active virtual hosts in our engine.
      *
      * @param writer   Writer to render to
      * @param smClient StringManager for the client's locale
@@ -597,13 +632,12 @@ public class HostManagerServlet extends HttpServlet implements ContainerServlet 
             writer.println(smClient.getString("hostManagerServlet.persisted"));
         } catch (Exception e) {
             getServletContext().log(sm.getString("hostManagerServlet.persistFailed"), e);
-            writer.println(smClient.getString("hostManagerServlet.persistFailed"));
             // catch InstanceNotFoundException when StoreConfig is not enabled instead of printing
             // the failure message
             if (e instanceof InstanceNotFoundException) {
                 writer.println(smClient.getString("hostManagerServlet.noStoreConfig"));
             } else {
-                writer.println(smClient.getString("hostManagerServlet.exception", e.toString()));
+                writer.println(smClient.getString("hostManagerServlet.persistFailed"));
             }
         }
     }
@@ -617,8 +651,27 @@ public class HostManagerServlet extends HttpServlet implements ContainerServlet 
      * @param hostName The host name
      *
      * @return the config base for the host
+     *
+     * @deprecated Unused. Will be removed in a future version. Use
+     * {@link #getConfigBase(String, PrintWriter, StringManager)}
      */
+    @Deprecated
     protected File getConfigBase(String hostName) {
+        return getConfigBase(hostName, null, null);
+    }
+
+
+    /**
+     * Get config base.
+     *
+     * @param hostName The host name
+     * @param writer   Writer to render results to
+     * @param smClient StringManager for the client's locale
+     *
+     *
+     * @return the config base for the host
+     */
+    protected File getConfigBase(String hostName, PrintWriter writer, StringManager smClient) {
         File configBase = new File(context.getCatalinaBase(), "conf");
         if (!configBase.exists()) {
             return null;
@@ -628,6 +681,9 @@ public class HostManagerServlet extends HttpServlet implements ContainerServlet 
         }
         if (installedHost != null) {
             configBase = new File(configBase, hostName);
+        }
+        if (!pathCheck(configBase, new File(context.getCatalinaBase(), "conf"), writer, smClient)) {
+            return null;
         }
         if (!configBase.mkdirs() && !configBase.isDirectory()) {
             return null;

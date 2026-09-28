@@ -35,7 +35,16 @@ import org.apache.catalina.core.StandardHost;
 import org.apache.catalina.startup.ContextConfig;
 import org.apache.catalina.startup.HostConfig;
 
+/**
+ * MBean wrapper for ContainerBase instances, providing JMX management operations for child containers,
+ * valves, and lifecycle listeners.
+ */
 public class ContainerMBean extends BaseCatalinaMBean<ContainerBase> {
+    /**
+     * Constructs a new ContainerMBean instance.
+     */
+    public ContainerMBean() {
+    }
 
     /**
      * Add a new child Container to those associated with this Container, if supported. Won't start the child yet. Has
@@ -66,13 +75,20 @@ public class ContainerMBean extends BaseCatalinaMBean<ContainerBase> {
             oldValue = container.getStartChildren();
             container.setStartChildren(false);
             container.addChild(contained);
-            contained.init();
-        } catch (LifecycleException e) {
-            throw new MBeanException(e);
         } finally {
             if (container != null) {
                 container.setStartChildren(oldValue);
             }
+        }
+
+        try {
+            contained.init();
+        } catch (LifecycleException e) {
+            // If init fails, try to cleanup since the MBean may not have been added
+            if (container != null) {
+                container.removeChild(contained);
+            }
+            throw new MBeanException(e);
         }
     }
 

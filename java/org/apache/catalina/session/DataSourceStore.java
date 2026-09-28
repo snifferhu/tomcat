@@ -30,6 +30,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.locks.Lock;
 
 import javax.naming.Context;
 import javax.naming.InitialContext;
@@ -47,6 +48,12 @@ import org.apache.juli.logging.Log;
  * database. Sessions that are saved are still subject to being expired based on inactivity.
  */
 public class DataSourceStore extends StoreBase {
+
+    /**
+     * Default constructor.
+     */
+    public DataSourceStore() {
+    }
 
     /**
      * Context name associated with this Store
@@ -114,7 +121,9 @@ public class DataSourceStore extends StoreBase {
     // -------------------------------------------------------------- Properties
 
     /**
-     * @return the name for this instance (built from container name)
+     * Return the name for this instance, built from the container name.
+     *
+     * @return the instance name
      */
     public String getName() {
         if (name == null) {
@@ -155,7 +164,9 @@ public class DataSourceStore extends StoreBase {
     }
 
     /**
-     * @return the table for this Store.
+     * Return the table for this Store.
+     *
+     * @return the table name
      */
     public String getSessionTable() {
         return sessionTable;
@@ -173,7 +184,9 @@ public class DataSourceStore extends StoreBase {
     }
 
     /**
-     * @return the web application name column for the table.
+     * Return the web application name column for the table.
+     *
+     * @return the column name
      */
     public String getSessionAppCol() {
         return this.sessionAppCol;
@@ -191,7 +204,9 @@ public class DataSourceStore extends StoreBase {
     }
 
     /**
-     * @return the Id column for the table.
+     * Return the Id column for the table.
+     *
+     * @return the column name
      */
     public String getSessionIdCol() {
         return this.sessionIdCol;
@@ -209,7 +224,9 @@ public class DataSourceStore extends StoreBase {
     }
 
     /**
-     * @return the data column for the table
+     * Return the data column for the table.
+     *
+     * @return the column name
      */
     public String getSessionDataCol() {
         return this.sessionDataCol;
@@ -227,7 +244,9 @@ public class DataSourceStore extends StoreBase {
     }
 
     /**
-     * @return the {@code Is Valid} column
+     * Return the {@code Is Valid} column.
+     *
+     * @return the column name
      */
     public String getSessionValidCol() {
         return this.sessionValidCol;
@@ -245,7 +264,9 @@ public class DataSourceStore extends StoreBase {
     }
 
     /**
-     * @return the {@code Max Inactive} column
+     * Return the {@code Max Inactive} column.
+     *
+     * @return the column name
      */
     public String getSessionMaxInactiveCol() {
         return this.sessionMaxInactiveCol;
@@ -263,7 +284,9 @@ public class DataSourceStore extends StoreBase {
     }
 
     /**
-     * @return the {@code Last Accessed} column
+     * Return the {@code Last Accessed} column.
+     *
+     * @return the column name
      */
     public String getSessionLastAccessedCol() {
         return this.sessionLastAccessedCol;
@@ -283,14 +306,18 @@ public class DataSourceStore extends StoreBase {
     }
 
     /**
-     * @return the name of the JNDI DataSource-factory
+     * Return the name of the JNDI DataSource-factory.
+     *
+     * @return the JNDI name
      */
     public String getDataSourceName() {
         return this.dataSourceName;
     }
 
     /**
-     * @return if the datasource will be looked up in the webapp JNDI Context.
+     * Return whether the datasource will be looked up in the webapp JNDI Context.
+     *
+     * @return true if the datasource is looked up in the webapp JNDI Context
      */
     public boolean getLocalDataSource() {
         return localDataSource;
@@ -326,153 +353,110 @@ public class DataSourceStore extends StoreBase {
      *
      * @return array containing the list of session IDs
      */
-    private String[] keys(boolean expiredOnly) {
-        String[] keys = null;
-        int numberOfTries = 2;
-        while (numberOfTries > 0) {
-
-            Connection _conn = getConnection();
-            if (_conn == null) {
-                return new String[0];
-            }
-            try {
-
-                String keysSql =
-                        "SELECT " + sessionIdCol + " FROM " + sessionTable + " WHERE " + sessionAppCol + " = ?";
-                if (expiredOnly) {
-                    keysSql += " AND (" + sessionLastAccessedCol + " + " + sessionMaxInactiveCol + " * 1000 < ?)";
-                }
-                try (PreparedStatement preparedKeysSql = _conn.prepareStatement(keysSql)) {
-                    preparedKeysSql.setString(1, getName());
-                    if (expiredOnly) {
-                        preparedKeysSql.setLong(2, System.currentTimeMillis());
-                    }
-                    try (ResultSet rst = preparedKeysSql.executeQuery()) {
-                        List<String> tmpkeys = new ArrayList<>();
-                        if (rst != null) {
-                            while (rst.next()) {
-                                tmpkeys.add(rst.getString(1));
-                            }
-                        }
-                        keys = tmpkeys.toArray(new String[0]);
-                        // Break out after the finally block
-                        numberOfTries = 0;
-                    }
-                }
-            } catch (SQLException e) {
-                manager.getContext().getLogger().error(sm.getString("dataSourceStore.SQLException"), e);
-                keys = new String[0];
-                // Close the connection so that it gets reopened next time
-            } finally {
-                release(_conn);
-            }
-            numberOfTries--;
+    private String[] keys(boolean expiredOnly) throws IOException {
+        String sqlTmp = "SELECT " + sessionIdCol + " FROM " + sessionTable + " WHERE " + sessionAppCol + " = ?";
+        if (expiredOnly) {
+            sqlTmp += " AND " + sessionMaxInactiveCol + " > 0";
+            sqlTmp += " AND (" + sessionLastAccessedCol + " + " + sessionMaxInactiveCol + " * 1000 < ?)";
         }
-        return keys;
+        final String keysSql = sqlTmp;
+
+        String[] keys = withRetry((ConnectionOperation<String[],IOException>) conn -> {
+            try (PreparedStatement preparedKeysSql = conn.prepareStatement(keysSql)) {
+                preparedKeysSql.setString(1, getName());
+                if (expiredOnly) {
+                    preparedKeysSql.setLong(2, System.currentTimeMillis());
+                }
+                try (ResultSet rst = preparedKeysSql.executeQuery()) {
+                    List<String> tmpkeys = new ArrayList<>();
+                    if (rst != null) {
+                        while (rst.next()) {
+                            tmpkeys.add(rst.getString(1));
+                        }
+                    }
+                    return tmpkeys.toArray(new String[0]);
+                }
+            }
+        });
+
+        return keys == null ? new String[0] : keys;
     }
 
     @Override
     public int getSize() throws IOException {
-        int size = 0;
         String sizeSql = "SELECT COUNT(" + sessionIdCol + ") FROM " + sessionTable + " WHERE " + sessionAppCol + " = ?";
 
-        int numberOfTries = 2;
-        while (numberOfTries > 0) {
-            Connection _conn = getConnection();
-
-            if (_conn == null) {
-                return size;
-            }
-
-            try (PreparedStatement preparedSizeSql = _conn.prepareStatement(sizeSql)) {
+        Integer size = withRetry((ConnectionOperation<Integer,IOException>) conn -> {
+            try (PreparedStatement preparedSizeSql = conn.prepareStatement(sizeSql)) {
                 preparedSizeSql.setString(1, getName());
                 try (ResultSet rst = preparedSizeSql.executeQuery()) {
                     if (rst.next()) {
-                        size = rst.getInt(1);
+                        return Integer.valueOf(rst.getInt(1));
+                    } else {
+                        return Integer.valueOf(0);
                     }
-                    // Break out after the finally block
-                    numberOfTries = 0;
                 }
-            } catch (SQLException e) {
-                manager.getContext().getLogger().error(sm.getString("dataSourceStore.SQLException"), e);
-            } finally {
-                release(_conn);
             }
-            numberOfTries--;
-        }
-        return size;
+        });
+
+        return size == null ? 0 : size.intValue();
     }
 
     @Override
     public Session load(String id) throws ClassNotFoundException, IOException {
-        StandardSession _session = null;
         org.apache.catalina.Context context = getManager().getContext();
         Log contextLog = context.getLogger();
-
-        int numberOfTries = 2;
         String loadSql = "SELECT " + sessionIdCol + ", " + sessionDataCol + " FROM " + sessionTable + " WHERE " +
                 sessionIdCol + " = ? AND " + sessionAppCol + " = ?";
-        while (numberOfTries > 0) {
-            Connection _conn = getConnection();
-            if (_conn == null) {
-                return null;
-            }
 
+        Session session = withRetry((ConnectionOperation<StandardSession,ClassNotFoundException>) conn -> {
             ClassLoader oldThreadContextCL = context.bind(null);
 
-            try (PreparedStatement preparedLoadSql = _conn.prepareStatement(loadSql)) {
-                preparedLoadSql.setString(1, id);
-                preparedLoadSql.setString(2, getName());
-                try (ResultSet rst = preparedLoadSql.executeQuery()) {
-                    if (rst.next()) {
-                        try (ObjectInputStream ois = getObjectInputStream(rst.getBinaryStream(2))) {
-                            if (contextLog.isTraceEnabled()) {
-                                contextLog.trace(sm.getString("dataSourceStore.loading", id, sessionTable));
-                            }
+            try (PreparedStatement preparedLoadSql = conn.prepareStatement(loadSql)) {
+                Lock readLock = getSessionStoreLock(id).readLock();
+                readLock.lock();
+                try {
+                    preparedLoadSql.setString(1, id);
+                    preparedLoadSql.setString(2, getName());
+                    try (ResultSet rst = preparedLoadSql.executeQuery()) {
+                        if (rst.next()) {
+                            try (ObjectInputStream ois = getObjectInputStream(rst.getBinaryStream(2))) {
+                                if (contextLog.isTraceEnabled()) {
+                                    contextLog.trace(sm.getString("dataSourceStore.loading", id, sessionTable));
+                                }
 
-                            _session = (StandardSession) manager.createEmptySession();
-                            _session.readObjectData(ois);
-                            _session.setManager(manager);
+                                StandardSession _session = (StandardSession) manager.createEmptySession();
+                                _session.readObjectData(ois);
+                                _session.setManager(manager);
+                                return _session;
+                            }
+                        } else if (context.getLogger().isDebugEnabled()) {
+                            contextLog.debug(sm.getString("dataSourceStore.noObject", id));
                         }
-                    } else if (context.getLogger().isDebugEnabled()) {
-                        contextLog.debug(sm.getString("dataSourceStore.noObject", id));
+                        return null;
                     }
-                    // Break out after the finally block
-                    numberOfTries = 0;
+                } finally {
+                    readLock.unlock();
                 }
-            } catch (SQLException e) {
-                contextLog.error(sm.getString("dataSourceStore.SQLException"), e);
             } finally {
                 context.unbind(oldThreadContextCL);
-                release(_conn);
             }
-            numberOfTries--;
-        }
-        return _session;
+        });
+        return session;
     }
 
     @Override
     public void remove(String id) throws IOException {
-
-        int numberOfTries = 2;
-        while (numberOfTries > 0) {
-            Connection _conn = getConnection();
-
-            if (_conn == null) {
-                return;
-            }
-
+        withRetry(conn -> {
+            Lock writeLock = getSessionStoreLock(id).writeLock();
+            writeLock.lock();
             try {
-                remove(id, _conn);
-                // Break out after the finally block
-                numberOfTries = 0;
-            } catch (SQLException e) {
-                manager.getContext().getLogger().error(sm.getString("dataSourceStore.SQLException"), e);
+                remove(id, conn);
             } finally {
-                release(_conn);
+                writeLock.unlock();
             }
-            numberOfTries--;
-        }
+            return null;
+        });
 
         if (manager.getContext().getLogger().isTraceEnabled()) {
             manager.getContext().getLogger().trace(sm.getString("dataSourceStore.removing", id, sessionTable));
@@ -502,25 +486,13 @@ public class DataSourceStore extends StoreBase {
     public void clear() throws IOException {
         String clearSql = "DELETE FROM " + sessionTable + " WHERE " + sessionAppCol + " = ?";
 
-        int numberOfTries = 2;
-        while (numberOfTries > 0) {
-            Connection _conn = getConnection();
-            if (_conn == null) {
-                return;
-            }
-
-            try (PreparedStatement preparedClearSql = _conn.prepareStatement(clearSql)) {
+        withRetry(conn -> {
+            try (PreparedStatement preparedClearSql = conn.prepareStatement(clearSql)) {
                 preparedClearSql.setString(1, getName());
                 preparedClearSql.execute();
-                // Break out after the finally block
-                numberOfTries = 0;
-            } catch (SQLException e) {
-                manager.getContext().getLogger().error(sm.getString("dataSourceStore.SQLException"), e);
-            } finally {
-                release(_conn);
             }
-            numberOfTries--;
-        }
+            return null;
+        });
     }
 
     @Override
@@ -529,46 +501,41 @@ public class DataSourceStore extends StoreBase {
                 sessionDataCol + ", " + sessionValidCol + ", " + sessionMaxInactiveCol + ", " + sessionLastAccessedCol +
                 ") VALUES (?, ?, ?, ?, ?, ?)";
 
-        synchronized (session) {
-            int numberOfTries = 2;
-            while (numberOfTries > 0) {
-                Connection _conn = getConnection();
-                if (_conn == null) {
-                    return;
-                }
-
-                try {
-                    // Remove session if it exists and insert again.
-                    remove(session.getIdInternal(), _conn);
-
-                    ByteArrayOutputStream bos = new ByteArrayOutputStream();
-                    try (ObjectOutputStream oos = new ObjectOutputStream(new BufferedOutputStream(bos))) {
-                        ((StandardSession) session).writeObjectData(oos);
-                    }
-                    byte[] obs = bos.toByteArray();
-                    int size = obs.length;
-                    try (ByteArrayInputStream bis = new ByteArrayInputStream(obs, 0, size);
-                            InputStream in = new BufferedInputStream(bis, size);
-                            PreparedStatement preparedSaveSql = _conn.prepareStatement(saveSql)) {
-                        preparedSaveSql.setString(1, session.getIdInternal());
-                        preparedSaveSql.setString(2, getName());
-                        preparedSaveSql.setBinaryStream(3, in, size);
-                        preparedSaveSql.setString(4, session.isValid() ? "1" : "0");
-                        preparedSaveSql.setInt(5, session.getMaxInactiveInterval());
-                        preparedSaveSql.setLong(6, session.getLastAccessedTime());
-                        preparedSaveSql.execute();
-                        // Break out after the finally block
-                        numberOfTries = 0;
-                    }
-                } catch (SQLException e) {
-                    manager.getContext().getLogger().error(sm.getString("dataSourceStore.SQLException"), e);
-                } catch (IOException ioe) {
-                    // Ignore
-                } finally {
-                    release(_conn);
-                }
-                numberOfTries--;
+        String sessionId = session.getIdInternal();
+        Lock writeLock = getSessionStoreLock(sessionId).writeLock();
+        writeLock.lock();
+        try {
+            if (!sessionId.equals(session.getIdInternal())) {
+                throw new IOException(sm.getString("store.inconsistentSessionID", sessionId, session.getIdInternal()));
             }
+
+            // First serialize session
+            ByteArrayOutputStream bos = new ByteArrayOutputStream();
+            try (ObjectOutputStream oos = new ObjectOutputStream(new BufferedOutputStream(bos))) {
+                ((StandardSession) session).writeObjectData(oos);
+            }
+            byte[] obs = bos.toByteArray();
+
+            withRetry(conn -> {
+                // Remove session if it exists and insert again.
+                remove(session.getIdInternal(), conn);
+
+                int size = obs.length;
+                try (ByteArrayInputStream bis = new ByteArrayInputStream(obs, 0, size);
+                        InputStream in = new BufferedInputStream(bis, size);
+                        PreparedStatement preparedSaveSql = conn.prepareStatement(saveSql)) {
+                    preparedSaveSql.setString(1, session.getIdInternal());
+                    preparedSaveSql.setString(2, getName());
+                    preparedSaveSql.setBinaryStream(3, in, size);
+                    preparedSaveSql.setString(4, session.isValid() ? "1" : "0");
+                    preparedSaveSql.setInt(5, session.getMaxInactiveInterval());
+                    preparedSaveSql.setLong(6, session.getLastAccessedTime());
+                    preparedSaveSql.execute();
+                }
+                return null;
+            });
+        } finally {
+            writeLock.unlock();
         }
 
         if (manager.getContext().getLogger().isTraceEnabled()) {
@@ -698,4 +665,49 @@ public class DataSourceStore extends StoreBase {
         }
     }
 
+
+    private <T, E extends Exception> T withRetry(ConnectionOperation<T,E> operation) throws IOException, E {
+        SQLException sqlException = null;
+
+        int numberOfTries = 2;
+        while (numberOfTries > 0) {
+            /*
+             * TODO: To further improve consistency, consider refactoring getConnection so an IOException is thrown here
+             * with a nested SQLException if a connection cannot be obtained. This would also allow some of the null
+             * handling on return to be removed.
+             */
+            Connection _conn = getConnection();
+            if (_conn == null) {
+                return null;
+            }
+
+            try {
+                return operation.execute(_conn);
+            } catch (SQLException e) {
+                // Retain the first exception to use as the cause if all retries fail
+                if (sqlException == null) {
+                    sqlException = e;
+                }
+            } finally {
+                release(_conn);
+            }
+            numberOfTries--;
+        }
+
+        throw new IOException(sm.getString("dataSourceStore.SQLException"), sqlException);
+    }
+
+
+    /**
+     * Functional interface for store operation. Used with {@link DataSourceStore#withRetry(ConnectionOperation)} to
+     * reduce code duplication.
+     *
+     * @param <T> The return type for the operation
+     * @param <E> The additional exception type thrown by this operation. If no additional exception type is thrown then
+     *                specify IOException
+     */
+    @FunctionalInterface
+    private interface ConnectionOperation<T, E extends Exception> {
+        T execute(Connection connection) throws IOException, SQLException, E;
+    }
 }

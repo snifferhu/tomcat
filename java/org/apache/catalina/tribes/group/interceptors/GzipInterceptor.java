@@ -33,12 +33,25 @@ import org.apache.catalina.tribes.util.StringManager;
 import org.apache.juli.logging.Log;
 import org.apache.juli.logging.LogFactory;
 
+/**
+ * Channel interceptor that compresses messages using GZIP before transmission and decompresses
+ * received messages. This reduces bandwidth usage for cluster communication.
+ */
 public class GzipInterceptor extends ChannelInterceptorBase implements GzipInterceptorMBean {
 
     private static final Log log = LogFactory.getLog(GzipInterceptor.class);
+    /**
+     * StringManager for this class.
+     */
     protected static final StringManager sm = StringManager.getManager(GzipInterceptor.class);
 
+    /**
+     * Default buffer size for compression/decompression operations.
+     */
     public static final int DEFAULT_BUFFER_SIZE = 2048;
+    /**
+     * Default option flag to enable compression.
+     */
     public static final int DEFAULT_OPTION_COMPRESSION_ENABLE = 0x0100;
 
     private int compressionMinSize = 0;
@@ -59,6 +72,9 @@ public class GzipInterceptor extends ChannelInterceptorBase implements GzipInter
     private final AtomicLong uncompressedSizeRX = new AtomicLong();
 
 
+    /**
+     * Default constructor for GzipInterceptor.
+     */
     public GzipInterceptor() {
         setOptionFlag(DEFAULT_OPTION_COMPRESSION_ENABLE);
     }
@@ -135,32 +151,40 @@ public class GzipInterceptor extends ChannelInterceptorBase implements GzipInter
     }
 
 
+    /**
+     * Compresses the given data using GZIP compression.
+     *
+     * @param data The data to compress
+     * @return The compressed data
+     * @throws IOException If a compression error occurs
+     */
     public static byte[] compress(byte[] data) throws IOException {
         ByteArrayOutputStream bout = new ByteArrayOutputStream();
-        GZIPOutputStream gout = new GZIPOutputStream(bout);
-        gout.write(data);
-        gout.flush();
-        gout.close();
+        try (GZIPOutputStream gout = new GZIPOutputStream(bout)) {
+            gout.write(data);
+            gout.finish();
+        }
         return bout.toByteArray();
     }
 
 
     /**
-     * @param data Data to decompress
+     * Decompresses the given data using GZIP decompression.
      *
-     * @return Decompressed data
-     *
-     * @throws IOException Compression error
+     * @param data The compressed data to decompress
+     * @return The decompressed data
+     * @throws IOException If a decompression error occurs
      */
     public static byte[] decompress(byte[] data) throws IOException {
         ByteArrayOutputStream bout = new ByteArrayOutputStream(DEFAULT_BUFFER_SIZE);
-        ByteArrayInputStream bin = new ByteArrayInputStream(data);
-        GZIPInputStream gin = new GZIPInputStream(bin);
-        byte[] tmp = new byte[DEFAULT_BUFFER_SIZE];
-        int length = gin.read(tmp);
-        while (length > -1) {
-            bout.write(tmp, 0, length);
-            length = gin.read(tmp);
+        try (ByteArrayInputStream bin = new ByteArrayInputStream(data);
+                GZIPInputStream gin = new GZIPInputStream(bin)) {
+            byte[] tmp = new byte[DEFAULT_BUFFER_SIZE];
+            int length = gin.read(tmp);
+            while (length > -1) {
+                bout.write(tmp, 0, length);
+                length = gin.read(tmp);
+            }
         }
         return bout.toByteArray();
     }

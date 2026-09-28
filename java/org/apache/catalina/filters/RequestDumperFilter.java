@@ -44,11 +44,18 @@ import org.apache.juli.logging.LogFactory;
  * </p>
  * <p>
  * When using this Filter, it is strongly recommended that the
- * <code>org.apache.catalina.filter.RequestDumperFilter</code> logger is directed to a dedicated file and that the
+ * <code>org.apache.catalina.filters.RequestDumperFilter</code> logger is directed to a dedicated file and that the
  * <code>org.apache.juli.VerbatimFormatter</code> is used.
  * </p>
  */
 public class RequestDumperFilter extends GenericFilter {
+
+    /**
+     * Default constructor.
+     */
+    public RequestDumperFilter() {
+        super();
+    }
 
     @Serial
     private static final long serialVersionUID = 1L;
@@ -249,9 +256,14 @@ public class RequestDumperFilter extends GenericFilter {
     }
 
 
-    /*
+    /**
+     * Restores the log after deserialization.
      * Log objects are not Serializable but this Filter is because it extends GenericFilter. Tomcat won't serialize a
      * Filter but in case something else does...
+     *
+     * @param ois the object input stream
+     * @throws ClassNotFoundException if the class is not found
+     * @throws IOException if an I/O error occurs
      */
     @Serial
     private void readObject(ObjectInputStream ois) throws ClassNotFoundException, IOException {

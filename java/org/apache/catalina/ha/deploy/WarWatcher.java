@@ -19,6 +19,7 @@ package org.apache.catalina.ha.deploy;
 import java.io.File;
 import java.util.HashMap;
 import java.util.Iterator;
+import java.util.Locale;
 import java.util.Map;
 
 import org.apache.juli.logging.Log;
@@ -26,7 +27,7 @@ import org.apache.juli.logging.LogFactory;
 import org.apache.tomcat.util.res.StringManager;
 
 /**
- * The <b>WarWatcher </b> watches the deployDir for changes made to the directory (adding new WAR files-&gt;deploy or
+ * The <b>WarWatcher </b> watches the watchDir for changes made to the directory (adding new WAR files-&gt;deploy or
  * remove WAR files-&gt;undeploy) and notifies a listener of the changes made.
  */
 public class WarWatcher {
@@ -53,6 +54,12 @@ public class WarWatcher {
 
     /*--Constructor---------------------------------------------*/
 
+    /**
+     * Constructs a new WarWatcher.
+     *
+     * @param listener The listener to notify of changes
+     * @param watchDir The directory to watch for WAR files
+     */
     public WarWatcher(FileChangeListener listener, File watchDir) {
         this.listener = listener;
         this.watchDir = watchDir;
@@ -132,12 +139,18 @@ public class WarWatcher {
      * File name filter for war files
      */
     protected static class WarFilter implements java.io.FilenameFilter {
+        /**
+         * Constructs a new WarFilter.
+         */
+        public WarFilter() {
+        }
+
         @Override
         public boolean accept(File path, String name) {
             if (name == null) {
                 return false;
             }
-            return name.endsWith(".war");
+            return name.toLowerCase(Locale.ENGLISH).endsWith(".war");
         }
     }
 
@@ -145,24 +158,48 @@ public class WarWatcher {
      * File information on existing WAR files
      */
     protected static class WarInfo {
+        /**
+         * The WAR file being tracked.
+         */
         protected final File war;
 
-        protected long lastChecked;
+        /**
+         * The last time this file was modified.
+         */
+        protected long lastModified;
 
-        protected long lastState = 0;
+        /**
+         * The last known state of the file.
+         */
+        protected int lastState = 0;
 
+        /**
+         * Constructs a new WarInfo.
+         *
+         * @param war The WAR file to track
+         */
         public WarInfo(File war) {
             this.war = war;
-            this.lastChecked = war.lastModified();
+            this.lastModified = war.lastModified();
             if (!war.exists()) {
                 lastState = -1;
             }
         }
 
+        /**
+         * Returns whether the WAR file has been modified since last check.
+         *
+         * @return {@code true} if the file has been modified
+         */
         public boolean modified() {
-            return war.exists() && war.lastModified() > lastChecked;
+            return war.exists() && war.lastModified() != lastModified;
         }
 
+        /**
+         * Returns whether the WAR file exists.
+         *
+         * @return {@code true} if the file exists
+         */
         public boolean exists() {
             return war.exists();
         }
@@ -180,6 +217,7 @@ public class WarWatcher {
                 // file has changed - timestamp
                 result = 1;
                 lastState = result;
+                lastModified = war.lastModified();
             } else if ((!exists()) && (!(lastState == -1))) {
                 // file was removed
                 result = -1;
@@ -188,11 +226,16 @@ public class WarWatcher {
                 // file was added
                 result = 1;
                 lastState = result;
+                lastModified = war.lastModified();
             }
-            this.lastChecked = System.currentTimeMillis();
             return result;
         }
 
+        /**
+         * Returns the WAR file.
+         *
+         * @return the WAR file
+         */
         public File getWar() {
             return war;
         }
@@ -211,6 +254,11 @@ public class WarWatcher {
             }
         }
 
+        /**
+         * Sets the last known state of the file.
+         *
+         * @param lastState The last state
+         */
         protected void setLastState(int lastState) {
             this.lastState = lastState;
         }

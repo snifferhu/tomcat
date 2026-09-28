@@ -25,27 +25,45 @@ import org.apache.catalina.tribes.util.StringManager;
 import org.apache.juli.logging.Log;
 import org.apache.juli.logging.LogFactory;
 
+/**
+ * An abstract pooled sender that manages a pool of {@link DataSender} instances.
+ */
 public abstract class PooledSender extends AbstractSender implements MultiPointSender {
 
     private static final Log log = LogFactory.getLog(PooledSender.class);
+    /** StringManager for internationalized log messages. */
     protected static final StringManager sm = StringManager.getManager(Constants.Package);
 
     private final SenderQueue queue;
     private int poolSize = 25;
     private long maxWait = 3000;
 
+    /**
+     * Creates a new PooledSender with the default pool size.
+     */
     public PooledSender() {
         queue = new SenderQueue(this, poolSize);
     }
 
+    /**
+     * Creates and returns a new DataSender instance for the pool.
+     * @return a new DataSender
+     */
     public abstract DataSender getNewDataSender();
 
+    /**
+     * Retrieves a sender from the pool, waiting up to maxWait milliseconds.
+     * @return a DataSender from the pool, or null if timeout expires
+     */
     public DataSender getSender() {
         return queue.getSender(getMaxWait());
     }
 
+    /**
+     * Returns a sender back to the pool after use.
+     * @param sender the sender to return
+     */
     public void returnSender(DataSender sender) {
-        sender.keepalive();
         queue.returnSender(sender);
     }
 
@@ -63,28 +81,52 @@ public abstract class PooledSender extends AbstractSender implements MultiPointS
     }
 
 
+    /**
+     * Returns the number of senders currently available in the pool.
+     * @return the number of senders in the pool
+     */
     public int getInPoolSize() {
         return queue.getInPoolSize();
     }
 
+    /**
+     * Returns the number of senders currently in use.
+     * @return the number of senders in use
+     */
     public int getInUsePoolSize() {
         return queue.getInUsePoolSize();
     }
 
 
+    /**
+     * Sets the maximum number of senders in the pool.
+     * @param poolSize the pool size
+     */
     public void setPoolSize(int poolSize) {
         this.poolSize = poolSize;
         queue.setLimit(poolSize);
     }
 
+    /**
+     * Returns the maximum number of senders in the pool.
+     * @return the pool size
+     */
     public int getPoolSize() {
         return poolSize;
     }
 
+    /**
+     * Returns the maximum time to wait for a sender from the pool, in milliseconds.
+     * @return the maximum wait time
+     */
     public long getMaxWait() {
         return maxWait;
     }
 
+    /**
+     * Sets the maximum time to wait for a sender from the pool, in milliseconds.
+     * @param maxWait the maximum wait time
+     */
     public void setMaxWait(long maxWait) {
         this.maxWait = maxWait;
     }
@@ -153,6 +195,7 @@ public abstract class PooledSender extends AbstractSender implements MultiPointS
             DataSender[] list = notinuse.toArray(new DataSender[0]);
             boolean result = false;
             for (DataSender dataSender : list) {
+                // Do not short-circuit. dataSender.keepalive() does real, required work for all senders.
                 result = result | dataSender.keepalive();
             }
             return result;
@@ -177,12 +220,12 @@ public abstract class PooledSender extends AbstractSender implements MultiPointS
                 long delta = System.currentTimeMillis() - start;
                 if (delta > timeout && timeout > 0) {
                     return null;
-                } else {
-                    try {
-                        wait(Math.max(timeout - delta, 1));
-                    } catch (InterruptedException x) {
-                        // Ignore
-                    }
+                }
+                long remaining = timeout > 0 ? Math.max(timeout - delta, 1) : 1;
+                try {
+                    wait(remaining);
+                } catch (InterruptedException x) {
+                    // Ignore
                 }
             }
         }
@@ -192,7 +235,6 @@ public abstract class PooledSender extends AbstractSender implements MultiPointS
                 sender.disconnect();
                 return;
             }
-            // to do
             inuse.remove(sender);
             // just in case the limit has changed
             if (notinuse.size() < this.getLimit()) {

@@ -71,6 +71,9 @@ public class CoyoteAdapter implements Adapter {
 
     private static final EnumSet<SessionTrackingMode> SSL_ONLY = EnumSet.of(SessionTrackingMode.SSL);
 
+    /**
+     * The note index used to store the Request and Response objects on the coyote request and response.
+     */
     public static final int ADAPTER_NOTES = 1;
 
 
@@ -317,9 +320,12 @@ public class CoyoteAdapter implements Adapter {
             req.setNote(ADAPTER_NOTES, request);
             res.setNote(ADAPTER_NOTES, response);
 
-            // Set query string encoding
-            req.getParameters().setQueryStringCharset(connector.getURICharset());
         }
+        /*
+         * Set query string encoding on every request in case the previous request changed it. It cannot be reset in
+         * Parameters.recyle() as Parameters does not have access to the Connector to obtain the default.
+         */
+        req.getParameters().setQueryStringCharset(connector.getURICharset());
 
         if (connector.getXpoweredBy()) {
             response.addHeader("X-Powered-By", POWERED_BY);
@@ -555,9 +561,11 @@ public class CoyoteAdapter implements Adapter {
     protected boolean postParseRequest(org.apache.coyote.Request req, Request request, org.apache.coyote.Response res,
             Response response) throws IOException, ServletException {
 
-        // If the processor has set the scheme (AJP does this, HTTP does this if
-        // SSL is enabled) use this to set the secure flag as well. If the
-        // processor hasn't set it, use the settings from the connector
+        /*
+         * If the processor has set the scheme (HTTP/2 does this, AJP does this if is_ssl is set and HTTP/1.x does this
+         * if SSL is enabled), use this to set the secure flag as well. If the processor hasn't set it, use the settings
+         * from the connector.
+         */
         if (req.scheme().isNull()) {
             // Use connector scheme and secure configuration, (defaults to
             // "http" and false respectively)
@@ -784,6 +792,12 @@ public class CoyoteAdapter implements Adapter {
                 request.getMappingData().recycle();
                 mapRequired = true;
             }
+        }
+
+        // Filter QUERY method without Content-Type
+        if (Method.QUERY.equals(req.getMethod()) && req.getContentType() == null) {
+            response.sendError(HttpServletResponse.SC_BAD_REQUEST, sm.getString("coyoteAdapter.query.contentTypeMissing"));
+            return true;
         }
 
         // Possible redirect
@@ -1052,7 +1066,7 @@ public class CoyoteAdapter implements Adapter {
 
         B2CConverter conv = request.getURIConverter();
         if (conv == null) {
-            conv = new B2CConverter(charset, false);
+            conv = new B2CConverter(charset);
             request.setURIConverter(conv);
         } else {
             conv.recycle();
@@ -1108,6 +1122,8 @@ public class CoyoteAdapter implements Adapter {
      *             null byte, otherwise <code>true</code>
      */
     public static boolean normalize(MessageBytes uriMB, boolean allowBackslash) {
+
+        // Keep behaviour aligned with RequestUtil.normalize()
 
         ByteChunk uriBC = uriMB.getByteChunk();
         final byte[] b = uriBC.getBytes();
@@ -1283,7 +1299,7 @@ public class CoyoteAdapter implements Adapter {
                     byte b2 = bytes[pos + 2];
                     pos += 3;
                     int decoded = (HexUtils.getDec(b1) << 4) + HexUtils.getDec(b2);
-                    if (decoded < 20 || decoded == 0x7F || decoded == 0x2F) {
+                    if (decoded < 0x20 || decoded == 0x7F || decoded == 0x2F) {
                         return true;
                     }
                 } else {

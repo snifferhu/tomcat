@@ -282,12 +282,13 @@
     the current request and response.  The following pattern codes are
     supported:</p>
     <ul>
+    <li><b><code>%%</code></b> - Literal '%' character</li>
     <li><b><code>%a</code></b> - Remote IP address.
         See also <code>%{xxx}a</code> below.</li>
     <li><b><code>%A</code></b> - Local IP address</li>
     <li><b><code>%b</code></b> - Bytes sent, excluding HTTP headers, or '-' if zero</li>
     <li><b><code>%B</code></b> - Bytes sent, excluding HTTP headers</li>
-    <li><b><code>%D</code></b> - Time taken to process the request in microseconds</li>
+    <li><b><code>%D</code></b> - Time taken to process the request, in microseconds</li>
     <li><b><code>%F</code></b> - Time taken to commit the response, in milliseconds</li>
     <li><b><code>%h</code></b> - Remote host name (or IP address if
         <code>enableLookups</code> for the connector is false)</li>
@@ -301,7 +302,7 @@
     <li><b><code>%q</code></b> - Query string (prepended with a '?' if it exists)</li>
     <li><b><code>%r</code></b> - First line of the request (method and request URI)</li>
     <li><b><code>%s</code></b> - HTTP status code of the response</li>
-    <li><b><code>%S</code></b> - User session ID</li>
+    <li><b><code>%S</code></b> - User session ID, if a valid session exists when the access log entry is written</li>
     <li><b><code>%t</code></b> - Date and time, in Common Log Format</li>
     <li><b><code>%T</code></b> - Time taken to process the request, in seconds</li>
     <li><b><code>%u</code></b> - Remote user that was authenticated (if any), else '-' (escaped if required)</li>
@@ -1020,6 +1021,32 @@
 
   </subsection>
 
+  <subsection name="Security">
+
+    <p>The valve changes security sensitive properties of the request based on
+       values provided in HTTP headers. It is essential that Tomcat is able to
+       trust these values for secure operation. Therefore, the first proxy
+       (trusted or internal) must ensure that any of the HTTP headers used by
+       the valve are removed from the untrusted request received.</p>
+    <p>Only the HTTP headers used by the valve need to be removed. The names of
+       those headers will vary depending on configuration. Assuming default
+       header names (adjust as necessary if non-default header names are used),
+       the headers that need to be removed are:</p>
+       <ul>
+         <li><code>x-forwarded-for</code></li>
+         <li><code>x-forwarded-by</code></li>
+         <li><code>x-forwarded-proto</code></li>
+         <li><code>x-forwarded-host</code></li>
+         <li><code>x-forwarded-port</code></li>
+       </ul>
+     <p>Note that HTTP header names are case-insensitive.</p>
+
+     <p>The default value for <code>internalProxies</code> assumes that all
+        local networks are trusted. If this is not the case, adjust the value
+        accordingly.</p>
+
+  </subsection>
+
   <subsection name="Attributes">
 
     <p>The <strong>Remote IP Valve</strong> supports the
@@ -1076,8 +1103,13 @@
 
       <attribute name="protocolHeader" required="false">
         <p>Name of the HTTP Header read by this valve that holds the protocol
-        used by the client to connect to the proxy. If not specified, the
-        default of <code>X-Forwarded-Proto</code> is used.</p>
+        used by the client to connect to the proxy. Multiple headers with the
+        same name will be merged as per RFC 9110, section 5.2. If multiple
+        values are present they must all match
+        <code>protocolHeaderHttpsValue</code> for the request to be treated as
+        an HTTPS request else it will be treated as HTTP. If not specified, the
+        default of <code>X-Forwarded-Proto</code> is used. To disable this
+        feature set the value to the empty string.</p>
       </attribute>
 
       <attribute name="hostHeader" required="false">
@@ -1147,13 +1179,22 @@
     <p>Note: Ensure that the headers are always set by httpd for all requests to
     prevent a client spoofing SSL information by sending fake headers.</p>
 
-    <p>To configure httpd to set the necessary headers, add the following:</p>
+    <p>The exact configuration required in httpd will vary depending on the
+    details of the full httpd configuration but it is likely that the
+    configuration required will be similar to the following:</p>
 <source>&lt;IfModule ssl_module&gt;
   RequestHeader set SSL_CLIENT_CERT "%{SSL_CLIENT_CERT}s"
   RequestHeader set SSL_CIPHER "%{SSL_CIPHER}s"
   RequestHeader set SSL_SESSION_ID "%{SSL_SESSION_ID}s"
   RequestHeader set SSL_CIPHER_USEKEYSIZE "%{SSL_CIPHER_USEKEYSIZE}s"
-&lt;/IfModule&gt;</source>
+&lt;/IfModule&gt;
+&lt;IfModule !ssl_module&gt;
+  RequestHeader unset SSL_CLIENT_CERT
+  RequestHeader unset SSL_CIPHER
+  RequestHeader unset SSL_SESSION_ID
+  RequestHeader unset SSL_CIPHER_USEKEYSIZE
+&lt;/IfModule&gt;
+RequestHeader unset SSL_CLIENT_ESCAPED_CERT</source>
 
   </subsection>
 
@@ -1427,6 +1468,28 @@
         If not specified, the default value is <code>false</code>.</p>
       </attribute>
 
+      <attribute name="ssoReauthenticationMode" required="false">
+        <p>Provides a per Authenicator override of the SSO Valve attribute
+        <code>requireReauthentication</code>. It has the following options:</p>
+        <dl>
+          <dt>default</dt>
+          <dd>Reauthentication behaviour depends on the SSO Valve configuration
+              and the authentictaor type.</dd>
+          <dt>principal</dt>
+          <dd>The authenticator will look first for a cached Principal. If none
+              is found, the authenticator will look for a cached user name and
+              password and attempt to use them to reauthenticate. If that fails,
+              a normal authentication will be performed.</dd>
+          <dt>password</dt>
+          <dd>The authenticator will look for a cached user name and password
+              and attempt to use them to reauthenticate. If that fails, a normal
+              authentication will be performed.</dd>
+          <dt>full</dt>
+          <dd>Only a normal authentication will be performed. The SSO Valve is
+              effectively ignored.</dd>
+        </dl>
+      </attribute>
+
     </attributes>
 
   </subsection>
@@ -1609,6 +1672,28 @@
         If not specified, the default value is <code>false</code>.</p>
       </attribute>
 
+      <attribute name="ssoReauthenticationMode" required="false">
+        <p>Provides a per Authenicator override of the SSO Valve attribute
+        <code>requireReauthentication</code>. It has the following options:</p>
+        <dl>
+          <dt>default</dt>
+          <dd>Reauthentication behaviour depends on the SSO Valve configuration
+              and the authentictaor type.</dd>
+          <dt>principal</dt>
+          <dd>The authenticator will look first for a cached Principal. If none
+              is found, the authenticator will look for a cached user name and
+              password and attempt to use them to reauthenticate. If that fails,
+              a normal authentication will be performed.</dd>
+          <dt>password</dt>
+          <dd>The authenticator will look for a cached user name and password
+              and attempt to use them to reauthenticate. If that fails, a normal
+              authentication will be performed.</dd>
+          <dt>full</dt>
+          <dd>Only a normal authentication will be performed. The SSO Valve is
+              effectively ignored.</dd>
+        </dl>
+      </attribute>
+
       <attribute name="validateUri" required="false">
         <p>Should the URI be validated as required by RFC2617? If not specified,
         the default value of <code>true</code> will be used. This should
@@ -1766,6 +1851,28 @@
         If not specified, the default value is <code>false</code>.</p>
       </attribute>
 
+      <attribute name="ssoReauthenticationMode" required="false">
+        <p>Provides a per Authenicator override of the SSO Valve attribute
+        <code>requireReauthentication</code>. It has the following options:</p>
+        <dl>
+          <dt>default</dt>
+          <dd>Reauthentication behaviour depends on the SSO Valve configuration
+              and the authentictaor type.</dd>
+          <dt>principal</dt>
+          <dd>The authenticator will look first for a cached Principal. If none
+              is found, the authenticator will look for a cached user name and
+              password and attempt to use them to reauthenticate. If that fails,
+              a normal authentication will be performed.</dd>
+          <dt>password</dt>
+          <dd>The authenticator will look for a cached user name and password
+              and attempt to use them to reauthenticate. If that fails, a normal
+              authentication will be performed.</dd>
+          <dt>full</dt>
+          <dd>Only a normal authentication will be performed. The SSO Valve is
+              effectively ignored.</dd>
+        </dl>
+      </attribute>
+
     </attributes>
 
   </subsection>
@@ -1882,6 +1989,28 @@
         specified, the platform default provider will be used.</p>
       </attribute>
 
+      <attribute name="ssoReauthenticationMode" required="false">
+        <p>Provides a per Authenicator override of the SSO Valve attribute
+        <code>requireReauthentication</code>. It has the following options:</p>
+        <dl>
+          <dt>default</dt>
+          <dd>Reauthentication behaviour depends on the SSO Valve configuration
+              and the authentictaor type.</dd>
+          <dt>principal</dt>
+          <dd>The authenticator will look first for a cached Principal. If none
+              is found, the authenticator will look for a cached user name and
+              password and attempt to use them to reauthenticate. If that fails,
+              a normal authentication will be performed.</dd>
+          <dt>password</dt>
+          <dd>The authenticator will look for a cached user name and password
+              and attempt to use them to reauthenticate. If that fails, a normal
+              authentication will be performed.</dd>
+          <dt>full</dt>
+          <dd>Only a normal authentication will be performed. The SSO Valve is
+              effectively ignored.</dd>
+        </dl>
+      </attribute>
+
     </attributes>
 
   </subsection>
@@ -1939,14 +2068,10 @@
       </attribute>
 
       <attribute name="applyJava8u40Fix" required="false">
-        <p>A fix introduced in Java 8 update 40 (
-        <a href="https://bugs.openjdk.java.net/browse/JDK-8048194">JDK-8048194</a>)
-        onwards broke SPNEGO authentication for IE with Tomcat running on
-        Windows 2008 R2 servers. This option enables a work-around that allows
-        SPNEGO authentication to continue working. The work-around should not
-        impact other configurations so it is enabled by default. If necessary,
-        the workaround can be disabled by setting this attribute to
-        <code>false</code>.</p>
+        <p>This attribute is hard-coded to <code>false</code> as the work around
+        it enabled is no longer required. The attribute will be removed from
+        Tomcat 12 onwards. Any attempt to set the attribute will be ignored.
+        </p>
       </attribute>
 
       <attribute name="cache" required="false">
@@ -2058,6 +2183,28 @@
         <code>remote-user</code> and <code>auth-type</code> to a reverse proxy.
         This is useful, e.g., for access log consistency or other decisions to make.
         If not specified, the default value is <code>false</code>.</p>
+      </attribute>
+
+      <attribute name="ssoReauthenticationMode" required="false">
+        <p>Provides a per Authenicator override of the SSO Valve attribute
+        <code>requireReauthentication</code>. It has the following options:</p>
+        <dl>
+          <dt>default</dt>
+          <dd>Reauthentication behaviour depends on the SSO Valve configuration
+              and the authentictaor type.</dd>
+          <dt>principal</dt>
+          <dd>The authenticator will look first for a cached Principal. If none
+              is found, the authenticator will look for a cached user name and
+              password and attempt to use them to reauthenticate. If that fails,
+              a normal authentication will be performed.</dd>
+          <dt>password</dt>
+          <dd>The authenticator will look for a cached user name and password
+              and attempt to use them to reauthenticate. If that fails, a normal
+              authentication will be performed.</dd>
+          <dt>full</dt>
+          <dd>Only a normal authentication will be performed. The SSO Valve is
+              effectively ignored.</dd>
+        </dl>
       </attribute>
 
       <attribute name="storeDelegatedCredential" required="false">
@@ -2180,6 +2327,15 @@
         <strong>org.apache.catalina.valves.JsonErrorReportValve</strong>.</p>
       </attribute>
 
+      <attribute name="showReport" required="false">
+        <p>Flag to determine if the error report (custom error message,
+           description and/or stack trace) is included in the JSON response
+           when an error occurs. If set to <code>false</code>, then the JSON
+           response will only contain the HTTP status code.
+           Default value: <code>true</code>
+        </p>
+      </attribute>
+
     </attributes>
 
   </subsection>
@@ -2222,10 +2378,25 @@
         value is <code>false</code>.</p>
       </attribute>
 
+      <attribute name="showReport" required="false">
+        <p>Flag to determine if the error report details (description, custom
+           error message and/or stack trace) are included in the query
+           parameters of the redirect or proxy URL when an error occurs. If
+           set to <code>false</code>, then only the status code and reason
+           phrase are included. When falling back to the default error report
+           valve (no error page configured), this flag also controls whether
+           the HTML error report includes these details.
+           Default value: <code>true</code>
+        </p>
+      </attribute>
+
       <attribute name="useRedirect" required="false">
-        <p>If <code>true</code>, the valve will send a redirect to the URL.
-        If <code>false</code>, the valve will instead proxy the content from
-        the specified URL. The default value is <code>true</code>.</p>
+        <p>If <code>true</code>, the valve will redirect the client to the URL
+        that displays the error and the redirect will include full details of
+        the error including the stack trace. If <code>false</code>, the valve
+        will instead proxy the content from the specified URL which allows the
+        proxy to filter the information presented to the client. The default
+        value is <code>false</code>.</p>
       </attribute>
 
     </attributes>
@@ -2264,6 +2435,12 @@
     should be defined before this valve to ensure that the correct client IP
     address is presented to this valve.</p>
 
+    <p>Care should be taken when configuring this Valve to ensure that crawlers
+    are not associated with the authenticated session of a genuine user. In
+    particular, the <code>crawlerUserAgents</code> must be chosen with care. The
+    Valve will attempt (but does NOT guarantee) to detect this situation and
+    will expire the authenticated session if detected.</p>
+
   </subsection>
 
   <subsection name="Attributes">
@@ -2287,16 +2464,23 @@
       </attribute>
 
       <attribute name="crawlerIps" required="false">
-        <p>Regular expression (using <code>java.util.regex</code>) that client
-        IP is matched against to determine if a request is from a web crawler.
-        By default such regular expression is not set.</p>
+        <p>Regular expression (using <code>java.util.regex</code>) that the
+        client IP is matched against to determine if a request is from a web
+        crawler. An IP match alone is sufficient for the request to be
+        considered to be from a web crawler. It is not necessary for any other
+        check to indicate that the request is from a web crawler. By default
+        such regular expression is not set and no IP check is performed.</p>
       </attribute>
 
       <attribute name="crawlerUserAgents" required="false">
         <p>Regular expression (using <code>java.util.regex</code>) that the user
         agent HTTP request header is matched against to determine if a request
-        is from a web crawler. If not set, the default of
-        <code>.*[bB]ot.*|.*Yahoo! Slurp.*|.*Feedfetcher-Google.*</code> is used.</p>
+        is from a web crawler. An user agent match alone is sufficient for the
+        request to be considered to be from a web crawler. It is not necessary
+        for any other check to indicate that the request is from a web crawler.
+        If not set, the default of
+        <code>.*[bB]ot.*|.*Yahoo! Slurp.*|.*Feedfetcher-Google.*</code> is
+        used.</p>
       </attribute>
 
       <attribute name="hostAware" required="false">
@@ -2422,10 +2606,9 @@
       </attribute>
 
       <attribute name="highConcurrencyStatus" required="false">
-        <p>The error status code which will be returned to the client, if the
-        value is positive, when a permit cannot be acquired from the
-        sepmaphore. The default value is <strong>-1</strong>, which will mean
-        no error status will be sent back.</p>
+        <p>The HTTP status code which will be returned to the client when a
+        permit cannot be acquired from the semaphore. The default value is
+        <strong>-1</strong>, which means no error status will be sent back.</p>
       </attribute>
 
       <attribute name="interruptible" required="false">
@@ -2581,6 +2764,68 @@
     </attributes>
 
   </subsection>
+
+</section>
+
+<section name="Filter Valve">
+
+  <subsection name="Introduction">
+
+    <p>The <strong>Filter Valve</strong> allows a Servlet Filter to be run as
+      part of the Valve pipeline. This enables reuse of existing Filter
+      implementations at the Valve level without duplicating their logic.</p>
+
+    <p>There are several caveats when using this Valve:</p>
+    <ul>
+      <li>A <em>separate instance</em> of the Filter class is created, distinct
+        from any instance that may be instantiated within a web application.</li>
+      <li>Calls to <code>FilterConfig.getFilterName()</code> will return
+        <code>null</code>.</li>
+      <li><code>FilterConfig.getServletContext()</code> will return the proper
+        <code>ServletContext</code> for a Valve attached to a
+        <code>&lt;Context&gt;</code>, but will return a
+        <code>ServletContext</code> of limited use for a Valve specified on an
+        <code>&lt;Engine&gt;</code> or <code>&lt;Host&gt;</code>.</li>
+      <li>The Filter <strong>MUST NOT</strong> wrap the
+        <code>ServletRequest</code> or <code>ServletResponse</code> objects, or
+        an <code>IllegalStateException</code> will be thrown.</li>
+    </ul>
+
+  </subsection>
+
+  <subsection name="Attributes">
+
+    <p>The <strong>Filter Valve</strong> supports the following
+      configuration attributes:</p>
+
+    <attributes>
+
+      <attribute name="className" required="true">
+        <p>Java class name of the implementation to use. This MUST be set to
+          <strong>org.apache.catalina.valves.FilterValve</strong>.</p>
+      </attribute>
+
+      <attribute name="filterClass" required="true">
+        <p>The fully qualified class name of the <code>Filter</code>
+          implementation to use. The class must have a no-argument
+          constructor.</p>
+      </attribute>
+
+    </attributes>
+
+    <p>The <strong>Filter Valve</strong> also supports nested
+      <code>&lt;init-param&gt;</code> elements to pass initialization
+      parameters to the Filter:</p>
+
+    <source><![CDATA[<Valve className="org.apache.catalina.valves.FilterValve"
+        filterClass="com.example.MyFilter">
+    <init-param>
+      <param-name>myParam</param-name>
+      <param-value>myValue</param-value>
+    </init-param>
+  </Valve>]]></source>
+
+    </subsection>
 
 </section>
 

@@ -19,6 +19,7 @@ package org.apache.jasper.runtime;
 import java.beans.PropertyEditor;
 import java.beans.PropertyEditorManager;
 import java.io.IOException;
+import java.lang.reflect.Array;
 import java.lang.reflect.Method;
 import java.net.URLEncoder;
 import java.nio.charset.Charset;
@@ -49,7 +50,17 @@ import org.apache.tomcat.InstanceManager;
  */
 public class JspRuntimeLibrary {
 
+    /**
+     * Indicates whether the code is running under GraalVM native image.
+     */
     public static final boolean GRAAL;
+
+
+    /**
+     * Private constructor to prevent instantiation.
+     */
+    private JspRuntimeLibrary() {
+    }
 
     static {
         boolean result = false;
@@ -92,6 +103,12 @@ public class JspRuntimeLibrary {
         return error;
     }
 
+    /**
+     * Coerces a string to a boolean value.
+     *
+     * @param s The string to coerce
+     * @return the boolean value, or false if the string is null/empty
+     */
     public static boolean coerceToBoolean(String s) {
         if (s == null || s.isEmpty()) {
             return false;
@@ -100,6 +117,12 @@ public class JspRuntimeLibrary {
         }
     }
 
+    /**
+     * Coerces a string to a byte value.
+     *
+     * @param s The string to coerce
+     * @return the byte value, or 0 if the string is null/empty
+     */
     public static byte coerceToByte(String s) {
         if (s == null || s.isEmpty()) {
             return (byte) 0;
@@ -108,6 +131,12 @@ public class JspRuntimeLibrary {
         }
     }
 
+    /**
+     * Coerces a string to a char value.
+     *
+     * @param s The string to coerce
+     * @return the char value, or 0 if the string is null/empty
+     */
     public static char coerceToChar(String s) {
         if (s == null || s.isEmpty()) {
             return (char) 0;
@@ -116,6 +145,12 @@ public class JspRuntimeLibrary {
         }
     }
 
+    /**
+     * Coerces a string to a double value.
+     *
+     * @param s The string to coerce
+     * @return the double value, or 0 if the string is null/empty
+     */
     public static double coerceToDouble(String s) {
         if (s == null || s.isEmpty()) {
             return 0;
@@ -124,6 +159,12 @@ public class JspRuntimeLibrary {
         }
     }
 
+    /**
+     * Coerces a string to a float value.
+     *
+     * @param s The string to coerce
+     * @return the float value, or 0 if the string is null/empty
+     */
     public static float coerceToFloat(String s) {
         if (s == null || s.isEmpty()) {
             return 0;
@@ -132,6 +173,12 @@ public class JspRuntimeLibrary {
         }
     }
 
+    /**
+     * Coerces a string to an int value.
+     *
+     * @param s The string to coerce
+     * @return the int value, or 0 if the string is null/empty
+     */
     public static int coerceToInt(String s) {
         if (s == null || s.isEmpty()) {
             return 0;
@@ -140,6 +187,12 @@ public class JspRuntimeLibrary {
         }
     }
 
+    /**
+     * Coerces a string to a short value.
+     *
+     * @param s The string to coerce
+     * @return the short value, or 0 if the string is null/empty
+     */
     public static short coerceToShort(String s) {
         if (s == null || s.isEmpty()) {
             return (short) 0;
@@ -148,6 +201,12 @@ public class JspRuntimeLibrary {
         }
     }
 
+    /**
+     * Coerces a string to a long value.
+     *
+     * @param s The string to coerce
+     * @return the long value, or 0 if the string is null/empty
+     */
     public static long coerceToLong(String s) {
         if (s == null || s.isEmpty()) {
             return 0;
@@ -156,6 +215,13 @@ public class JspRuntimeLibrary {
         }
     }
 
+    /**
+     * Coerces a string to the target type.
+     *
+     * @param s The string to coerce
+     * @param target The target class
+     * @return the coerced value, or {@code null} if the target type is not supported
+     */
     public static Object coerce(String s, Class<?> target) {
 
         boolean isNullOrEmpty = (s == null || s.isEmpty());
@@ -215,6 +281,16 @@ public class JspRuntimeLibrary {
     }
 
 
+    /**
+     * Converts a string value to the target type, using a property editor if specified.
+     *
+     * @param propertyName The property name
+     * @param s The string value to convert
+     * @param t The target class
+     * @param propertyEditorClass The property editor class, or {@code null}
+     * @return the converted value
+     * @throws JasperException if conversion fails
+     */
     public static Object convert(String propertyName, String s, Class<?> t, Class<?> propertyEditorClass)
             throws JasperException {
         try {
@@ -284,6 +360,13 @@ public class JspRuntimeLibrary {
     }
 
 
+    /**
+     * Sets bean properties from request parameters.
+     *
+     * @param bean The bean
+     * @param request The servlet request
+     * @throws JasperException if setting a property fails
+     */
     public static void introspect(Object bean, ServletRequest request) throws JasperException {
         Enumeration<String> e = request.getParameterNames();
         while (e.hasMoreElements()) {
@@ -294,6 +377,17 @@ public class JspRuntimeLibrary {
     }
 
 
+    /**
+     * Sets a single bean property from a string value.
+     *
+     * @param bean The bean
+     * @param prop The property name
+     * @param value The string value
+     * @param request The servlet request
+     * @param param The parameter name
+     * @param ignoreMethodNF Whether to ignore missing methods
+     * @throws JasperException if setting the property fails
+     */
     public static void introspecthelper(Object bean, String prop, String value, ServletRequest request, String param,
             boolean ignoreMethodNF) throws JasperException {
         Method method = null;
@@ -326,7 +420,6 @@ public class JspRuntimeLibrary {
                     }
                     Class<?> t = type.getComponentType();
                     String[] values = request.getParameterValues(param);
-                    // XXX Please check.
                     if (values == null) {
                         return;
                     }
@@ -365,38 +458,92 @@ public class JspRuntimeLibrary {
     // -------------------------------------------------------------------
     // functions to convert builtin Java data types to string.
     // -------------------------------------------------------------------
+    /**
+     * Converts an object to its string representation.
+     *
+     * @param o The object
+     * @return the string representation
+     */
     public static String toString(Object o) {
         return String.valueOf(o);
     }
 
+    /**
+     * Converts a byte to its string representation.
+     *
+     * @param b The byte value
+     * @return the string representation
+     */
     public static String toString(byte b) {
         return Byte.toString(b);
     }
 
+    /**
+     * Converts a boolean to its string representation.
+     *
+     * @param b The boolean value
+     * @return the string representation
+     */
     public static String toString(boolean b) {
         return Boolean.toString(b);
     }
 
+    /**
+     * Converts a short to its string representation.
+     *
+     * @param s The short value
+     * @return the string representation
+     */
     public static String toString(short s) {
         return Short.toString(s);
     }
 
+    /**
+     * Converts an int to its string representation.
+     *
+     * @param i The int value
+     * @return the string representation
+     */
     public static String toString(int i) {
         return Integer.toString(i);
     }
 
+    /**
+     * Converts a float to its string representation.
+     *
+     * @param f The float value
+     * @return the string representation
+     */
     public static String toString(float f) {
         return Float.toString(f);
     }
 
+    /**
+     * Converts a long to its string representation.
+     *
+     * @param l The long value
+     * @return the string representation
+     */
     public static String toString(long l) {
         return Long.toString(l);
     }
 
+    /**
+     * Converts a double to its string representation.
+     *
+     * @param d The double value
+     * @return the string representation
+     */
     public static String toString(double d) {
         return Double.toString(d);
     }
 
+    /**
+     * Converts a char to its string representation.
+     *
+     * @param c The char value
+     * @return the string representation
+     */
     public static String toString(char c) {
         return Character.toString(c);
     }
@@ -420,9 +567,9 @@ public class JspRuntimeLibrary {
 
         try {
             if (propertyEditorClass != null) {
-                Object[] tmpval = new Integer[values.length];
+                Object tmpval = Array.newInstance(t, values.length);
                 for (int i = 0; i < values.length; i++) {
-                    tmpval[i] = getValueFromBeanInfoPropertyEditor(t, propertyName, values[i], propertyEditorClass);
+                    Array.set(tmpval, i, getValueFromBeanInfoPropertyEditor(t, propertyName, values[i], propertyEditorClass));
                 }
                 method.invoke(bean, new Object[] { tmpval });
             } else if (t.equals(Integer.class)) {
@@ -522,7 +669,7 @@ public class JspRuntimeLibrary {
                 }
                 method.invoke(bean, new Object[] { tmpval });
             } else {
-                Object[] tmpval = new Integer[values.length];
+                Object[] tmpval = (Object[]) Array.newInstance(t, values.length);
                 for (int i = 0; i < values.length; i++) {
                     tmpval[i] = getValueFromPropertyEditorManager(t, propertyName, values[i]);
                 }
@@ -536,7 +683,8 @@ public class JspRuntimeLibrary {
     }
 
     /**
-     * Escape special shell characters.
+     * Escape special shell characters by prefixing them with a backslash. Despite the method name, this does not
+     * perform any URL or query string encoding.
      *
      * @param unescString The string to shell-escape
      *
@@ -563,6 +711,14 @@ public class JspRuntimeLibrary {
     }
 
 
+    /**
+     * Gets the value of a bean property.
+     *
+     * @param o The bean
+     * @param prop The property name
+     * @return the property value
+     * @throws JasperException if getting the property fails
+     */
     public static Object handleGetProperty(Object o, String prop) throws JasperException {
         if (o == null) {
             throw new JasperException(Localizer.getMessage("jsp.error.beans.nullbean"));
@@ -579,7 +735,16 @@ public class JspRuntimeLibrary {
         return value;
     }
 
-    // handles <jsp:setProperty> with EL expression for 'value' attribute
+    /**
+     * Sets a bean property from an EL expression.
+     *
+     * @param bean The bean
+     * @param prop The property name
+     * @param expression The EL expression
+     * @param pageContext The page context
+     * @param functionMapper The function mapper
+     * @throws JasperException if setting the property fails
+     */
     public static void handleSetPropertyExpression(Object bean, String prop, String expression, PageContext pageContext,
             ProtectedFunctionMapper functionMapper) throws JasperException {
         try {
@@ -593,6 +758,14 @@ public class JspRuntimeLibrary {
         }
     }
 
+    /**
+     * Sets a bean property to the given value.
+     *
+     * @param bean The bean
+     * @param prop The property name
+     * @param value The value to set
+     * @throws JasperException if setting the property fails
+     */
     public static void handleSetProperty(Object bean, String prop, Object value) throws JasperException {
         try {
             Method method = getWriteMethod(bean.getClass(), prop);
@@ -604,6 +777,14 @@ public class JspRuntimeLibrary {
         }
     }
 
+    /**
+     * Sets a bean property to the given int value.
+     *
+     * @param bean The bean
+     * @param prop The property name
+     * @param value The value to set
+     * @throws JasperException if setting the property fails
+     */
     public static void handleSetProperty(Object bean, String prop, int value) throws JasperException {
         try {
             Method method = getWriteMethod(bean.getClass(), prop);
@@ -615,6 +796,14 @@ public class JspRuntimeLibrary {
         }
     }
 
+    /**
+     * Sets a bean property to the given short value.
+     *
+     * @param bean The bean
+     * @param prop The property name
+     * @param value The value to set
+     * @throws JasperException if setting the property fails
+     */
     public static void handleSetProperty(Object bean, String prop, short value) throws JasperException {
         try {
             Method method = getWriteMethod(bean.getClass(), prop);
@@ -626,6 +815,14 @@ public class JspRuntimeLibrary {
         }
     }
 
+    /**
+     * Sets a bean property to the given long value.
+     *
+     * @param bean The bean
+     * @param prop The property name
+     * @param value The value to set
+     * @throws JasperException if setting the property fails
+     */
     public static void handleSetProperty(Object bean, String prop, long value) throws JasperException {
         try {
             Method method = getWriteMethod(bean.getClass(), prop);
@@ -637,6 +834,14 @@ public class JspRuntimeLibrary {
         }
     }
 
+    /**
+     * Sets a bean property to the given double value.
+     *
+     * @param bean The bean
+     * @param prop The property name
+     * @param value The value to set
+     * @throws JasperException if setting the property fails
+     */
     public static void handleSetProperty(Object bean, String prop, double value) throws JasperException {
         try {
             Method method = getWriteMethod(bean.getClass(), prop);
@@ -648,6 +853,14 @@ public class JspRuntimeLibrary {
         }
     }
 
+    /**
+     * Sets a bean property to the given float value.
+     *
+     * @param bean The bean
+     * @param prop The property name
+     * @param value The value to set
+     * @throws JasperException if setting the property fails
+     */
     public static void handleSetProperty(Object bean, String prop, float value) throws JasperException {
         try {
             Method method = getWriteMethod(bean.getClass(), prop);
@@ -659,6 +872,14 @@ public class JspRuntimeLibrary {
         }
     }
 
+    /**
+     * Sets a bean property to the given char value.
+     *
+     * @param bean The bean
+     * @param prop The property name
+     * @param value The value to set
+     * @throws JasperException if setting the property fails
+     */
     public static void handleSetProperty(Object bean, String prop, char value) throws JasperException {
         try {
             Method method = getWriteMethod(bean.getClass(), prop);
@@ -670,6 +891,14 @@ public class JspRuntimeLibrary {
         }
     }
 
+    /**
+     * Sets a bean property to the given byte value.
+     *
+     * @param bean The bean
+     * @param prop The property name
+     * @param value The value to set
+     * @throws JasperException if setting the property fails
+     */
     public static void handleSetProperty(Object bean, String prop, byte value) throws JasperException {
         try {
             Method method = getWriteMethod(bean.getClass(), prop);
@@ -681,6 +910,14 @@ public class JspRuntimeLibrary {
         }
     }
 
+    /**
+     * Sets a bean property to the given boolean value.
+     *
+     * @param bean The bean
+     * @param prop The property name
+     * @param value The value to set
+     * @throws JasperException if setting the property fails
+     */
     public static void handleSetProperty(Object bean, String prop, boolean value) throws JasperException {
         try {
             Method method = getWriteMethod(bean.getClass(), prop);
@@ -708,10 +945,19 @@ public class JspRuntimeLibrary {
         return new String(chars);
     }
 
+    /**
+     * Gets the write method (setter) for a bean property.
+     *
+     * @param beanClass The bean class
+     * @param prop The property name
+     * @return the write method
+     * @throws JasperException if the property or write method cannot be found
+     */
     public static Method getWriteMethod(Class<?> beanClass, String prop) throws JasperException {
         Method result = null;
         Class<?> type = null;
         if (GRAAL) {
+            // BeanInfo is approximated with Graal
             String setter = "set" + capitalize(prop);
             Method[] methods = beanClass.getMethods();
             for (Method method : methods) {
@@ -746,14 +992,23 @@ public class JspRuntimeLibrary {
         return result;
     }
 
+    /**
+     * Gets the read method (getter) for a bean property.
+     *
+     * @param beanClass The bean class
+     * @param prop The property name
+     * @return the read method
+     * @throws JasperException if the property or read method cannot be found
+     */
     public static Method getReadMethod(Class<?> beanClass, String prop) throws JasperException {
         Method result = null;
         Class<?> type = null;
         if (GRAAL) {
-            String setter = "get" + capitalize(prop);
+            // BeanInfo is approximated with Graal
+            String getter = "get" + capitalize(prop);
             Method[] methods = beanClass.getMethods();
             for (Method method : methods) {
-                if (setter.equals(method.getName())) {
+                if (getter.equals(method.getName())) {
                     return method;
                 }
             }
@@ -786,6 +1041,16 @@ public class JspRuntimeLibrary {
     // *********************************************************************
     // PropertyEditor Support
 
+    /**
+     * Gets a value using a bean info property editor.
+     *
+     * @param attrClass The attribute class
+     * @param attrName The attribute name
+     * @param attrValue The attribute value as a string
+     * @param propertyEditorClass The property editor class
+     * @return the converted value
+     * @throws JasperException if conversion fails
+     */
     public static Object getValueFromBeanInfoPropertyEditor(Class<?> attrClass, String attrName, String attrValue,
             Class<?> propertyEditorClass) throws JasperException {
         try {
@@ -802,6 +1067,15 @@ public class JspRuntimeLibrary {
         }
     }
 
+    /**
+     * Gets a value using the property editor manager.
+     *
+     * @param attrClass The attribute class
+     * @param attrName The attribute name
+     * @param attrValue The attribute value as a string
+     * @return the converted value
+     * @throws JasperException if conversion fails
+     */
     public static Object getValueFromPropertyEditorManager(Class<?> attrClass, String attrName, String attrValue)
             throws JasperException {
         try {
@@ -929,6 +1203,14 @@ public class JspRuntimeLibrary {
     }
 
 
+    /**
+     * Starts a buffered body for a tag that supports body content.
+     *
+     * @param pageContext The page context
+     * @param tag The body tag
+     * @return the JspWriter for the body content
+     * @throws JspException if starting the buffered body fails
+     */
     public static JspWriter startBufferedBody(PageContext pageContext, BodyTag tag) throws JspException {
         BodyContent out = pageContext.pushBody();
         tag.setBodyContent(out);
@@ -937,6 +1219,27 @@ public class JspRuntimeLibrary {
     }
 
 
+    /**
+     * Releases a tag and destroys its instance if it has not been re-used.
+     *
+     * @param tag The tag to release
+     * @param instanceManager The instance manager
+     * @param reused Has the tag successfully been re-used
+     */
+    public static void releaseTag(Tag tag, InstanceManager instanceManager, boolean reused) {
+        // Caller ensures pool is non-null if reuse is true
+        if (!reused) {
+            releaseTag(tag, instanceManager);
+        }
+    }
+
+
+    /**
+     * Releases a tag and destroys its instance.
+     *
+     * @param tag The tag to release
+     * @param instanceManager The instance manager
+     */
     public static void releaseTag(Tag tag, InstanceManager instanceManager) {
         try {
             tag.release();

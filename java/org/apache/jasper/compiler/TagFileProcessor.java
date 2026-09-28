@@ -19,6 +19,7 @@ package org.apache.jasper.compiler;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
@@ -44,6 +45,12 @@ import org.apache.tomcat.util.descriptor.tld.TldResourcePath;
  * 1. Processes and extracts the directive info in a tag file. 2. Compiles and loads tag files used in a JSP file.
  */
 public class TagFileProcessor {
+
+    /**
+     * Constructs a new TagFileProcessor.
+     */
+    public TagFileProcessor() {
+    }
 
     private List<Compiler> tempVector;
 
@@ -316,7 +323,6 @@ public class TagFileProcessor {
         public TagInfo getTagInfo(String packageName) throws JasperException {
 
             if (name == null) {
-                // XXX Get it from tag file name
             }
 
             if (bodyContent == null) {
@@ -574,18 +580,31 @@ public class TagFileProcessor {
                 String tagFilePath = tagFileInfo.getPath();
                 if (tagFilePath.startsWith("/META-INF/")) {
                     // For tags in JARs, add the TLD and the tag as a dependency
-                    TldResourcePath tldResourcePath = compiler.getCompilationContext()
-                            .getTldResourcePath(tagFileInfo.getTagInfo().getTagLibrary().getURI());
-
+                    String tagLibraryUri = tagFileInfo.getTagInfo().getTagLibrary().getURI();
+                    TldResourcePath tldResourcePath =
+                            compiler.getCompilationContext().getTldResourcePath(tagLibraryUri);
+                    String tldWebAppPath = tldResourcePath.getWebappPath();
                     try (Jar jar = tldResourcePath.openJar()) {
 
                         if (jar != null) {
+                            /*
+                             * If the JAR is not in the web application path, use the stable Tag Library URI as the
+                             * dependency key to keep the generated code deterministic across build environments.
+                             */
+                            String tldKey;
+                            String tagKey;
+                            if (tldWebAppPath == null) {
+                                tldKey = "uri:" + tagLibraryUri + "!/" + tldResourcePath.getEntryName();
+                                tagKey = "uri:" + tagLibraryUri + "!/" + tagFilePath.substring(1);
+                            } else {
+                                tldKey = jar.getURL(tldResourcePath.getEntryName());
+                                tagKey = jar.getURL(tagFilePath.substring(1));
+                            }
                             // Add TLD
-                            pageInfo.addDependant(jar.getURL(tldResourcePath.getEntryName()),
+                            pageInfo.addDependant(tldKey,
                                     Long.valueOf(jar.getLastModified(tldResourcePath.getEntryName())));
                             // Add Tag
-                            pageInfo.addDependant(jar.getURL(tagFilePath.substring(1)),
-                                    Long.valueOf(jar.getLastModified(tagFilePath.substring(1))));
+                            pageInfo.addDependant(tagKey, Long.valueOf(jar.getLastModified(tagFilePath.substring(1))));
                         } else {
                             pageInfo.addDependant(tagFilePath,
                                     compiler.getCompilationContext().getLastModified(tagFilePath));
@@ -609,7 +628,7 @@ public class TagFileProcessor {
      * nodes.
      *
      * @param compiler Compiler to use to compile tag files
-     * @param page     The page from to scan for tag files to compile
+     * @param page     The page from which to scan for tag files to compile
      *
      * @throws JasperException If an error occurs during the scan or compilation
      */
@@ -620,17 +639,19 @@ public class TagFileProcessor {
     }
 
     /**
-     * Removed the java and class files for the tag prototype generated from the current compilation.
+     * Removes the java and class files for the tag prototype generated from the current compilation.
      *
      * @param classFileName If non-null, remove only the class file with this name.
      */
     public void removeProtoTypeFiles(String classFileName) {
-        for (Compiler c : tempVector) {
+        Iterator<Compiler> compilers = tempVector.iterator();
+        while (compilers.hasNext()) {
+            Compiler c = compilers.next();
             if (classFileName == null) {
                 c.removeGeneratedClassFiles();
             } else if (classFileName.equals(c.getCompilationContext().getClassFileName())) {
                 c.removeGeneratedClassFiles();
-                tempVector.remove(c);
+                compilers.remove();
                 return;
             }
         }

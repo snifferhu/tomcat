@@ -31,9 +31,22 @@ import org.apache.catalina.tribes.util.StringManager;
 import org.apache.juli.logging.Log;
 import org.apache.juli.logging.LogFactory;
 
+/**
+ * Interceptor that measures and reports message throughput statistics.
+ */
 public class ThroughputInterceptor extends ChannelInterceptorBase implements ThroughputInterceptorMBean {
 
+    /**
+     * Constructs a new ThroughputInterceptor.
+     */
+    public ThroughputInterceptor() {
+    }
+
     private static final Log log = LogFactory.getLog(ThroughputInterceptor.class);
+
+    /**
+     * The string manager for this package.
+     */
     protected static final StringManager sm = StringManager.getManager(ThroughputInterceptor.class);
 
     double mbTx = 0;
@@ -98,9 +111,13 @@ public class ThroughputInterceptor extends ChannelInterceptorBase implements Thr
     @Override
     public void report(double timeTx) {
         if (log.isInfoEnabled()) {
+            double txRate = timeTx > 0 ? mbTx / timeTx : 0;
+            double appTxRate = timeTx > 0 ? mbAppTx / timeTx : 0;
+            double rxElapsed = (System.currentTimeMillis() - rxStart) / 1000d;
+            double rxRate = rxElapsed > 0 ? mbRx / rxElapsed : 0;
             log.info(sm.getString("throughputInterceptor.report", msgTxCnt, df.format(mbTx), df.format(mbAppTx),
-                    df.format(timeTx), df.format(mbTx / timeTx), df.format(mbAppTx / timeTx), msgTxErr, msgRxCnt,
-                    df.format(mbRx / ((System.currentTimeMillis() - rxStart) / (double) 1000)), df.format(mbRx)));
+                    df.format(timeTx), df.format(txRate), df.format(appTxRate), msgTxErr, msgRxCnt,
+                    df.format(rxRate), df.format(mbRx)));
         }
     }
 

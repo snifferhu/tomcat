@@ -28,6 +28,7 @@ import java.security.KeyStore;
 import java.security.cert.CRL;
 import java.security.cert.CRLException;
 import java.security.cert.CertPathParameters;
+import java.security.cert.CertPathValidator;
 import java.security.cert.CertStore;
 import java.security.cert.CertStoreParameters;
 import java.security.cert.Certificate;
@@ -37,12 +38,14 @@ import java.security.cert.CertificateFactory;
 import java.security.cert.CertificateNotYetValidException;
 import java.security.cert.CollectionCertStoreParameters;
 import java.security.cert.PKIXBuilderParameters;
+import java.security.cert.PKIXRevocationChecker;
 import java.security.cert.X509CertSelector;
 import java.security.cert.X509Certificate;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Date;
+import java.util.EnumSet;
 import java.util.Enumeration;
 import java.util.List;
 import java.util.Locale;
@@ -73,20 +76,41 @@ public abstract class SSLUtilBase implements SSLUtil {
     private static final Log log = LogFactory.getLog(SSLUtilBase.class);
     private static final StringManager sm = StringManager.getManager(SSLUtilBase.class);
 
+    /**
+     * Default key alias.
+     */
     public static final String DEFAULT_KEY_ALIAS = "tomcat";
 
+    /**
+     * The SSL host configuration.
+     */
     protected final SSLHostConfig sslHostConfig;
+
+    /**
+     * The SSL host configuration certificate.
+     */
     protected final SSLHostConfigCertificate certificate;
 
     private final String[] enabledProtocols;
     private final String[] enabledCiphers;
 
 
+    /**
+     * Constructor.
+     *
+     * @param certificate The SSL host configuration certificate
+     */
     protected SSLUtilBase(SSLHostConfigCertificate certificate) {
         this(certificate, true);
     }
 
 
+    /**
+     * Constructor.
+     *
+     * @param certificate The SSL host configuration certificate
+     * @param warnTls13 Whether to warn about TLS 1.3 issues
+     */
     protected SSLUtilBase(SSLHostConfigCertificate certificate, boolean warnTls13) {
         this.certificate = certificate;
         this.sslHostConfig = certificate.getSSLHostConfig();
@@ -436,7 +460,7 @@ public abstract class SSLUtilBase implements SSLUtil {
             ClassLoader classLoader = getClass().getClassLoader();
             Class<?> clazz = classLoader.loadClass(className);
             if (!(TrustManager.class.isAssignableFrom(clazz))) {
-                throw new InstantiationException(sm.getString("sslUtilBase.invalidTrustManagerClassName", className));
+                throw new IllegalArgumentException(sm.getString("sslUtilBase.invalidTrustManagerClassName", className));
             }
             Object trustManagerObject = clazz.getConstructor().newInstance();
             TrustManager trustManager = (TrustManager) trustManagerObject;
@@ -520,8 +544,10 @@ public abstract class SSLUtilBase implements SSLUtil {
      *
      * @throws Exception An error occurred
      */
-    protected CertPathParameters getParameters(String crlf, KeyStore trustStore, boolean revocationEnabled)
-            throws Exception {
+    protected CertPathParameters getParameters(final String crlf, final KeyStore trustStore,
+            final boolean revocationEnabled) throws Exception {
+
+        boolean enableRevocation = revocationEnabled;
 
         PKIXBuilderParameters xparams = new PKIXBuilderParameters(trustStore, new X509CertSelector());
         if (crlf != null && !crlf.isEmpty()) {
@@ -529,11 +555,24 @@ public abstract class SSLUtilBase implements SSLUtil {
             CertStoreParameters csp = new CollectionCertStoreParameters(crls);
             CertStore store = CertStore.getInstance("Collection", csp);
             xparams.addCertStore(store);
-            xparams.setRevocationEnabled(true);
-        } else {
-            xparams.setRevocationEnabled(revocationEnabled);
+            enableRevocation = true;
         }
+
+        if (sslHostConfig.getOcspEnabled()) {
+            PKIXRevocationChecker revocationChecker =(PKIXRevocationChecker) CertPathValidator.getInstance("PKIX").getRevocationChecker();
+            if (sslHostConfig.getOcspSoftFail()) {
+                revocationChecker.setOptions(EnumSet.of(PKIXRevocationChecker.Option.SOFT_FAIL));
+            } else {
+                revocationChecker.setOptions(Collections.emptySet());
+            }
+            xparams.addCertPathChecker(revocationChecker);
+            enableRevocation = true;
+        }
+
+        xparams.setRevocationEnabled(enableRevocation);
+
         xparams.setMaxPathLength(sslHostConfig.getCertificateVerificationDepth());
+
         return xparams;
     }
 
@@ -560,13 +599,40 @@ public abstract class SSLUtilBase implements SSLUtil {
     }
 
 
+    /**
+     * Returns the set of implemented SSL/TLS protocols.
+     *
+     * @return the implemented protocols
+     */
     protected abstract Set<String> getImplementedProtocols();
 
+    /**
+     * Returns the set of implemented SSL/TLS ciphers.
+     *
+     * @return the implemented ciphers
+     */
     protected abstract Set<String> getImplementedCiphers();
 
+    /**
+     * Returns the log for this utility.
+     *
+     * @return the log
+     */
     protected abstract Log getLog();
 
+    /**
+     * Returns whether TLS 1.3 renegotiation authentication is available.
+     *
+     * @return {@code true} if TLS 1.3 renegotiation authentication is available
+     */
     protected abstract boolean isTls13RenegAuthAvailable();
 
+    /**
+     * Creates an SSL context with the given negotiable protocols.
+     *
+     * @param negotiableProtocols The negotiable protocols
+     * @return the SSL context
+     * @throws Exception if creation fails
+     */
     protected abstract SSLContext createSSLContextInternal(List<String> negotiableProtocols) throws Exception;
 }

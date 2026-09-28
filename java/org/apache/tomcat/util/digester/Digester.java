@@ -20,7 +20,6 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.UnsupportedEncodingException;
 import java.lang.reflect.InvocationTargetException;
 import java.net.URI;
 import java.net.URISyntaxException;
@@ -43,7 +42,6 @@ import org.apache.juli.logging.LogFactory;
 import org.apache.tomcat.util.ExceptionUtils;
 import org.apache.tomcat.util.IntrospectionUtils;
 import org.apache.tomcat.util.IntrospectionUtils.PropertySource;
-import org.apache.tomcat.util.buf.B2CConverter;
 import org.apache.tomcat.util.buf.ToStringUtil;
 import org.apache.tomcat.util.res.StringManager;
 import org.xml.sax.Attributes;
@@ -58,7 +56,6 @@ import org.xml.sax.SAXParseException;
 import org.xml.sax.XMLReader;
 import org.xml.sax.ext.DefaultHandler2;
 import org.xml.sax.ext.EntityResolver2;
-import org.xml.sax.ext.Locator2;
 import org.xml.sax.helpers.AttributesImpl;
 
 
@@ -76,17 +73,23 @@ import org.xml.sax.helpers.AttributesImpl;
  * thread at a time, and a call to <code>parse()</code> must be completed before another can be initiated even from the
  * same thread.
  * </p>
- * <p>
- * <strong>IMPLEMENTATION NOTE</strong> - A bug in Xerces 2.0.2 prevents the support of XML schema. You need Xerces
- * 2.1/2.3 and up to make this class working with XML schema
- * </p>
  */
 public class Digester extends DefaultHandler2 {
 
     // ---------------------------------------------------------- Static Fields
 
+    /**
+     * Configured property sources for property replacement.
+     */
     protected static IntrospectionUtils.PropertySource[] propertySources;
+
+    /**
+     * Flag indicating whether property sources have been set.
+     */
     private static boolean propertySourcesSet = false;
+    /**
+     * String manager for this class.
+     */
     protected static final StringManager sm = StringManager.getManager(Digester.class);
 
     static {
@@ -122,6 +125,11 @@ public class Digester extends DefaultHandler2 {
         }
     }
 
+    /**
+     * Set a single property source for property replacement.
+     *
+     * @param propertySource Property source to set
+     */
     public static void setPropertySource(IntrospectionUtils.PropertySource propertySource) {
         if (!propertySourcesSet) {
             propertySources = new IntrospectionUtils.PropertySource[1];
@@ -130,6 +138,11 @@ public class Digester extends DefaultHandler2 {
         }
     }
 
+    /**
+     * Set property sources for property replacement.
+     *
+     * @param propertySources Property sources to set
+     */
     public static void setPropertySource(IntrospectionUtils.PropertySource[] propertySources) {
         if (!propertySourcesSet) {
             Digester.propertySources = propertySources;
@@ -139,30 +152,65 @@ public class Digester extends DefaultHandler2 {
 
     private static final HashSet<String> generatedClasses = new HashSet<>();
 
+    /**
+     * Add a generated class name to the tracking set.
+     *
+     * @param className Name of the generated class
+     */
     public static void addGeneratedClass(String className) {
         generatedClasses.add(className);
     }
 
+    /**
+     * Get the names of all generated classes.
+     *
+     * @return Array of generated class names
+     */
     public static String[] getGeneratedClasses() {
         return generatedClasses.toArray(new String[0]);
     }
 
+    /**
+     * Interface for loading generated code by class name.
+     */
     public interface GeneratedCodeLoader {
+        /**
+         * Load generated code for the specified class.
+         *
+         * @param className Name of the class to load
+         * @return Loaded class object
+         */
         Object loadGeneratedCode(String className);
     }
 
     private static GeneratedCodeLoader generatedCodeLoader;
 
+    /**
+     * Check if a generated code loader has been set.
+     *
+     * @return {@code true} if a loader has been set
+     */
     public static boolean isGeneratedCodeLoaderSet() {
         return generatedCodeLoader != null;
     }
 
+    /**
+     * Set the generated code loader. Can only be set once.
+     *
+     * @param generatedCodeLoader Generated code loader to set
+     */
     public static void setGeneratedCodeLoader(GeneratedCodeLoader generatedCodeLoader) {
         if (Digester.generatedCodeLoader == null) {
             Digester.generatedCodeLoader = generatedCodeLoader;
         }
     }
 
+    /**
+     * Load a generated class using the configured loader.
+     *
+     * @param className Name of the class to load
+     * @return Loaded class object, or {@code null} if no loader is set
+     */
     public static Object loadGeneratedClass(String className) {
         if (generatedCodeLoader != null) {
             return generatedCodeLoader.loadGeneratedCode(className);
@@ -173,6 +221,9 @@ public class Digester extends DefaultHandler2 {
     // --------------------------------------------------- Instance Variables
 
 
+    /**
+     * Property sources for this Digester instance.
+     */
     protected IntrospectionUtils.PropertySource[] source;
 
 
@@ -343,6 +394,9 @@ public class Digester extends DefaultHandler2 {
      */
     protected StringBuilder code = null;
 
+    /**
+     * Construct a new Digester with default configuration.
+     */
     public Digester() {
         propertySourcesSet = true;
         ArrayList<IntrospectionUtils.PropertySource> sourcesList = new ArrayList<>();
@@ -362,6 +416,9 @@ public class Digester extends DefaultHandler2 {
     }
 
 
+    /**
+     * Replace property placeholders in all system properties using the configured property sources.
+     */
     public static void replaceSystemProperties() {
         Log log = LogFactory.getLog(Digester.class);
         if (propertySources != null) {
@@ -384,25 +441,50 @@ public class Digester extends DefaultHandler2 {
     }
 
 
+    /**
+     * Start collecting generated code into the internal code buffer.
+     */
     public void startGeneratingCode() {
         code = new StringBuilder();
     }
 
+    /**
+     * Stop collecting generated code and clear the known objects.
+     */
     public void endGeneratingCode() {
         code = null;
         known.clear();
     }
 
+    /**
+     * Get the generated code buffer.
+     *
+     * @return Generated code buffer, or {@code null} if not generating
+     */
     public StringBuilder getGeneratedCode() {
         return code;
     }
 
+    /**
+     * List of known objects for code generation purposes.
+     */
     protected ArrayList<Object> known = new ArrayList<>();
 
+    /**
+     * Mark an object as known for code generation purposes.
+     *
+     * @param object Object to mark as known
+     */
     public void setKnown(Object object) {
         known.add(object);
     }
 
+    /**
+     * Generate a variable name for the given object for use in generated code.
+     *
+     * @param object Object to generate a variable name for
+     * @return Generated variable name
+     */
     public String toVariableName(Object object) {
         boolean found = false;
         int pos = 0;
@@ -482,6 +564,8 @@ public class Digester extends DefaultHandler2 {
 
 
     /**
+     * Return the current depth of the element stack.
+     *
      * @return the current depth of the element stack.
      */
     public int getCount() {
@@ -490,6 +574,8 @@ public class Digester extends DefaultHandler2 {
 
 
     /**
+     * Return the name of the XML element that is currently being processed.
+     *
      * @return the name of the XML element that is currently being processed.
      */
     public String getCurrentElementName() {
@@ -503,6 +589,8 @@ public class Digester extends DefaultHandler2 {
 
 
     /**
+     * Return the error handler for this Digester.
+     *
      * @return the error handler for this Digester.
      */
     public ErrorHandler getErrorHandler() {
@@ -554,7 +642,7 @@ public class Digester extends DefaultHandler2 {
 
 
     /**
-     * Sets a flag indicating whether the requested feature is supported by the underlying implementation of
+     * Sets the value of the requested feature in the underlying implementation of
      * <code>org.xml.sax.XMLReader</code>. See
      * <a href="http://www.saxproject.org/apidoc/xml/sax/package-summary.html#package-description">
      * http://www.saxproject.org/apidoc/xml/sax/package-summary.html#package-description</a> for information about the
@@ -577,6 +665,8 @@ public class Digester extends DefaultHandler2 {
 
 
     /**
+     * Return the current Logger associated with this instance of the Digester.
+     *
      * @return the current Logger associated with this instance of the Digester
      */
     public Log getLogger() {
@@ -623,6 +713,8 @@ public class Digester extends DefaultHandler2 {
     }
 
     /**
+     * Return the current rule match path.
+     *
      * @return the current rule match path
      */
     public String getMatch() {
@@ -633,6 +725,8 @@ public class Digester extends DefaultHandler2 {
 
 
     /**
+     * Return the "namespace aware" flag for parsers we create.
+     *
      * @return the "namespace aware" flag for parsers we create.
      */
     public boolean getNamespaceAware() {
@@ -661,6 +755,8 @@ public class Digester extends DefaultHandler2 {
 
 
     /**
+     * Return the public identifier of the DTD we are currently parsing under, if any.
+     *
      * @return the public identifier of the DTD we are currently parsing under, if any.
      */
     public String getPublicId() {
@@ -669,6 +765,8 @@ public class Digester extends DefaultHandler2 {
 
 
     /**
+     * Return the SAXParser we will use to parse the input stream.
+     *
      * @return the SAXParser we will use to parse the input stream. If there is a problem creating the parser, return
      *             <code>null</code>.
      */
@@ -737,6 +835,8 @@ public class Digester extends DefaultHandler2 {
 
 
     /**
+     * Return a boolean to indicate if the context classloader should be used.
+     *
      * @return a boolean to indicate if the context classloader should be used.
      */
     public boolean getUseContextClassLoader() {
@@ -759,6 +859,8 @@ public class Digester extends DefaultHandler2 {
 
 
     /**
+     * Return the validating parser flag.
+     *
      * @return the validating parser flag.
      */
     public boolean getValidating() {
@@ -777,6 +879,8 @@ public class Digester extends DefaultHandler2 {
 
 
     /**
+     * Return the rules validation flag.
+     *
      * @return the rules validation flag.
      */
     public boolean getRulesValidation() {
@@ -795,6 +899,8 @@ public class Digester extends DefaultHandler2 {
 
 
     /**
+     * Return the fake attributes list.
+     *
      * @return the fake attributes list.
      */
     public Map<Class<?>,List<String>> getFakeAttributes() {
@@ -839,8 +945,7 @@ public class Digester extends DefaultHandler2 {
 
 
     /**
-     * Return the XMLReader to be used for parsing the input document. FIX ME: there is a bug in JAXP/XERCES that
-     * prevent the use of a parser that contains a schema with a DTD.
+     * Return the XMLReader to be used for parsing the input document.
      *
      * @return the XML reader
      *
@@ -975,7 +1080,7 @@ public class Digester extends DefaultHandler2 {
         // Fire "body" events for all relevant rules
         List<Rule> rules = matches.pop();
         if ((rules != null) && (!rules.isEmpty())) {
-            String bodyText = this.bodyText.toString().intern();
+            String bodyText = this.bodyText.toString();
             for (Rule rule : rules) {
                 try {
                     if (debug) {
@@ -1164,19 +1269,6 @@ public class Digester extends DefaultHandler2 {
             saxLog.trace("startDocument()");
         }
 
-        if (locator instanceof Locator2) {
-            if (root instanceof DocumentProperties.Charset) {
-                String enc = ((Locator2) locator).getEncoding();
-                if (enc != null) {
-                    try {
-                        ((DocumentProperties.Charset) root).setCharset(B2CConverter.getCharset(enc));
-                    } catch (UnsupportedEncodingException e) {
-                        log.warn(sm.getString("digester.encodingInvalid", enc), e);
-                    }
-                }
-            }
-        }
-
         // ensure that the digester is properly configured, as
         // the digester could be used as a SAX ContentHandler
         // rather than via the parse() methods.
@@ -1191,7 +1283,7 @@ public class Digester extends DefaultHandler2 {
      *                         processing is not being performed.
      * @param localName    The local name (without prefix), or the empty string if Namespace processing is not being
      *                         performed.
-     * @param qName        The qualified name (with prefix), or the empty string if qualified names are not available.\
+     * @param qName        The qualified name (with prefix), or the empty string if qualified names are not available.
      * @param list         The attributes attached to the element. If there are no attributes, it shall be an empty
      *                         Attributes object.
      *
@@ -1483,9 +1575,11 @@ public class Digester extends DefaultHandler2 {
      */
     public Object parse(File file) throws IOException, SAXException {
         configure();
-        InputSource input = new InputSource(new FileInputStream(file));
-        input.setSystemId("file://" + file.getAbsolutePath());
-        getXMLReader().parse(input);
+        try (FileInputStream fis = new FileInputStream(file)) {
+            InputSource input = new InputSource(fis);
+            input.setSystemId("file://" + file.getAbsolutePath());
+            getXMLReader().parse(input);
+        }
         return root;
     }
 
@@ -1714,6 +1808,12 @@ public class Digester extends DefaultHandler2 {
     }
 
 
+    /**
+     * Add a "set properties" rule that excludes the specified attribute names.
+     *
+     * @param pattern  Element matching pattern
+     * @param excludes Attribute names to exclude from property setting
+     */
     public void addSetProperties(String pattern, String[] excludes) {
 
         addRule(pattern, new SetPropertiesRule(excludes));
@@ -1745,6 +1845,9 @@ public class Digester extends DefaultHandler2 {
     }
 
 
+    /**
+     * Reset the Digester to its initial state, clearing the root object, error handler, and all internal state.
+     */
     public void reset() {
         root = null;
         setErrorHandler(null);
@@ -2005,8 +2108,7 @@ public class Digester extends DefaultHandler2 {
         for (int i = 0; i < nAttributes; ++i) {
             String value = newAttrs.getValue(i);
             try {
-                newAttrs.setValue(i,
-                        IntrospectionUtils.replaceProperties(value, null, source, getClassLoader()).intern());
+                newAttrs.setValue(i, IntrospectionUtils.replaceProperties(value, null, source, getClassLoader()));
             } catch (Exception e) {
                 log.warn(sm.getString("digester.failedToUpdateAttributes", newAttrs.getLocalName(i), value), e);
             }

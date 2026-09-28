@@ -39,19 +39,49 @@ import org.apache.catalina.tribes.util.StringManager;
  * interceptor in the chain.
  */
 public class ChannelCoordinator extends ChannelInterceptorBase implements MessageListener {
+    /**
+     * String manager for this class.
+     */
     protected static final StringManager sm = StringManager.getManager(ChannelCoordinator.class);
+
+    /**
+     * The cluster receiver.
+     */
     private ChannelReceiver clusterReceiver;
+
+    /**
+     * The cluster sender.
+     */
     private ChannelSender clusterSender;
+
+    /**
+     * The membership service.
+     */
     private MembershipService membershipService;
 
+    /**
+     * Current start level.
+     */
     private int startLevel = 0;
 
+    /**
+     * Default constructor.
+     */
     public ChannelCoordinator() {
         this(new NioReceiver(), new ReplicationTransmitter(), new McastService());
     }
 
+    /**
+     * Construct a ChannelCoordinator with the specified receiver, sender and membership service.
+     *
+     * @param receiver The channel receiver
+     * @param sender The channel sender
+     * @param service The membership service
+     */
     public ChannelCoordinator(ChannelReceiver receiver, ChannelSender sender, MembershipService service) {
 
+        // These option flags do not affect the send path of this coordinator (it never calls okToProcess). They are
+        // only visible to GroupChannel.checkOptionFlags() when optionCheck is enabled.
         this.optionFlag = Channel.SEND_OPTIONS_BYTE_MESSAGE | Channel.SEND_OPTIONS_USE_ACK |
                 Channel.SEND_OPTIONS_SYNCHRONIZED_ACK;
 
@@ -65,7 +95,7 @@ public class ChannelCoordinator extends ChannelInterceptorBase implements Messag
      *
      * @param destination Member[] - the destinations, null or zero length means all
      * @param msg         ClusterMessage - the message to send
-     * @param payload     TBA
+     * @param payload     InterceptorPayload - optional payload carrying error handlers and metadata
      */
     @Override
     public void sendMessage(Member[] destination, ChannelMessage msg, InterceptorPayload payload)
@@ -185,12 +215,12 @@ public class ChannelCoordinator extends ChannelInterceptorBase implements Messag
      *
      * @param svc int value of <BR>
      *                DEFAULT - will shutdown all services <BR>
-     *                MBR_RX_SEQ - starts the membership receiver <BR>
-     *                MBR_TX_SEQ - starts the membership broadcaster <BR>
-     *                SND_TX_SEQ - starts the replication transmitter<BR>
-     *                SND_RX_SEQ - starts the replication receiver<BR>
+     *                MBR_RX_SEQ - stops the membership receiver <BR>
+     *                MBR_TX_SEQ - stops the membership broadcaster <BR>
+     *                SND_TX_SEQ - stops the replication transmitter<BR>
+     *                SND_RX_SEQ - stops the replication receiver<BR>
      *
-     * @throws ChannelException if a startup error occurs or the service is already started.
+     * @throws ChannelException if a shutdown error occurs or the service is already stopped.
      */
     protected synchronized void internalStop(int svc) throws ChannelException {
         try {
@@ -211,6 +241,9 @@ public class ChannelCoordinator extends ChannelInterceptorBase implements Messag
             }
             if (Channel.MBR_RX_SEQ == (svc & Channel.MBR_RX_SEQ)) {
                 membershipService.stop(MembershipService.MBR_RX);
+                if (membershipService instanceof McastService) {
+                    ((McastService) membershipService).setMessageListener(null);
+                }
                 membershipService.setMembershipListener(null);
                 valid = true;
 
@@ -229,7 +262,9 @@ public class ChannelCoordinator extends ChannelInterceptorBase implements Messag
             }
 
             startLevel = (startLevel & (~svc));
-            setChannel(null);
+            if (startLevel == 0) {
+                setChannel(null);
+            }
         } catch (Exception e) {
             throw new ChannelException(e);
         }
@@ -261,33 +296,59 @@ public class ChannelCoordinator extends ChannelInterceptorBase implements Messag
         return true;
     }
 
-    public ChannelReceiver getClusterReceiver() {
+    /**
+     * Returns the cluster receiver.
+     *
+     * @return the cluster receiver
+     */
+    public synchronized ChannelReceiver getClusterReceiver() {
         return clusterReceiver;
     }
 
+    /**
+     * Returns the cluster sender.
+     *
+     * @return the cluster sender
+     */
     public ChannelSender getClusterSender() {
         return clusterSender;
     }
 
-    public MembershipService getMembershipService() {
+    /**
+     * Returns the membership service.
+     *
+     * @return the membership service
+     */
+    public synchronized MembershipService getMembershipService() {
         return membershipService;
     }
 
+    /**
+     * Sets the cluster receiver.
+     *
+     * @param clusterReceiver The new cluster receiver
+     */
     public synchronized void setClusterReceiver(ChannelReceiver clusterReceiver) {
         if (startLevel != 0) {
             throw new IllegalStateException(sm.getString("channelCoordinator.invalidState.notStopped"));
         }
-        if (clusterReceiver != null) {
-            this.clusterReceiver = clusterReceiver;
+        if (this.clusterReceiver == clusterReceiver) {
+            return;
+        }
+        if (this.clusterReceiver != null) {
+            this.clusterReceiver.setMessageListener(null);
+        }
+        this.clusterReceiver = clusterReceiver;
+        if (this.clusterReceiver != null) {
             this.clusterReceiver.setMessageListener(this);
-        } else {
-            if (this.clusterReceiver != null) {
-                this.clusterReceiver.setMessageListener(null);
-            }
-            this.clusterReceiver = null;
         }
     }
 
+    /**
+     * Sets the cluster sender.
+     *
+     * @param clusterSender The new cluster sender
+     */
     public synchronized void setClusterSender(ChannelSender clusterSender) {
         if (startLevel != 0) {
             throw new IllegalStateException(sm.getString("channelCoordinator.invalidState.notStopped"));
@@ -295,16 +356,36 @@ public class ChannelCoordinator extends ChannelInterceptorBase implements Messag
         this.clusterSender = clusterSender;
     }
 
+    /**
+     * Sets the membership service.
+     *
+     * @param membershipService The new membership service
+     */
     public synchronized void setMembershipService(MembershipService membershipService) {
         if (startLevel != 0) {
             throw new IllegalStateException(sm.getString("channelCoordinator.invalidState.notStopped"));
         }
+        if (this.membershipService == membershipService) {
+            return;
+        }
+        if (this.membershipService != null) {
+            this.membershipService.setMembershipListener(null);
+            if (this.membershipService instanceof McastService) {
+                ((McastService) this.membershipService).setMessageListener(null);
+            }
+        }
         this.membershipService = membershipService;
-        this.membershipService.setMembershipListener(this);
+        if (this.membershipService != null) {
+            this.membershipService.setMembershipListener(this);
+            if (this.membershipService instanceof McastService) {
+                ((McastService) this.membershipService).setMessageListener(this);
+            }
+        }
     }
 
     @Override
     public void heartbeat() {
+        ChannelSender clusterSender = this.clusterSender;
         if (clusterSender != null) {
             clusterSender.heartbeat();
         }

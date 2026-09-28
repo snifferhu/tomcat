@@ -19,6 +19,7 @@ package org.apache.catalina.realm;
 import java.io.File;
 import java.io.IOException;
 import java.security.Principal;
+import java.util.HashSet;
 import java.util.Map;
 import java.util.Map.Entry;
 
@@ -62,9 +63,9 @@ import org.apache.tomcat.util.digester.Digester;
  * with a parameter of <code>"SHA256"</code></li>
  * </ul>
  * <p>
- * <strong>IMPLEMENTATION NOTE</strong> - This class implements <code>Realm</code> only to satisfy the calling
- * requirements of the <code>GenericPrincipal</code> constructor. It does not actually perform the functionality
- * required of a <code>Realm</code> implementation.
+ * <strong>IMPLEMENTATION NOTE</strong> - This class extends {@link MemoryRealm} rather than implementing
+ * <code>Realm</code> directly, so that user lookup and credential validation are performed against the XML file
+ * configured for the memory realm.
  * </p>
  */
 public class JAASMemoryLoginModule extends MemoryRealm implements LoginModule {
@@ -106,6 +107,12 @@ public class JAASMemoryLoginModule extends MemoryRealm implements LoginModule {
 
 
     /**
+     * The <code>Principal</code> for the roles.
+     */
+    protected HashSet<Principal> roles = null;
+
+
+    /**
      * The state information that is shared with other configured <code>LoginModule</code> instances.
      */
     protected Map<String,?> sharedState = null;
@@ -119,6 +126,9 @@ public class JAASMemoryLoginModule extends MemoryRealm implements LoginModule {
 
     // --------------------------------------------------------- Public Methods
 
+    /**
+     * Constructs a new JAASMemoryLoginModule.
+     */
     public JAASMemoryLoginModule() {
         if (log.isTraceEnabled()) {
             log.trace("MEMORY LOGIN MODULE");
@@ -164,11 +174,13 @@ public class JAASMemoryLoginModule extends MemoryRealm implements LoginModule {
             // Add the roles as additional subjects as per the contract with the
             // JAASRealm
             if (principal instanceof GenericPrincipal) {
+                this.roles = new HashSet<>();
                 String[] roles = ((GenericPrincipal) principal).getRoles();
                 for (String role : roles) {
-                    subject.getPrincipals().add(new GenericPrincipal(role));
+                    GenericPrincipal roleGp = new GenericPrincipal(role);
+                    subject.getPrincipals().add(roleGp);
+                    this.roles.add(roleGp);
                 }
-
             }
         }
 
@@ -305,8 +317,14 @@ public class JAASMemoryLoginModule extends MemoryRealm implements LoginModule {
     @Override
     public boolean logout() throws LoginException {
         subject.getPrincipals().remove(principal);
+        if (principal instanceof GenericPrincipal) {
+            for (Principal role : roles) {
+                subject.getPrincipals().remove(role);
+            }
+        }
         committed = false;
         principal = null;
+        roles = null;
         return true;
     }
 

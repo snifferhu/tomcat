@@ -18,15 +18,25 @@ package org.apache.catalina.util;
 
 import java.util.regex.Pattern;
 
+/**
+ * Utility methods for string manipulation in Catalina.
+ */
 public class StringUtil {
+    /**
+     * Constructs a new StringUtil. This utility class provides only static methods and does not need to be
+     * instantiated.
+     */
+    public StringUtil() {
+    }
+
     /**
      * {@link Pattern} for a comma delimited string that support whitespace characters
      */
     private static final Pattern commaSeparatedValuesPattern = Pattern.compile("\\s*,\\s*");
 
     /**
-     * Splits a comma-separated string into an array of String values. Whitespace around the commas is removed. Null or
-     * empty values will return a zero-element array.
+     * Splits a comma-separated string into an array of String values. Whitespace around the commas between values is
+     * removed. Null or empty values will return a zero-element array.
      *
      * @param s The string to split by commas.
      *

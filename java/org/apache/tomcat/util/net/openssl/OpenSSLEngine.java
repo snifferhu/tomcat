@@ -30,6 +30,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.locks.Lock;
 
 import javax.net.ssl.SSLEngine;
 import javax.net.ssl.SSLEngineResult;
@@ -42,6 +43,7 @@ import javax.net.ssl.SSLSessionContext;
 
 import org.apache.juli.logging.Log;
 import org.apache.juli.logging.LogFactory;
+import org.apache.tomcat.jni.AprStatus;
 import org.apache.tomcat.jni.Buffer;
 import org.apache.tomcat.jni.Pool;
 import org.apache.tomcat.jni.SSL;
@@ -63,8 +65,14 @@ public final class OpenSSLEngine extends SSLEngine implements SSLUtil.ProtocolIn
 
     private static final Certificate[] EMPTY_CERTIFICATES = new Certificate[0];
 
+    /**
+     * Set of available cipher suites.
+     */
     public static final Set<String> AVAILABLE_CIPHER_SUITES;
 
+    /**
+     * Set of implemented protocols.
+     */
     public static final Set<String> IMPLEMENTED_PROTOCOLS_SET;
 
     static {
@@ -73,7 +81,7 @@ public final class OpenSSLEngine extends SSLEngine implements SSLUtil.ProtocolIn
         try {
             final long sslCtx = SSLContext.make(aprPool, SSL.SSL_PROTOCOL_ALL, SSL.SSL_MODE_SERVER);
             try {
-                SSLContext.setOptions(sslCtx, SSL.SSL_OP_ALL);
+                SSLContext.setOptionsLong(sslCtx, SSL.SSL_OP_ALL);
                 SSLContext.setCipherSuite(sslCtx, "ALL");
                 final long ssl = SSL.newSSL(sslCtx, true);
                 try {
@@ -99,7 +107,6 @@ public final class OpenSSLEngine extends SSLEngine implements SSLUtil.ProtocolIn
 
         HashSet<String> protocols = new HashSet<>();
         protocols.add(Constants.SSL_PROTO_SSLv2Hello);
-        protocols.add(Constants.SSL_PROTO_SSLv2);
         protocols.add(Constants.SSL_PROTO_SSLv3);
         protocols.add(Constants.SSL_PROTO_TLSv1);
         protocols.add(Constants.SSL_PROTO_TLSv1_1);
@@ -115,7 +122,6 @@ public final class OpenSSLEngine extends SSLEngine implements SSLUtil.ProtocolIn
     private static final int MAX_COMPRESSED_LENGTH = MAX_PLAINTEXT_LENGTH + 1024;
     private static final int MAX_CIPHERTEXT_LENGTH = MAX_COMPRESSED_LENGTH + 1024;
 
-    // Protocols
     static final int VERIFY_DEPTH = 10;
 
     // Header (5) + Data (2^14) + Compression (1024) + Encryption (1024) + MAC (20) + Padding (256)
@@ -131,7 +137,7 @@ public final class OpenSSLEngine extends SSLEngine implements SSLUtil.ProtocolIn
 
     private static final String INVALID_CIPHER = "SSL_NULL_WITH_NULL_NULL";
 
-    private static final long EMPTY_ADDR = Buffer.address(ByteBuffer.allocate(0));
+    private static final long EMPTY_ADDR = Buffer.address(ByteBuffer.allocateDirect(0));
 
     private final OpenSSLState state;
     private final Cleanable cleanable;
@@ -222,9 +228,9 @@ public final class OpenSSLEngine extends SSLEngine implements SSLUtil.ProtocolIn
     public synchronized void shutdown() {
         if (!destroyed) {
             destroyed = true;
-            cleanable.clean();
             // internal errors can cause shutdown without marking the engine closed
             isInboundDone = isOutboundDone = engineClosed = true;
+            cleanable.clean();
             ByteBufferUtils.cleanDirectBuffer(buf);
         }
     }
@@ -463,6 +469,13 @@ public final class OpenSSLEngine extends SSLEngine implements SSLUtil.ProtocolIn
             // for the receipt of the peer's close_notify message -- shutdown.
             if (isOutboundDone()) {
                 shutdown();
+            }
+
+            // The network BIO has just been drained. Give OpenSSL the opportunity to write out any part of the
+            // current handshake flight that it did not previously have space for, before the handshake status is
+            // calculated below.
+            if (!handshakeFinished && !engineClosed) {
+                continueHandshake();
             }
 
             return new SSLEngineResult(getEngineStatus(), getHandshakeStatus(), 0, bytesProduced);
@@ -801,7 +814,7 @@ public final class OpenSSLEngine extends SSLEngine implements SSLUtil.ProtocolIn
         List<String> enabled = new ArrayList<>();
         // Seems like there is no way to explicitly disable SSLv2Hello in OpenSSL so it is always enabled
         enabled.add(Constants.SSL_PROTO_SSLv2Hello);
-        int opts = SSL.getOptions(state.ssl);
+        long opts = SSL.getOptionsLong(state.ssl);
         if ((opts & SSL.SSL_OP_NO_TLSv1) == 0) {
             enabled.add(Constants.SSL_PROTO_TLSv1);
         }
@@ -810,9 +823,6 @@ public final class OpenSSLEngine extends SSLEngine implements SSLUtil.ProtocolIn
         }
         if ((opts & SSL.SSL_OP_NO_TLSv1_2) == 0) {
             enabled.add(Constants.SSL_PROTO_TLSv1_2);
-        }
-        if ((opts & SSL.SSL_OP_NO_SSLv2) == 0) {
-            enabled.add(Constants.SSL_PROTO_SSLv2);
         }
         if ((opts & SSL.SSL_OP_NO_SSLv3) == 0) {
             enabled.add(Constants.SSL_PROTO_SSLv3);
@@ -832,7 +842,6 @@ public final class OpenSSLEngine extends SSLEngine implements SSLUtil.ProtocolIn
         if (destroyed) {
             return;
         }
-        boolean sslv2 = false;
         boolean sslv3 = false;
         boolean tlsv1 = false;
         boolean tlsv1_1 = false;
@@ -842,7 +851,6 @@ public final class OpenSSLEngine extends SSLEngine implements SSLUtil.ProtocolIn
                 throw new IllegalArgumentException(sm.getString("engine.unsupportedProtocol", p));
             }
             switch (p) {
-                case Constants.SSL_PROTO_SSLv2 -> sslv2 = true;
                 case Constants.SSL_PROTO_SSLv3 -> sslv3 = true;
                 case Constants.SSL_PROTO_TLSv1 -> tlsv1 = true;
                 case Constants.SSL_PROTO_TLSv1_1 -> tlsv1_1 = true;
@@ -850,22 +858,18 @@ public final class OpenSSLEngine extends SSLEngine implements SSLUtil.ProtocolIn
             }
         }
         // Enable all and then disable what we not want
-        SSL.setOptions(state.ssl, SSL.SSL_OP_ALL);
-
-        if (!sslv2) {
-            SSL.setOptions(state.ssl, SSL.SSL_OP_NO_SSLv2);
-        }
+        SSL.setOptionsLong(state.ssl, SSL.SSL_OP_ALL);
         if (!sslv3) {
-            SSL.setOptions(state.ssl, SSL.SSL_OP_NO_SSLv3);
+            SSL.setOptionsLong(state.ssl, SSL.SSL_OP_NO_SSLv3);
         }
         if (!tlsv1) {
-            SSL.setOptions(state.ssl, SSL.SSL_OP_NO_TLSv1);
+            SSL.setOptionsLong(state.ssl, SSL.SSL_OP_NO_TLSv1);
         }
         if (!tlsv1_1) {
-            SSL.setOptions(state.ssl, SSL.SSL_OP_NO_TLSv1_1);
+            SSL.setOptionsLong(state.ssl, SSL.SSL_OP_NO_TLSv1_1);
         }
         if (!tlsv1_2) {
-            SSL.setOptions(state.ssl, SSL.SSL_OP_NO_TLSv1_2);
+            SSL.setOptionsLong(state.ssl, SSL.SSL_OP_NO_TLSv1_2);
         }
     }
 
@@ -922,20 +926,40 @@ public final class OpenSSLEngine extends SSLEngine implements SSLUtil.ProtocolIn
         }
     }
 
+    /*
+     * Continue a handshake that is already in progress.
+     *
+     * OpenSSL writes a complete handshake flight to the network BIO in a single operation. If the flight does not fit
+     * in the buffer of the BIO pair, the remainder is retained inside OpenSSL and can only be written once the BIO has
+     * been drained, which requires OpenSSL to be driven again. Unlike handshake(), this method does not reset the
+     * handshake tracking state, so completion continues to be detected via the handshake counter.
+     */
+    private void continueHandshake() throws SSLException {
+        clearLastError();
+        if (SSL.doHandshake(state.ssl) <= 0) {
+            checkLastError();
+        }
+    }
+
     private synchronized void renegotiate() throws SSLException {
         clearLastError();
         int code;
         if (SSL.getVersion(state.ssl).equals(Constants.SSL_PROTO_TLSv1_3)) {
             code = SSL.verifyClientPostHandshake(state.ssl);
+            /*
+             * PHA doesn't increment the handshake count with OpenSSL 3.0.x so make it look like the handshake count has
+             * been incremented.
+             */
+            currentHandshake = SSL.getHandshakeCount(state.ssl) - 1;
         } else {
             code = SSL.renegotiate(state.ssl);
+            currentHandshake = SSL.getHandshakeCount(state.ssl);
         }
         if (code <= 0) {
             checkLastError();
         }
         handshakeFinished = false;
         peerCerts = null;
-        currentHandshake = SSL.getHandshakeCount(state.ssl);
         int code2 = SSL.doHandshake(state.ssl);
         if (code2 <= 0) {
             checkLastError();
@@ -1012,7 +1036,10 @@ public final class OpenSSLEngine extends SSLEngine implements SSLUtil.ProtocolIn
             /*
              * Tomcat Native stores a count of the completed handshakes in the SSL instance and increments it every time
              * a handshake is completed. Comparing the handshake count when the handshake started to the current
-             * handshake count enables this code to detect when the handshake has completed.
+             * handshake count enables this code to detect when the handshake has completed. Post handshake
+             * authentication DOES NOT increase this count. See https://github.com/openssl/openssl/commit/4af5836b
+             * For PHA Tomcat manipulates the handshake count so it appears to the check below that the count has
+             * increased.
              *
              * Obtaining client certificates after the connection has been established requires additional checks. We
              * need to trigger additional reads until the certificates have been read, but we don't know how many reads
@@ -1033,7 +1060,8 @@ public final class OpenSSLEngine extends SSLEngine implements SSLUtil.ProtocolIn
             // No pending data to be sent to the peer
             // Check to see if we have finished handshaking
             int handshakeCount = SSL.getHandshakeCount(state.ssl);
-            if (handshakeCount != currentHandshake && SSL.renegotiatePending(state.ssl) == 0 &&
+            if (handshakeCount != currentHandshake && SSL.isInInit(state.ssl) == 0 &&
+                    SSL.renegotiatePending(state.ssl) == 0 &&
                     (SSL.getPostHandshakeAuthInProgress(state.ssl) == 0)) {
                 if (alpn) {
                     selectedProtocol = SSL.getAlpnSelected(state.ssl);
@@ -1400,11 +1428,19 @@ public final class OpenSSLEngine extends SSLEngine implements SSLUtil.ProtocolIn
     private record OpenSSLState(long ssl, long networkBIO) implements Runnable {
         @Override
         public void run() {
-            if (networkBIO != 0) {
-                SSL.freeBIO(networkBIO);
-            }
-            if (ssl != 0) {
-                SSL.freeSSL(ssl);
+            Lock readLock = AprStatus.getStatusLock().readLock();
+            readLock.lock();
+            try {
+                if (AprStatus.isAprInitialized()) {
+                    if (networkBIO != 0) {
+                        SSL.freeBIO(networkBIO);
+                    }
+                    if (ssl != 0) {
+                        SSL.freeSSL(ssl);
+                    }
+                }
+            } finally {
+                readLock.unlock();
             }
         }
     }

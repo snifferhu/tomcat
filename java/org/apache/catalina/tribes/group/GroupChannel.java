@@ -68,6 +68,9 @@ import org.apache.juli.logging.LogFactory;
 public class GroupChannel extends ChannelInterceptorBase implements ManagedChannel, JmxChannel, GroupChannelMBean {
 
     private static final Log log = LogFactory.getLog(GroupChannel.class);
+    /**
+     * StringManager for this class.
+     */
     protected static final StringManager sm = StringManager.getManager(GroupChannel.class);
 
     /**
@@ -86,6 +89,9 @@ public class GroupChannel extends ChannelInterceptorBase implements ManagedChann
      * Internal heartbeat future
      */
     protected ScheduledFuture<?> heartbeatFuture = null;
+    /**
+     * Monitor future for periodic heartbeat checks.
+     */
     protected ScheduledFuture<?> monitorFuture;
 
     /**
@@ -113,9 +119,17 @@ public class GroupChannel extends ChannelInterceptorBase implements ManagedChann
     protected final List<ChannelListener> channelListeners = new CopyOnWriteArrayList<>();
 
     /**
-     * If set to true, the GroupChannel will check to make sure that
+     * If set to true, the GroupChannel will throw an error upon start if two interceptors
+     * are using the same option flag.
      */
     protected boolean optionCheck = false;
+
+    private boolean secure;
+    private String pskDigest = "SHA256";
+    private String pskIdentity;
+    private String pskKey;
+    private String pskProtocol = "TLSv1.3";
+    private volatile TribesSslContext sslContext;
 
     /**
      * the name of this channel.
@@ -211,6 +225,16 @@ public class GroupChannel extends ChannelInterceptorBase implements ManagedChann
         }
         XByteBuffer buffer = null;
         try {
+            if (secure) {
+                options |= SEND_OPTIONS_SECURE;
+            }
+            if ((options & SEND_OPTIONS_SECURE) != 0 &&
+                    (options & (SEND_OPTIONS_UDP | SEND_OPTIONS_MULTICAST)) != 0) {
+                throw new ChannelException(sm.getString("groupChannel.tlsDatagramUnsupported"));
+            }
+            if ((options & SEND_OPTIONS_SECURE) != 0 && sslContext == null) {
+                throw new ChannelException(sm.getString("groupChannel.tlsUnavailable"));
+            }
             if (destination == null || destination.length == 0) {
                 throw new ChannelException(sm.getString("groupChannel.noDestination"));
             }
@@ -428,11 +452,33 @@ public class GroupChannel extends ChannelInterceptorBase implements ManagedChann
 
     }
 
+    /**
+     * Flag indicating whether this channel owns the utility executor.
+     */
     protected boolean ownExecutor = false;
 
     @Override
     public synchronized void start(int svc) throws ChannelException {
         setupDefaultStack();
+        if (sslContext == null) {
+            if (pskKey != null && pskIdentity != null) {
+                try {
+                    sslContext = new TribesSslContext(pskIdentity, pskKey, pskDigest, pskProtocol);
+                } catch (Exception e) {
+                    if (secure) {
+                        throw new ChannelException(sm.getString("groupChannel.tlsUnavailable"), e);
+                    }
+                    log.warn(sm.getString("groupChannel.tlsUnavailable"), e);
+                }
+            } else if (secure && pskKey == null) {
+                throw new ChannelException(sm.getString("groupChannel.tlsKeyMissing"));
+            } else if (secure && pskIdentity == null) {
+                throw new ChannelException(sm.getString("groupChannel.tlsIdentityMissing"));
+            }
+        }
+        if (secure && getChannelReceiver().getSecurePort() < 0) {
+            throw new ChannelException(sm.getString("groupChannel.tlsPortMissing"));
+        }
         if (optionCheck) {
             checkOptionFlags();
         }
@@ -450,6 +496,9 @@ public class GroupChannel extends ChannelInterceptorBase implements ManagedChann
         monitorFuture = utilityExecutor.scheduleWithFixedDelay(this::startHeartbeat, 0, 60, TimeUnit.SECONDS);
     }
 
+    /**
+     * Starts or restarts the internal heartbeat scheduler.
+     */
     protected void startHeartbeat() {
         if (heartbeat && (heartbeatFuture == null || heartbeatFuture.isDone())) {
             if (heartbeatFuture != null && heartbeatFuture.isDone()) {
@@ -476,6 +525,10 @@ public class GroupChannel extends ChannelInterceptorBase implements ManagedChann
             heartbeatFuture = null;
         }
         super.stop(svc);
+        if ((svc & DEFAULT) == DEFAULT && sslContext != null) {
+            sslContext.close();
+            sslContext = null;
+        }
         if (ownExecutor) {
             utilityExecutor.shutdown();
             utilityExecutor = null;
@@ -606,6 +659,50 @@ public class GroupChannel extends ChannelInterceptorBase implements ManagedChann
     }
 
     @Override
+    public boolean getSecure() {
+        return secure;
+    }
+
+    public void setSecure(boolean secure) {
+        this.secure = secure;
+    }
+
+    @Override
+    public String getPskDigest() {
+        return pskDigest;
+    }
+
+    public void setPskDigest(String pskDigest) {
+        this.pskDigest = pskDigest;
+    }
+
+    @Override
+    public String getPskIdentity() {
+        return pskIdentity;
+    }
+
+    public void setPskIdentity(String pskIdentity) {
+        this.pskIdentity = pskIdentity;
+    }
+
+    public void setPskKey(String pskKey) {
+        this.pskKey = pskKey;
+    }
+
+    @Override
+    public String getPskProtocol() {
+        return pskProtocol;
+    }
+
+    public void setPskProtocol(String pskProtocol) {
+        this.pskProtocol = pskProtocol;
+    }
+
+    public TribesSslContext getSslContext() {
+        return sslContext;
+    }
+
+    @Override
     public boolean getHeartbeat() {
         return heartbeat;
     }
@@ -687,6 +784,12 @@ public class GroupChannel extends ChannelInterceptorBase implements ManagedChann
         private final ChannelInterceptor end;
         private ChannelInterceptor start;
 
+        /**
+         * Creates an InterceptorIterator.
+         *
+         * @param start The first interceptor to iterate from
+         * @param end   The end marker interceptor (not included in iteration)
+         */
         public InterceptorIterator(ChannelInterceptor start, ChannelInterceptor end) {
             this.end = end;
             this.start = start;
@@ -714,14 +817,16 @@ public class GroupChannel extends ChannelInterceptorBase implements ManagedChann
     }
 
     /**
-     * <p>
-     * Title: Internal heartbeat runnable
-     * </p>
-     * <p>
-     * Description: if <code>Channel.getHeartbeat()==true</code> then a thread of this class is created
-     * </p>
+     * Internal heartbeat runnable.
      */
     public class HeartbeatRunnable implements Runnable {
+        /**
+         * Default constructor for HeartbeatRunnable.
+         */
+        public HeartbeatRunnable() {
+            super();
+        }
+
         @Override
         public void run() {
             heartbeat();

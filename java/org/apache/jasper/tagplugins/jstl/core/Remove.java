@@ -20,7 +20,16 @@ import org.apache.jasper.compiler.tagplugin.TagPlugin;
 import org.apache.jasper.compiler.tagplugin.TagPluginContext;
 import org.apache.jasper.tagplugins.jstl.Util;
 
+/**
+ * Tag plugin for the JSTL &lt;c:remove&gt; tag.
+ */
 public class Remove implements TagPlugin {
+
+    /**
+     * Default constructor.
+     */
+    public Remove() {
+    }
 
     @Override
     public void doTag(TagPluginContext ctxt) {
@@ -35,9 +44,9 @@ public class Remove implements TagPlugin {
         // default scope is "page".
         if (hasScope) {
             int iScope = Util.getScope(ctxt.getConstantAttribute("scope"));
-            ctxt.generateJavaSource("pageContext.removeAttribute(\"" + strVar + "\"," + iScope + ");");
+            ctxt.generateJavaSource("_jspx_page_context.removeAttribute(\"" + strVar + "\"," + iScope + ");");
         } else {
-            ctxt.generateJavaSource("pageContext.removeAttribute(\"" + strVar + "\");");
+            ctxt.generateJavaSource("_jspx_page_context.removeAttribute(\"" + strVar + "\");");
         }
     }
 

@@ -71,7 +71,8 @@ public interface WebResourceSet extends Lifecycle {
      *
      * @param path      The path to be used for the new Resource. It is relative to the root of the web application and
      *                      must start with '/'.
-     * @param is        The InputStream that will provide the content for the new Resource.
+     * @param is        The InputStream that will provide the content for the new Resource. The caller is responsible
+     *                  for closing the stream if required.
      * @param overwrite If <code>true</code> and the resource already exists it will be overwritten. If
      *                      <code>false</code> and the resource already exists the write will fail.
      *
@@ -79,6 +80,11 @@ public interface WebResourceSet extends Lifecycle {
      */
     boolean write(String path, InputStream is, boolean overwrite);
 
+    /**
+     * Sets the root for this resource set.
+     *
+     * @param root The root
+     */
     void setRoot(WebResourceRoot root);
 
     /**
@@ -91,6 +97,11 @@ public interface WebResourceSet extends Lifecycle {
      */
     boolean getClassLoaderOnly();
 
+    /**
+     * Sets whether this resource set is class loader only.
+     *
+     * @param classLoaderOnly <code>true</code> if this resource set is class loader only
+     */
     void setClassLoaderOnly(boolean classLoaderOnly);
 
     /**
@@ -103,6 +114,11 @@ public interface WebResourceSet extends Lifecycle {
      */
     boolean getStaticOnly();
 
+    /**
+     * Sets whether this resource set is static only.
+     *
+     * @param staticOnly <code>true</code> if this resource set is static only
+     */
     void setStaticOnly(boolean staticOnly);
 
     /**

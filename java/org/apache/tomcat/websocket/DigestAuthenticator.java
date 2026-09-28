@@ -31,8 +31,18 @@ import org.apache.tomcat.util.res.StringManager;
  */
 public class DigestAuthenticator extends Authenticator {
 
+    /**
+     * Construct a new DigestAuthenticator.
+     */
+    public DigestAuthenticator() {
+        super();
+    }
+
     private static final StringManager sm = StringManager.getManager(DigestAuthenticator.class);
 
+    /**
+     * Name of the DIGEST authentication scheme.
+     */
     public static final String schemeName = "digest";
     private static final Object cnonceGeneratorLock = new Object();
     private static volatile SecureRandom cnonceGenerator;
@@ -40,8 +50,8 @@ public class DigestAuthenticator extends Authenticator {
     private long cNonce;
 
     @Override
-    public String getAuthorization(String requestUri, String authenticateHeader, String userName, String userPassword,
-            String userRealm) throws AuthenticationException {
+    public String getAuthorization(String method, String requestUri, String authenticateHeader, String userName,
+            String userPassword, String userRealm) throws AuthenticationException {
 
         validateUsername(userName);
         validatePassword(userPassword);
@@ -53,34 +63,33 @@ public class DigestAuthenticator extends Authenticator {
 
         String nonce = parameterMap.get("nonce");
         String messageQop = parameterMap.get("qop");
+        if (messageQop == null || messageQop.isEmpty()) {
+            throw new AuthenticationException(sm.getString("digestAuthenticator.noQop"));
+        }
         String algorithm = parameterMap.get("algorithm") == null ? "MD5" : parameterMap.get("algorithm");
         String opaque = parameterMap.get("opaque");
+        if (cnonceGenerator == null) {
+            synchronized (cnonceGeneratorLock) {
+                if (cnonceGenerator == null) {
+                    cnonceGenerator = new SecureRandom();
+                }
+            }
+        }
+        cNonce = cnonceGenerator.nextLong();
+        nonceCount++;
 
         StringBuilder challenge = new StringBuilder();
 
-        if (!messageQop.isEmpty()) {
-            if (cnonceGenerator == null) {
-                synchronized (cnonceGeneratorLock) {
-                    if (cnonceGenerator == null) {
-                        cnonceGenerator = new SecureRandom();
-                    }
-                }
-            }
-
-            cNonce = cnonceGenerator.nextLong();
-            nonceCount++;
-        }
-
         challenge.append("Digest ");
-        challenge.append("username =\"").append(userName).append("\",");
+        challenge.append("username=\"").append(userName).append("\",");
         challenge.append("realm=\"").append(realm).append("\",");
         challenge.append("nonce=\"").append(nonce).append("\",");
         challenge.append("uri=\"").append(requestUri).append("\",");
 
         try {
             challenge.append("response=\"");
-            challenge.append(
-                    calculateRequestDigest(requestUri, userName, userPassword, realm, nonce, messageQop, algorithm));
+            challenge.append(calculateRequestDigest(method, requestUri, userName, userPassword, realm, nonce,
+                    messageQop, algorithm));
             challenge.append("\",");
         }
 
@@ -89,20 +98,20 @@ public class DigestAuthenticator extends Authenticator {
         }
 
         challenge.append("algorithm=").append(algorithm).append(",");
-        challenge.append("opaque=\"").append(opaque).append("\",");
-
-        if (!messageQop.isEmpty()) {
-            challenge.append("qop=\"").append(messageQop).append("\"");
-            challenge.append(",cnonce=\"").append(cNonce).append("\",");
-            challenge.append("nc=").append(String.format("%08X", Integer.valueOf(nonceCount)));
+        if (opaque != null) {
+            challenge.append("opaque=\"").append(opaque).append("\",");
         }
+
+        challenge.append("qop=\"").append(messageQop).append("\"");
+        challenge.append(",cnonce=\"").append(cNonce).append("\",");
+        challenge.append("nc=").append(String.format("%08X", Integer.valueOf(nonceCount)));
 
         return challenge.toString();
 
     }
 
-    private String calculateRequestDigest(String requestUri, String userName, String password, String realm,
-            String nonce, String qop, String algorithm) throws NoSuchAlgorithmException {
+    private String calculateRequestDigest(String method, String requestUri, String userName, String password,
+            String realm, String nonce, String qop, String algorithm) throws NoSuchAlgorithmException {
 
         boolean session = false;
         if (algorithm.endsWith("-sess")) {
@@ -123,7 +132,7 @@ public class DigestAuthenticator extends Authenticator {
          * If the "qop" value is "auth-int", then A2 is: A2 = Method ":" digest-uri-value ":" H(entity-body) since we do
          * not have an entity-body, A2 = Method ":" digest-uri-value for auth and auth_int
          */
-        String A2 = "GET:" + requestUri;
+        String A2 = method + ":" + requestUri;
 
         preDigest.append(encode(algorithm, A1));
         preDigest.append(':');

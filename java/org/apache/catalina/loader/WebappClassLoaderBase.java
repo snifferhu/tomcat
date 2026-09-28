@@ -249,10 +249,10 @@ public abstract class WebappClassLoaderBase extends URLClassLoader
 
     /**
      * Should Tomcat attempt to terminate threads that have been started by the web application? Stopping threads is
-     * performed via the deprecated (for good reason) <code>Thread.stop()</code> method and is likely to result in
-     * instability. As such, enabling this should be viewed as an option of last resort in a development environment and
-     * is not recommended in a production environment. If not specified, the default value of <code>false</code> will be
-     * used.
+     * performed by interrupting the threads, after shutting down the associated executor when the thread was started
+     * via one, and is likely to result in instability. As such, enabling this should be viewed as an option of last
+     * resort in a development environment and is not recommended in a production environment. If not specified, the
+     * default value of <code>false</code> will be used.
      */
     private boolean clearReferencesStopThreads = false;
 
@@ -321,11 +321,21 @@ public abstract class WebappClassLoaderBase extends URLClassLoader
 
     // ------------------------------------------------------------- Properties
 
+    /**
+     * Sets the size of the cache for class resources that were not found.
+     *
+     * @param notFoundClassResourceCacheSize The cache size
+     */
     public void setNotFoundClassResourceCacheSize(int notFoundClassResourceCacheSize) {
         notFoundClassResources.setLimit(notFoundClassResourceCacheSize);
     }
 
 
+    /**
+     * Returns the size of the cache for class resources that were not found.
+     *
+     * @return the cache size
+     */
     public int getNotFoundClassResourceCacheSize() {
         return notFoundClassResources.getLimit();
     }
@@ -342,7 +352,9 @@ public abstract class WebappClassLoaderBase extends URLClassLoader
 
 
     /**
-     * @return the context name for this class loader.
+     * Get the context name for this class loader.
+     *
+     * @return the context name
      */
     public String getContextName() {
         if (resources == null) {
@@ -378,18 +390,30 @@ public abstract class WebappClassLoaderBase extends URLClassLoader
     }
 
 
+    /**
+     * Returns whether RMI target references should be cleared on reload.
+     *
+     * @return the clearReferencesRmiTargets flag
+     */
     public boolean getClearReferencesRmiTargets() {
         return this.clearReferencesRmiTargets;
     }
 
 
+    /**
+     * Sets whether RMI target references should be cleared on reload.
+     *
+     * @param clearReferencesRmiTargets The new value
+     */
     public void setClearReferencesRmiTargets(boolean clearReferencesRmiTargets) {
         this.clearReferencesRmiTargets = clearReferencesRmiTargets;
     }
 
 
     /**
-     * @return the clearReferencesStopThreads flag for this Context.
+     * Get the clearReferencesStopThreads flag for this Context.
+     *
+     * @return the clearReferencesStopThreads flag
      */
     public boolean getClearReferencesStopThreads() {
         return this.clearReferencesStopThreads;
@@ -407,7 +431,9 @@ public abstract class WebappClassLoaderBase extends URLClassLoader
 
 
     /**
-     * @return the clearReferencesStopTimerThreads flag for this Context.
+     * Get the clearReferencesStopTimerThreads flag for this Context.
+     *
+     * @return the clearReferencesStopTimerThreads flag
      */
     public boolean getClearReferencesStopTimerThreads() {
         return this.clearReferencesStopTimerThreads;
@@ -425,7 +451,9 @@ public abstract class WebappClassLoaderBase extends URLClassLoader
 
 
     /**
-     * @return the clearReferencesLogFactoryRelease flag for this Context.
+     * Get the clearReferencesLogFactoryRelease flag for this Context.
+     *
+     * @return the clearReferencesLogFactoryRelease flag
      */
     public boolean getClearReferencesLogFactoryRelease() {
         return this.clearReferencesLogFactoryRelease;
@@ -443,7 +471,9 @@ public abstract class WebappClassLoaderBase extends URLClassLoader
 
 
     /**
-     * @return the clearReferencesHttpClientKeepAliveThread flag for this Context.
+     * Get the clearReferencesHttpClientKeepAliveThread flag for this Context.
+     *
+     * @return the clearReferencesHttpClientKeepAliveThread flag
      */
     public boolean getClearReferencesHttpClientKeepAliveThread() {
         return this.clearReferencesHttpClientKeepAliveThread;
@@ -460,21 +490,41 @@ public abstract class WebappClassLoaderBase extends URLClassLoader
     }
 
 
+    /**
+     * Returns whether ThreadLocal references should be cleared on reload.
+     *
+     * @return the clearReferencesThreadLocals flag
+     */
     public boolean getClearReferencesThreadLocals() {
         return clearReferencesThreadLocals;
     }
 
 
+    /**
+     * Sets whether ThreadLocal references should be cleared on reload.
+     *
+     * @param clearReferencesThreadLocals The new value
+     */
     public void setClearReferencesThreadLocals(boolean clearReferencesThreadLocals) {
         this.clearReferencesThreadLocals = clearReferencesThreadLocals;
     }
 
 
+    /**
+     * Returns whether memory leak checks should be skipped on JVM shutdown.
+     *
+     * @return the skipMemoryLeakChecksOnJvmShutdown flag
+     */
     public boolean getSkipMemoryLeakChecksOnJvmShutdown() {
         return skipMemoryLeakChecksOnJvmShutdown;
     }
 
 
+    /**
+     * Sets whether memory leak checks should be skipped on JVM shutdown.
+     *
+     * @param skipMemoryLeakChecksOnJvmShutdown The new value
+     */
     public void setSkipMemoryLeakChecksOnJvmShutdown(boolean skipMemoryLeakChecksOnJvmShutdown) {
         this.skipMemoryLeakChecksOnJvmShutdown = skipMemoryLeakChecksOnJvmShutdown;
     }
@@ -512,6 +562,11 @@ public abstract class WebappClassLoaderBase extends URLClassLoader
         }
     }
 
+    /**
+     * Copies the state of this class loader to another, excluding transformers.
+     *
+     * @param base The target class loader
+     */
     protected void copyStateWithoutTransformers(WebappClassLoaderBase base) {
         base.resources = this.resources;
         base.delegate = this.delegate;
@@ -520,6 +575,10 @@ public abstract class WebappClassLoaderBase extends URLClassLoader
         base.clearReferencesStopTimerThreads = this.clearReferencesStopTimerThreads;
         base.clearReferencesLogFactoryRelease = this.clearReferencesLogFactoryRelease;
         base.clearReferencesHttpClientKeepAliveThread = this.clearReferencesHttpClientKeepAliveThread;
+        base.clearReferencesRmiTargets = this.clearReferencesRmiTargets;
+        base.clearReferencesThreadLocals = this.clearReferencesThreadLocals;
+        base.skipMemoryLeakChecksOnJvmShutdown = this.skipMemoryLeakChecksOnJvmShutdown;
+        base.notFoundClassResources.setLimit(this.notFoundClassResources.getLimit());
         base.jarModificationTimes.putAll(this.jarModificationTimes);
         base.permissionList.addAll(this.permissionList);
         base.loaderPC.putAll(this.loaderPC);
@@ -608,6 +667,17 @@ public abstract class WebappClassLoaderBase extends URLClassLoader
     // ---------------------------------------------------- ClassLoader Methods
 
 
+    /**
+     * Defines a class from byte array. Exposed for use by tests.
+     *
+     * @param name              The class name
+     * @param b                 The byte array
+     * @param off               The offset
+     * @param len               The length
+     * @param protectionDomain  The protection domain
+     *
+     * @return the defined class
+     */
     // Note: exposed for use by tests
     protected final Class<?> doDefineClass(String name, byte[] b, int off, int len, ProtectionDomain protectionDomain) {
         return super.defineClass(name, b, off, len, protectionDomain);
@@ -716,7 +786,13 @@ public abstract class WebappClassLoaderBase extends URLClassLoader
         String path = nameToPath(name);
 
         if (!notFoundClassResources.contains(path)) {
-            WebResource resource = resources.getClassLoaderResource(path);
+            WebResource resource;
+            try {
+                resource = resources.getClassLoaderResource(path);
+            } catch (IllegalArgumentException iae) {
+                notFoundClassResources.add(path);
+                return null;
+            }
             if (resource.exists()) {
                 url = resource.getURL();
                 trackLastModified(path, resource);
@@ -763,15 +839,22 @@ public abstract class WebappClassLoaderBase extends URLClassLoader
 
         checkStateForResourceLoading(name);
 
-        LinkedHashSet<URL> result = new LinkedHashSet<>();
-
         if (name == null || name.startsWith("/")) {
             return null;
         }
 
         String path = nameToPath(name);
 
-        WebResource[] webResources = resources.getClassLoaderResources(path);
+        WebResource[] webResources;
+        try {
+            webResources = resources.getClassLoaderResources(path);
+        } catch (IllegalArgumentException iae) {
+            // For consistency with super.findResources(String)
+            return Collections.emptyEnumeration();
+        }
+
+        LinkedHashSet<URL> result = new LinkedHashSet<>();
+
         for (WebResource webResource : webResources) {
             if (webResource.exists()) {
                 result.add(webResource.getURL());
@@ -923,7 +1006,14 @@ public abstract class WebappClassLoaderBase extends URLClassLoader
         }
         String path = nameToPath(name);
         if (!notFoundClassResources.contains(path)) {
-            WebResource resource = resources.getClassLoaderResource(path);
+            WebResource resource;
+            try {
+                resource = resources.getClassLoaderResource(path);
+            } catch (IllegalArgumentException iae) {
+                notFoundClassResources.add(path);
+                return null;
+            }
+
             if (resource.exists()) {
                 stream = resource.getInputStream();
                 // Filter out .class resources through the ClassFileTranformer
@@ -1188,6 +1278,13 @@ public abstract class WebappClassLoaderBase extends URLClassLoader
     }
 
 
+    /**
+     * Checks that the class loader is in a valid state for class loading.
+     *
+     * @param className The class being loaded
+     *
+     * @throws ClassNotFoundException If the class loader is not in a valid state
+     */
     protected void checkStateForClassLoading(String className) throws ClassNotFoundException {
         // It is not permitted to load new classes once the web application has
         // been stopped.
@@ -1199,6 +1296,13 @@ public abstract class WebappClassLoaderBase extends URLClassLoader
     }
 
 
+    /**
+     * Checks that the class loader is in a valid state for resource loading.
+     *
+     * @param resource The resource being loaded
+     *
+     * @throws IllegalStateException If the class loader is not in a valid state
+     */
     protected void checkStateForResourceLoading(String resource) throws IllegalStateException {
         // It is not permitted to load resources once the web application has
         // been stopped.
@@ -1210,8 +1314,7 @@ public abstract class WebappClassLoaderBase extends URLClassLoader
     }
 
     /**
-     * Get the Permissions for a CodeSource. If this instance of WebappClassLoaderBase is for a web application context,
-     * add read FilePermission for the appropriate resources.
+     * Get the Permissions for a CodeSource. This implementation always returns <code>null</code>.
      *
      * @param codeSource where the code was loaded from
      *
@@ -1340,10 +1443,22 @@ public abstract class WebappClassLoaderBase extends URLClassLoader
 
     // ------------------------------------------------------ Protected Methods
 
+    /**
+     * Returns the Java SE class loader.
+     *
+     * @return the Java SE class loader
+     */
     protected ClassLoader getJavaseClassLoader() {
         return javaseClassLoader;
     }
 
+    /**
+     * Sets the Java SE class loader.
+     *
+     * @param classLoader The Java SE class loader
+     *
+     * @throws IllegalArgumentException If the class loader is null
+     */
     protected void setJavaseClassLoader(ClassLoader classLoader) {
         if (classLoader == null) {
             throw new IllegalArgumentException(sm.getString("webappClassLoader.javaseClassLoaderNull"));

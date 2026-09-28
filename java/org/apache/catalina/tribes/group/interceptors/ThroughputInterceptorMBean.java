@@ -18,37 +18,93 @@ package org.apache.catalina.tribes.group.interceptors;
 
 import java.util.concurrent.atomic.AtomicLong;
 
+/**
+ * MBean interface for managing the ThroughputInterceptor.
+ */
 public interface ThroughputInterceptorMBean {
 
+    /**
+     * Returns the option flag used to determine if this interceptor should process a message.
+     * @return the option flag
+     */
     int getOptionFlag();
 
-    // Attributes
+    /**
+     * Returns the reporting interval in milliseconds.
+     * @return the interval
+     */
     int getInterval();
 
+    /**
+     * Sets the reporting interval in milliseconds.
+     * @param interval the interval
+     */
     void setInterval(int interval);
 
-    // stats
+    /**
+     * Returns the last message count.
+     * @return the last count
+     */
     double getLastCnt();
 
+    /**
+     * Returns the cumulative amount of data transmitted at the application layer, in MB.
+     * @return the amount in MB
+     */
     double getMbAppTx();
 
+    /**
+     * Returns the cumulative amount of data received, in MB.
+     * @return the amount in MB
+     */
     double getMbRx();
 
+    /**
+     * Returns the cumulative amount of data transmitted, in MB.
+     * @return the amount in MB
+     */
     double getMbTx();
 
+    /**
+     * Returns the received message count.
+     * @return the count
+     */
     AtomicLong getMsgRxCnt();
 
+    /**
+     * Returns the transmitted message count.
+     * @return the count
+     */
     AtomicLong getMsgTxCnt();
 
+    /**
+     * Returns the transmit error count.
+     * @return the count
+     */
     AtomicLong getMsgTxErr();
 
+    /**
+     * Returns the receive start timestamp.
+     * @return the timestamp
+     */
     long getRxStart();
 
+    /**
+     * Returns the accumulated total transmit time in seconds.
+     * @return the time in seconds
+     */
     double getTimeTx();
 
+    /**
+     * Returns the transmit start timestamp.
+     * @return the timestamp
+     */
     long getTxStart();
 
-    // Operations
+    /**
+     * Reports throughput statistics.
+     * @param timeTx the transmit time
+     */
     void report(double timeTx);
 
 }

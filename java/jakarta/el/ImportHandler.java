@@ -28,6 +28,10 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
+ * Manages class and package imports for EL expressions, similar to Java import statements. The ImportHandler resolves
+ * unqualified class names to their fully qualified counterparts, supports static imports, and maintains a set of
+ * standard packages that are automatically available in EL expressions.
+ *
  * @since EL 3.0
  */
 public class ImportHandler {
@@ -138,7 +142,7 @@ public class ImportHandler {
         standardPackages.put("jakarta.servlet.jsp", servletJspClassNames);
 
         Set<String> javaLangClassNames = new HashSet<>();
-        // Based on Java 26 EA26
+        // Based on Java 28 EA10
         // Interfaces
         javaLangClassNames.add("Appendable");
         javaLangClassNames.add("AutoCloseable");
@@ -226,6 +230,7 @@ public class ImportHandler {
         javaLangClassNames.add("CloneNotSupportedException");
         javaLangClassNames.add("EnumConstantNotPresentException");
         javaLangClassNames.add("Exception");
+        javaLangClassNames.add("IdentityException");
         javaLangClassNames.add("IllegalAccessException");
         javaLangClassNames.add("IllegalArgumentException");
         javaLangClassNames.add("IllegalCallerException");
@@ -289,11 +294,24 @@ public class ImportHandler {
     private final Map<String,Class<?>> statics = new ConcurrentHashMap<>();
 
 
+    /**
+     * Constructs an ImportHandler with the {@code java.lang} package pre-imported.
+     * The {@code java.lang} package is automatically available in all EL expressions.
+     */
     public ImportHandler() {
         importPackage("java.lang");
     }
 
-
+    /**
+     * Imports a static field or method so it can be referenced by its simple name in EL
+     * expressions. The argument must be a fully qualified name in the form
+     * {@code className.staticMemberName}. The static member must be public.
+     *
+     * @param name the fully qualified name of the static member to import
+     *
+     * @throws ELException if the name is invalid, the class cannot be found, the static
+     *                       member does not exist, or the import would be ambiguous
+     */
     public void importStatic(String name) throws ELException {
         int lastPeriod = name.lastIndexOf('.');
 
@@ -349,6 +367,15 @@ public class ImportHandler {
     }
 
 
+    /**
+     * Imports a class so it can be referenced by its simple name in EL expressions.
+     * The argument must be a fully qualified class name. If the simple name conflicts
+     * with a previously imported class, an exception is thrown.
+     *
+     * @param name the fully qualified class name to import
+     *
+     * @throws ELException if the class name is invalid or conflicts with an existing import
+     */
     public void importClass(String name) throws ELException {
         int lastPeriodIndex = name.lastIndexOf('.');
 
@@ -366,6 +393,14 @@ public class ImportHandler {
     }
 
 
+    /**
+     * Imports all classes from a package so they can be referenced by their simple names
+     * in EL expressions. Classes from the imported package are resolved during expression
+     * evaluation. If a simple name is ambiguous across multiple imported packages, an
+     * {@link ELException} is thrown at resolution time.
+     *
+     * @param name the package name to import
+     */
     public void importPackage(String name) {
         // Import ambiguity is handled at resolution, not at import
         // Whether the package exists is not checked,
@@ -377,6 +412,18 @@ public class ImportHandler {
     }
 
 
+    /**
+     * Resolves an unqualified class name to a {@link Class} object by searching the
+     * registered class imports and package imports. The name must not contain a dot.
+     * Results are cached for performance. If the name is ambiguous across multiple
+     * packages, an {@link ELException} is thrown.
+     *
+     * @param name the unqualified class name to resolve
+     *
+     * @return the resolved {@link Class}, or {@code null} if the class cannot be found
+     *
+     * @throws ELException if the class name is ambiguous across imported packages
+     */
     public Class<?> resolveClass(String name) {
         if (name == null || name.contains(".")) {
             return null;
@@ -445,6 +492,15 @@ public class ImportHandler {
     }
 
 
+    /**
+     * Resolves a statically imported member name to the {@link Class} that declares it.
+     * The name is the simple name of the static field or method as registered by
+     * {@link #importStatic(String)}.
+     *
+     * @param name the simple name of the static member
+     *
+     * @return the declaring {@link Class}, or {@code null} if not found
+     */
     public Class<?> resolveStatic(String name) {
         return statics.get(name);
     }

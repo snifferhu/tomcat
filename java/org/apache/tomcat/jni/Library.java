@@ -18,6 +18,9 @@ package org.apache.tomcat.jni;
 
 import java.io.File;
 
+/**
+ * Manages loading of the Tomcat Native (tcnative) library.
+ */
 public final class Library {
 
     /* Default library names - use 2.x in preference to 1.x if both are available */
@@ -32,26 +35,29 @@ public final class Library {
     private Library() throws Exception {
         boolean loaded = false;
         StringBuilder err = new StringBuilder();
-        File binLib = new File(System.getProperty(CATALINA_HOME_PROP), "bin");
-        for (int i = 0; i < NAMES.length; i++) {
-            File library = new File(binLib, System.mapLibraryName(NAMES[i]));
-            try {
-                System.load(library.getAbsolutePath());
-                loaded = true;
-            } catch (VirtualMachineError t) {
-                throw t;
-            } catch (Throwable t) {
-                if (library.exists()) {
-                    // File exists but failed to load
+        String catalinaHome = System.getProperty(CATALINA_HOME_PROP);
+        if (catalinaHome != null) {
+            File binLib = new File(catalinaHome, "bin");
+            for (int i = 0; i < NAMES.length; i++) {
+                File library = new File(binLib, System.mapLibraryName(NAMES[i]));
+                try {
+                    System.load(library.getAbsolutePath());
+                    loaded = true;
+                } catch (VirtualMachineError t) {
                     throw t;
+                } catch (Throwable t) {
+                    if (library.exists()) {
+                        // File exists but failed to load
+                        throw t;
+                    }
+                    if (i > 0) {
+                        err.append(", ");
+                    }
+                    err.append(t.getMessage());
                 }
-                if (i > 0) {
-                    err.append(", ");
+                if (loaded) {
+                    break;
                 }
-                err.append(t.getMessage());
-            }
-            if (loaded) {
-                break;
             }
         }
         if (!loaded) {
@@ -110,27 +116,51 @@ public final class Library {
     /* Internal function for loading APR Features */
     private static native int version(int what);
 
-    /* TCN_MAJOR_VERSION */
+    /**
+     * TCN major version.
+     */
     public static int TCN_MAJOR_VERSION = 0;
-    /* TCN_MINOR_VERSION */
+    /**
+     * TCN minor version.
+     */
     public static int TCN_MINOR_VERSION = 0;
-    /* TCN_PATCH_VERSION */
+    /**
+     * TCN patch version.
+     */
     public static int TCN_PATCH_VERSION = 0;
-    /* TCN_IS_DEV_VERSION */
+    /**
+     * TCN is development version flag.
+     */
     public static int TCN_IS_DEV_VERSION = 0;
-    /* APR_MAJOR_VERSION */
+    /**
+     * APR major version.
+     */
     public static int APR_MAJOR_VERSION = 0;
-    /* APR_MINOR_VERSION */
+    /**
+     * APR minor version.
+     */
     public static int APR_MINOR_VERSION = 0;
-    /* APR_PATCH_VERSION */
+    /**
+     * APR patch version.
+     */
     public static int APR_PATCH_VERSION = 0;
-    /* APR_IS_DEV_VERSION */
+    /**
+     * APR is development version flag.
+     */
     public static int APR_IS_DEV_VERSION = 0;
 
-    /* TCN_VERSION_STRING */
+    /**
+     * Returns the TCN version string.
+     *
+     * @return the TCN version string
+     */
     public static native String versionString();
 
-    /* APR_VERSION_STRING */
+    /**
+     * Returns the APR version string.
+     *
+     * @return the APR version string
+     */
     public static native String aprVersionString();
 
     /**

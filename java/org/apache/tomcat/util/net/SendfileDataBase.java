@@ -16,6 +16,10 @@
  */
 package org.apache.tomcat.util.net;
 
+/**
+ * Base class for sendfile operations. Tracks the file path, position, length,
+ * and keep-alive state for zero-copy file transfer to a socket.
+ */
 public abstract class SendfileDataBase {
 
     /**
@@ -38,10 +42,18 @@ public abstract class SendfileDataBase {
 
     /**
      * The number of bytes remaining to be written from the file (from the current {@link #pos}). This is initialised to
-     * the end point - the start point and then updated as the file is written.
+     * the value provided by the caller and then updated as the file is written.
      */
     public long length;
 
+    /**
+     * Initialise the sendfile data with the given file path, starting position,
+     * and byte count.
+     *
+     * @param filename the path to the file to send
+     * @param pos      the starting position within the file
+     * @param length   the number of bytes to send
+     */
     public SendfileDataBase(String filename, long pos, long length) {
         this.fileName = filename;
         this.pos = pos;

@@ -28,7 +28,7 @@ package org.apache.catalina;
  * Wrapper) should be utilized to process this request.
  * <p>
  * The child containers attached to an Engine are generally implementations of Host (representing a virtual host) or
- * Context (representing individual an individual servlet context), depending upon the Engine implementation.
+ * Context (representing an individual servlet context), depending upon the Engine implementation.
  * <p>
  * If used, an Engine is always the top level Container in a Catalina hierarchy. Therefore, the implementation's
  * <code>setParent()</code> method should throw <code>IllegalArgumentException</code>.
@@ -36,7 +36,9 @@ package org.apache.catalina;
 public interface Engine extends Container {
 
     /**
-     * @return the default host name for this Engine.
+     * Returns the default host name for this Engine.
+     *
+     * @return the default host name
      */
     String getDefaultHost();
 
@@ -50,7 +52,9 @@ public interface Engine extends Container {
 
 
     /**
-     * @return the JvmRouteId for this engine.
+     * Returns the JvmRouteId for this engine.
+     *
+     * @return the JVM Route ID
      */
     String getJvmRoute();
 
@@ -64,7 +68,9 @@ public interface Engine extends Container {
 
 
     /**
-     * @return the <code>Service</code> with which we are associated (if any).
+     * Returns the <code>Service</code> with which we are associated (if any).
+     *
+     * @return the associated Service, or {@code null} if none
      */
     Service getService();
 

@@ -27,21 +27,4 @@ import org.apache.catalina.Wrapper;
  * @param resourceOnly Is this a resource only mapping?
  */
 public record WrapperMappingInfo(String mapping, Wrapper wrapper, boolean jspWildCard, boolean resourceOnly) {
-
-    public String getMapping() {
-        return mapping;
-    }
-
-    public Wrapper getWrapper() {
-        return wrapper;
-    }
-
-    public boolean isJspWildCard() {
-        return jspWildCard;
-    }
-
-    public boolean isResourceOnly() {
-        return resourceOnly;
-    }
-
 }

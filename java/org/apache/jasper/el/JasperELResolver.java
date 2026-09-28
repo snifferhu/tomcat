@@ -46,16 +46,24 @@ import org.apache.jasper.runtime.JspRuntimeLibrary;
  */
 public class JasperELResolver extends CompositeELResolver {
 
-    // Keep aligned with class under test
+    // The number of resolvers to pre-allocate in the resolvers array
+    // Note: Keep aligned with test class
     private static final int STANDARD_RESOLVERS_COUNT = 11;
 
     private final AtomicInteger resolversSize = new AtomicInteger(0);
     private volatile ELResolver[] resolvers;
     private final int appResolversSize;
 
+    /**
+     * Constructs a new JasperELResolver.
+     *
+     * @param appResolvers the application-provided resolvers
+     * @param streamResolver the stream resolver
+     */
     public JasperELResolver(List<ELResolver> appResolvers, ELResolver streamResolver) {
         appResolversSize = appResolvers.size();
-        resolvers = new ELResolver[appResolversSize + STANDARD_RESOLVERS_COUNT];
+        resolvers = new ELResolver[appResolversSize + STANDARD_RESOLVERS_COUNT
+                                   + (JspRuntimeLibrary.GRAAL ? 1 : 0)];
 
         add(new ImplicitObjectELResolver());
         for (ELResolver appResolver : appResolvers) {
@@ -113,7 +121,7 @@ public class JasperELResolver extends CompositeELResolver {
                 }
             }
             // skip stream, static and collection-based resolvers (map,
-            // resource, list, array) and bean
+            // resource, list, array) and record
             start = index + 7;
             if (JspRuntimeLibrary.GRAAL) {
                 start++;
@@ -157,7 +165,7 @@ public class JasperELResolver extends CompositeELResolver {
 
         // skip collection (map, resource, list, and array) resolvers
         index += 4;
-        // call bean and the rest of resolvers
+        // call record and the rest of resolvers
         int size = resolversSize.get();
         for (int i = index; i < size; i++) {
             result = resolvers[i].invoke(context, base, targetMethod, paramTypes, params);
@@ -186,6 +194,12 @@ public class JasperELResolver extends CompositeELResolver {
      * configuration.
      */
     public static class GraalBeanELResolver extends ELResolver {
+
+        /**
+         * Constructs a new GraalBeanELResolver.
+         */
+        public GraalBeanELResolver() {
+        }
 
         @Override
         public Object getValue(ELContext context, Object base, Object property) {
@@ -218,6 +232,7 @@ public class JasperELResolver extends CompositeELResolver {
             if (method != null) {
                 context.setPropertyResolved(base, property);
                 try {
+                    method.setAccessible(true);
                     method.invoke(base, value);
                 } catch (Exception e) {
                     Throwable thr = ExceptionUtils.unwrapInvocationTargetException(e);

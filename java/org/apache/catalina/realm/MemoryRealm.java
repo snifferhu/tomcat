@@ -41,6 +41,12 @@ import org.apache.tomcat.util.file.ConfigFileLoader;
  */
 public class MemoryRealm extends RealmBase {
 
+    /**
+     * Default constructor.
+     */
+    public MemoryRealm() {
+    }
+
     private static final Log log = LogFactory.getLog(MemoryRealm.class);
 
     // ----------------------------------------------------- Instance Variables
@@ -75,7 +81,9 @@ public class MemoryRealm extends RealmBase {
     // ------------------------------------------------------------- Properties
 
     /**
-     * @return the pathname of our XML file containing user definitions.
+     * Get the pathname of the XML file containing user definitions.
+     *
+     * @return the pathname
      */
     public String getPathname() {
 
@@ -158,22 +166,25 @@ public class MemoryRealm extends RealmBase {
 
         // Accumulate the list of roles for this user
         List<String> list = new ArrayList<>();
-        roles += ",";
-        while (true) {
-            int comma = roles.indexOf(',');
-            if (comma < 0) {
-                break;
+        if (roles != null && !roles.isBlank()) {
+            roles += ",";
+            while (true) {
+                int comma = roles.indexOf(',');
+                if (comma < 0) {
+                    break;
+                }
+                String role = roles.substring(0, comma).trim();
+                if (!role.isEmpty()) {
+                    list.add(role);
+                }
+                roles = roles.substring(comma + 1);
             }
-            String role = roles.substring(0, comma).trim();
-            list.add(role);
-            roles = roles.substring(comma + 1);
         }
 
         // Construct and cache the Principal for this user
         GenericPrincipal principal = new GenericPrincipal(username, list);
         principals.put(username, principal);
         credentials.put(username, password);
-
     }
 
 
@@ -181,8 +192,9 @@ public class MemoryRealm extends RealmBase {
 
 
     /**
-     * @return a configured <code>Digester</code> to use for processing the XML input file, creating a new one if
-     *             necessary.
+     * Get a configured Digester for processing the XML input file.
+     *
+     * @return a configured Digester, creating a new one if necessary
      */
     protected Digester getDigester() {
         // Keep locking for subclass compatibility

@@ -60,8 +60,8 @@ import java.util.regex.Pattern;
  * will not be rotated and the filename will be <code>{prefix}{suffix}</code>. Default value: <code>true</code></li>
  * <li><code>prefix</code> - The leading part of the log file name. Default value: <code>juli.</code></li>
  * <li><code>suffix</code> - The trailing part of the log file name. Default value: <code>.log</code></li>
- * <li><code>bufferSize</code> - Configures buffering. The value of <code>0</code> uses system default buffering
- * (typically an 8K buffer will be used). A value of <code>&lt;0</code> forces a writer flush upon each log write. A
+ * <li><code>bufferSize</code> - Configures buffering. The value of <code>0</code> uses no application-level buffering.
+ * A value of <code>&lt;0</code> forces a writer flush upon each log write. A
  * value <code>&gt;0</code> uses a BufferedOutputStream with the defined value but note that the system default
  * buffering will also be applied. Default value: <code>-1</code></li>
  * <li><code>encoding</code> - Character set used by the log file. Default value: empty string, which means to use the
@@ -80,7 +80,13 @@ import java.util.regex.Pattern;
 public class FileHandler extends Handler {
 
 
+    /**
+     * Default value for the maximum number of days to keep log files. A value of -1 means unlimited.
+     */
     public static final int DEFAULT_MAX_DAYS = -1;
+    /**
+     * Default value for the log buffer size. A value of -1 forces a flush on each write.
+     */
     public static final int DEFAULT_BUFFER_SIZE = -1;
 
 
@@ -90,21 +96,49 @@ public class FileHandler extends Handler {
     // ------------------------------------------------------------ Constructor
 
 
+    /**
+     * Default constructor. Uses LogManager properties for all configuration.
+     */
     public FileHandler() {
         this(null, null, null);
     }
 
 
+    /**
+     * Constructor with directory, prefix, and suffix.
+     *
+     * @param directory The directory where log files are created
+     * @param prefix The leading part of the log file name
+     * @param suffix The trailing part of the log file name
+     */
     public FileHandler(String directory, String prefix, String suffix) {
         this(directory, prefix, suffix, null);
     }
 
 
+    /**
+     * Constructor with directory, prefix, suffix, and maxDays.
+     *
+     * @param directory The directory where log files are created
+     * @param prefix The leading part of the log file name
+     * @param suffix The trailing part of the log file name
+     * @param maxDays The maximum number of days to keep log files
+     */
     public FileHandler(String directory, String prefix, String suffix, Integer maxDays) {
         this(directory, prefix, suffix, maxDays, null, null);
     }
 
 
+    /**
+     * Constructor with all configuration options.
+     *
+     * @param directory The directory where log files are created
+     * @param prefix The leading part of the log file name
+     * @param suffix The trailing part of the log file name
+     * @param maxDays The maximum number of days to keep log files
+     * @param rotatable Whether the log file is rotatable
+     * @param bufferSize The log buffer size
+     */
     public FileHandler(String directory, String prefix, String suffix, Integer maxDays, Boolean rotatable,
             Integer bufferSize) {
         this.directory = directory;
@@ -266,6 +300,9 @@ public class FileHandler extends Handler {
         closeWriter();
     }
 
+    /**
+     * Close the currently open log file writer.
+     */
     protected void closeWriter() {
 
         writerLock.writeLock().lock();
@@ -418,6 +455,9 @@ public class FileHandler extends Handler {
         openWriter();
     }
 
+    /**
+     * Open the writer for the current log file.
+     */
     protected void openWriter() {
 
         // Create the directory if necessary
@@ -519,11 +559,19 @@ public class FileHandler extends Handler {
         }
     }
 
+    /**
+     * Thread factory for creating log file cleanup threads.
+     */
     protected static final class ThreadFactory implements java.util.concurrent.ThreadFactory {
         private final String namePrefix;
         private final ThreadGroup group;
         private final AtomicInteger threadNumber = new AtomicInteger(1);
 
+        /**
+         * Creates a new ThreadFactory with the given name prefix.
+         *
+         * @param namePrefix The name prefix for threads created by this factory
+         */
         public ThreadFactory(final String namePrefix) {
             this.namePrefix = namePrefix;
             this.group = Thread.currentThread().getThreadGroup();
